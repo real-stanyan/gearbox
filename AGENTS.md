@@ -19,7 +19,7 @@
 ### On starting a shift（开工三件事）
 
 1. `git log --oneline -10` — 看最近发生了什么
-2. 查 GitHub Issues — **先找 open 的交接 issue**（上一棒的 Memory 在里面；读完关闭它 = 接手，见 ADR-0005。找不到 = 上一棒违规收工，开 Protocol gap issue 记录，再从 git log + open issues 重建上下文），然后看其他 open 任务和备注
+2. 查 GitHub Issues — **先找 open 的交接 issue**（上一棒的 Memory 在里面；读完关闭它 = 接手，见 ADR-0005。找不到 → 查最近关闭的 issue 有无「无下一棒」终局声明：有 = 合规终局收工（ADR-0009），正常开工；无 = 上一棒违规收工，开 Protocol gap issue 记录——两种情况都从 git log + open issues 重建上下文），然后看其他 open 任务和备注
 3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
 
 ### While working
@@ -95,7 +95,7 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 1. 门禁全绿
 2. commit + push
 3. 做完的 Task issue 照常关闭；做到一半的,进度写到该 issue 的 comment
-4. **开下一棒的交接 issue**（Task 类,保持 open,ADR-0005）:body 写现状与下一步建议,本轮 Memory comment（五项格式,ADR-0004）留在这里。**这是下一棒唯一保证撞见的入口**——Memory 不再埋进随手关闭的 Task issue
+4. **开下一棒的交接 issue**（Task 类,保持 open,ADR-0005）:body 写现状与下一步建议,本轮 Memory comment（五项格式,ADR-0004）留在这里。**这是下一棒唯一保证撞见的入口**——Memory 不再埋进随手关闭的 Task issue。**唯一例外——终局收工**（ADR-0009）:归档 / 确认无下一棒时可不开,但必须在最后关闭的 issue 里 comment 显式声明「无下一棒」+ 理由,沉默的终局不算终局
 
 ### Division of labor（可选，按需填）
 
