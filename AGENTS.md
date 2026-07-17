@@ -49,6 +49,17 @@ Issues 和 PR 是 agent 之间（以及 agent ↔ 人之间）带时间戳、app
 
 > 为什么用 issue comment 而不是独立交接文件：理由见 `docs/adr/0003-issue-roles.md`。为什么 Memory 留在 open 交接 issue 而不是关闭的 Task issue：见 `docs/adr/0005-handoff-lives-in-an-open-issue.md`。
 
+### PR 处置（merge 规则）
+
+四条规则（ADR-0007）：
+
+- **merge 方式一律 merge commit**，不 squash、不 rebase：小步 commit 的 why 是协议资产（repo 是会话之间唯一的共享记忆），squash 等于删记忆；风格定死一种，历史才可预测。
+- **谁 merge**：PR 作者 agent 在 CI 绿后自行 merge。协议改动按分级走（见「协议自身的变更」）：L1 等 `<维护者>` 同意，L2 自主。
+- **review 不强制第二 agent**：轮班制下常态只有一棒在场，强制互审会阻塞在交接边界上。质量兜底 = CI 门禁 + `<维护者>` 事后否决权（revert + 重开 issue）。
+- **不接手别人的 open PR**——那是任务中途换手（见 While working）。例外：交接 issue 明确移交，或 `<维护者>` 指示。
+
+收工时 PR 还挂着 = 任务没做完：按 On ending a shift 第 3 条把进度写进 Task issue comment，PR 留 open。
+
 ### 协议自身的变更（改本文件的规则）
 
 agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
@@ -88,7 +99,11 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 ### Division of labor（可选，按需填）
 
-- <例：机械性批量修改、补测试 → Z Code；架构设计、难 bug → Claude Code>
+分工是项目属性，模板不预设（ADR-0008）。拷走时三选一：
+
+1. **填实**：哪类任务归哪个 agent。<未验证的候选示例：机械性批量修改、补测试 → Z Code；架构设计、难 bug → Claude Code>
+2. **不填**：默认规则 = **Task issue 认领制**——谁认领谁从头做到尾（见 While working），任务不按 agent 特长路由。
+3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-scaffold.js`）。
 
 ## Where to find things
 

@@ -59,6 +59,7 @@ if (existsSync(join(root, "AGENTS.md"))) {
     "### On starting a shift",
     "### While working",
     "### Issue & PR 的角色",
+    "### PR 处置",
     "### 协议自身的变更",
     "### Gate",
     "### On ending a shift",
