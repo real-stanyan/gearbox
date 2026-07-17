@@ -3,7 +3,7 @@
 新项目开局把本目录内容拷进 repo 根：
 
 ```bash
-cp -r ~/system/templates/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} <repo>/
+cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} <repo>/
 # 本 README.md 不拷
 ```
 
