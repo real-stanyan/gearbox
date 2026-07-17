@@ -58,6 +58,7 @@ if (existsSync(join(root, "AGENTS.md"))) {
     "## Working agreement (multi-agent)",
     "### On starting a shift",
     "### While working",
+    "### Issue & PR 的角色",
     "### Gate",
     "### On ending a shift",
     "## Where to find things",
@@ -78,6 +79,15 @@ if (existsSync(join(root, "AGENTS.md"))) {
   check(
     "AGENTS.md Gate section must run the same self-check as CI (node scripts/check-scaffold.js)",
     agents.includes("node scripts/check-scaffold.js"),
+  );
+
+  // 6b. The "open an issue on protocol gap, no silent judgment" rule is a
+  //     load-bearing protocol contract (ADR-0003), not stylistic preference.
+  //     If an agent removes it, the self-repair loop silently dies. Assert the
+  //     rule's key phrase is present verbatim.
+  check(
+    "AGENTS.md must keep the 'protocol gap -> open issue, no silent judgment' rule (ADR-0003); removing it breaks the self-repair loop",
+    agents.includes("不许 silent 判断") && agents.includes("Protocol gap"),
   );
 }
 

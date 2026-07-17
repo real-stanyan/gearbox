@@ -30,6 +30,25 @@
 - 架构性决策写 `docs/adr/`（一个决策一个文件）
 - 业务术语的定义查 `CONTEXT.md`；新术语出现时补进去
 
+### Issue & PR 的角色
+
+Issues 和 PR 是 agent 之间（以及 agent ↔ 人之间）带时间戳、append-only、不腐烂的会话载体。在本协议里有**三个不重叠的角色**——每个 issue/PR 都该能归入其中一类：
+
+| 角色 | 什么时候用 | 什么时候关 |
+|---|---|---|
+| **Task**（任务） | 要做一件可执行的事 | 任务做完且门禁绿 |
+| **Memory**（交接记忆） | 收工时在 Task issue 留 comment，写做到哪 / 卡在哪 / 下一步 | 下一棒接手即视为完成 |
+| **Protocol gap**（协议缺口） | 撞上 repo 回答不了的问题（规则没写、歧义、边界模糊） | 缺口被补进 AGENTS.md / CONTEXT.md / ADR |
+
+硬规则：
+
+- **撞上 repo 回答不了的问题，必须开 issue（Protocol gap 类），不许 silent 判断。** 这是协议自我修复的唯一入口——缺口从"靠默契"变成"显性、可讨论、可关闭"。
+- **Memory 类 comment 的最小格式**：① 做到哪 ② 卡在哪 ③ 下一步是什么 ④ 任务完成则关 issue。少一项都不算合格交接。
+- **交接 = issue 关闭 / PR 合并的那一刻**，不是"我觉得讲清楚了"。没关 issue 就换人 = 任务中途换手，违反上一节。
+- **PR 是 Task 的实施载体，不是独立角色**：PR 引用它实现的 Task issue，merge 时关 issue。PR review 中发现的新问题另开 issue，不在 PR 评论里堆。
+
+> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/adr/0003-issue-roles.md`。
+
 ### Gate（门禁 — 收工前必须全绿）
 
 ```bash
