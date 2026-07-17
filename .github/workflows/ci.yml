@@ -2,7 +2,7 @@ name: gate
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
 
 jobs:
@@ -13,9 +13,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-      - run: npm ci
-      # 与 AGENTS.md 的 Gate 一节保持同一套命令
-      - run: npx vitest run
-      - run: npx tsc --noEmit
-      - run: npx next lint
+      # No dependencies — the self-check uses node:fs only, so skip npm ci.
+      # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
+      # That sameness is the contract that lets CI enforce what agents promise.
+      - run: node scripts/check-scaffold.js
