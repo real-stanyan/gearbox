@@ -81,6 +81,23 @@ if (existsSync(join(root, "AGENTS.md"))) {
   );
 }
 
+// 7. The other half of the "CI == AGENTS.md Gate" contract: ci.yml must run
+//    this same script. Checking only AGENTS.md leaves the contract one-sided —
+//    ci.yml could drift to a different command and the check would stay green.
+if (existsSync(join(root, ".github/workflows/ci.yml"))) {
+  check(
+    ".github/workflows/ci.yml must run the same self-check as AGENTS.md's Gate (node scripts/check-scaffold.js)",
+    readFile(".github/workflows/ci.yml").includes("node scripts/check-scaffold.js"),
+  );
+}
+
+// 8. "No HANDOFF.md" is a filesystem contract, not just prose: asserting only
+//    that AGENTS.md never mentions it would miss someone adding the file itself.
+check(
+  "HANDOFF.md must not exist (progress lives in Issues/PRs — see README)",
+  !existsSync(join(root, "HANDOFF.md")),
+);
+
 // Report
 if (failures.length > 0) {
   console.error(`\n❌ Scaffold self-check failed (${failures.length}):\n`);
