@@ -1,14 +1,14 @@
-# <项目名>
+# AGENTS.md scaffold
 
-<一句话说清这个项目是什么、给谁用。>
+多 agent（Claude Code + Z Code 等）协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent 在同一个 repo 里轮流干活而不打架的人用。
 
 > This file is the single source of truth for ALL coding agents (Claude Code, Z Code, etc.).
 > Rules live here and only here. Do not duplicate them elsewhere.
 
 ## Tech stack
 
-- <框架 / 语言 / 关键库>
-- <数据库 / 部署平台>
+- Node.js（仅用于跑结构自检脚本，无运行时依赖）
+- 纯 Markdown 文档（AGENTS.md / CONTEXT.md / ADR）
 
 ## Hard rules
 
@@ -33,10 +33,10 @@
 ### Gate（门禁 — 收工前必须全绿）
 
 ```bash
-<测试命令，如 npx vitest run>
-<类型检查，如 npx tsc --noEmit>
-<lint，如 npx next lint>
+node scripts/check-scaffold.js
 ```
+
+> 本 repo 是文档型 scaffold，门禁不跑 vitest/tsc/lint，而是跑一个**结构自检脚本**：验证必需文件存在、`CLAUDE.md` 仍是 `@AGENTS.md` 空壳、关键章节锚点没被改名、不出现 `HANDOFF`、本 Gate 一节确实跑这个脚本（防止"CI 和 AGENTS.md 各跑各的"的契约漂移）。
 
 CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
