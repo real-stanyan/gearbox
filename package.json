@@ -1,0 +1,11 @@
+{
+  "name": "agents-md-scaffold",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single-source-of-truth AGENTS.md scaffold for multi-agent (Claude Code + Z Code) projects.",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/check-scaffold.js"
+  },
+  "license": "MIT"
+}
