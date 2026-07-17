@@ -19,7 +19,7 @@
 ### On starting a shift（开工三件事）
 
 1. `git log --oneline -10` — 看最近发生了什么
-2. 查 GitHub Issues — 找自己认领的任务和别人留的备注
+2. 查 GitHub Issues — **先找 open 的交接 issue**（上一棒的 Memory 在里面；读完关闭它 = 接手，见 ADR-0005。找不到 = 上一棒违规收工，开 Protocol gap issue 记录，再从 git log + open issues 重建上下文），然后看其他 open 任务和备注
 3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
 
 ### While working
@@ -37,17 +37,37 @@ Issues 和 PR 是 agent 之间（以及 agent ↔ 人之间）带时间戳、app
 | 角色 | 什么时候用 | 什么时候关 |
 |---|---|---|
 | **Task**（任务） | 要做一件可执行的事 | 任务做完且门禁绿 |
-| **Memory**（交接记忆） | 收工时在 Task issue 留 comment，写做到哪 / 卡在哪 / 下一步 | 下一棒接手即视为完成 |
+| **Memory**（交接记忆） | 收工时在**交接 issue**（见 On ending a shift）留 comment，五项格式 | 下一棒读完并关闭交接 issue = 接手完成 |
 | **Protocol gap**（协议缺口） | 撞上 repo 回答不了的问题（规则没写、歧义、边界模糊） | 缺口被补进 AGENTS.md / CONTEXT.md / ADR |
 
 硬规则：
 
 - **撞上 repo 回答不了的问题，必须开 issue（Protocol gap 类），不许 silent 判断。** 这是协议自我修复的唯一入口——缺口从"靠默契"变成"显性、可讨论、可关闭"。
-- **Memory 类 comment 的最小格式**：① 做到哪 ② 卡在哪 ③ 下一步是什么 ④ 任务完成则关 issue。少一项都不算合格交接。
+- **Memory 类 comment 的最小格式**（ADR-0004）：① 做到哪 ② 卡在哪 ③ 下一步是什么 ④ 任务完成则关 issue ⑤ **判断依据 / 权衡**——本棒做了非既定决策时必填（选了什么、为什么、什么前提失效时该推翻）；没做决策就写「无」，不许省略。少一项都不算合格交接。
 - **交接 = issue 关闭 / PR 合并的那一刻**，不是"我觉得讲清楚了"。没关 issue 就换人 = 任务中途换手，违反上一节。
 - **PR 是 Task 的实施载体，不是独立角色**：PR 引用它实现的 Task issue，merge 时关 issue。PR review 中发现的新问题另开 issue，不在 PR 评论里堆。
 
-> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/adr/0003-issue-roles.md`。
+> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/adr/0003-issue-roles.md`。为什么 Memory 留在 open 交接 issue 而不是关闭的 Task issue：见 `docs/adr/0005-handoff-lives-in-an-open-issue.md`。
+
+### 协议自身的变更（改本文件的规则）
+
+agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
+
+| 层级 | 内容 | 流程 |
+|---|---|---|
+| **L1 严格层** | Hard rules / Gate 命令 / Tech stack / 本节自身 | issue + ADR + PR,**且必须 `<维护者>` 在会话或 PR comment 中明确同意后 agent 才能 merge** |
+| **L2 自治层** | Working agreement(除 Gate)/ 索引(Where to find things) | issue + ADR + PR,agent 可自主 merge |
+
+> **拷走本 scaffold 时:把 `<维护者>` 换成你(或你的团队)的名字。** 见 ADR-0006。
+
+通用规则(两层都适用):
+
+- **三件套缺一不可**:对应 issue(通常是 Protocol gap 类)+ ADR(记录决策与理由)+ 分支 PR(CI 绿才能 merge,merge 时关 issue)。
+- **没有 issue + ADR 的协议改动是违规的**,应当 revert,无论属于哪一层。
+- **协议变更比代码改动更重**:代码只在架构性决策时才要 ADR,协议变更一律要。
+- **人保留事后否决权**:revert 对应 PR + 重开 issue,即撤销该变更——即便当时没拦住。
+
+L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 `<维护者>` 成为 L1 瓶颈,这个代价接受。
 
 ### Gate（门禁 — 收工前必须全绿）
 
@@ -63,7 +83,8 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 1. 门禁全绿
 2. commit + push
-3. 进度写到对应 issue 的 comment（做到哪、卡在哪、下一步是什么）；任务完成则关 issue
+3. 做完的 Task issue 照常关闭；做到一半的,进度写到该 issue 的 comment
+4. **开下一棒的交接 issue**（Task 类,保持 open,ADR-0005）:body 写现状与下一步建议,本轮 Memory comment（五项格式,ADR-0004）留在这里。**这是下一棒唯一保证撞见的入口**——Memory 不再埋进随手关闭的 Task issue
 
 ### Division of labor（可选，按需填）
 
