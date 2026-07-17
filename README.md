@@ -24,25 +24,34 @@ cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} 
 
 刻意**没有** `HANDOFF.md`：进度和交接走 GitHub Issues + PR（append-only、带时间戳、不腐烂）。
 
-## 验证过的实践（date-cli 实验出处）
+## 验证过的实践（date-cli 实验 + scaffold 自食其力）
 
-这套协议不是空想,在 [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli)（private）里跑过 **4 轮多 agent 协作验证**（Z Code 开局 + Claude Code 接力 3 轮,完整 git log / issues / PR / ADR 可查）。实验中长出了以下机制,都已回流到本 scaffold:
+这套协议不是空想,在 [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli)（private）里跑过 **4 轮多 agent 协作验证**（Z Code 开局 + Claude Code 接力 3 轮,完整 git log / issues / PR / ADR 可查）,之后又在**本 repo 自身**用同一套协议跑了第 5 轮（自食其力:用协议维护协议）。长出的机制全部落成 ADR:
 
-| 机制 | ADR | 解决的问题 |
-|---|---|---|
-| Memory 五项格式 | 0004 | 排程决策(选 a 不选 b 的理由)不再腐烂,且不污染 ADR |
-| 交接 Memory 留 open issue | 0005 | 下一棒开工自然扫到入口,不再靠人指路 |
-| 协议变更分级授权(L1/L2) | 0006 | Hard rules/Gate 不能 agent 自主改;Working agreement 可自治 |
+| 机制 | ADR | 解决的问题 | 出处 |
+|---|---|---|---|
+| Memory 五项格式 | 0004 | 排程决策(选 a 不选 b 的理由)不再腐烂,且不污染 ADR | date-cli |
+| 交接 Memory 留 open issue | 0005 | 下一棒开工自然扫到入口,不再靠人指路 | date-cli |
+| 协议变更分级授权(L1/L2) | 0006 | Hard rules/Gate 不能 agent 自主改;Working agreement 可自治 | date-cli |
+| PR 处置细则 | 0007 | merge 策略/merge 权限/互审与否不再靠临时授权 | date-cli 实践追认 |
+| 分工占位符显式化 | 0008 | 分工是项目属性;无约定时兜底 = Task issue 认领制 | 第 5 轮 |
+| 终局收工豁免 | 0009 | 「违规收工」和「工作到头」分得开;沉默的终局不算终局 | 第 5 轮 |
+| 门禁断言分层 | 0010 | 收紧门禁 L2 零摩擦;放松/删除 L1 需人同意 | 第 5 轮 |
 
-**实验还验证了什么成立、什么不成立:**
+**实验验证了什么成立、什么不成立:**
 
 - ✅ **成立的**:交接零口述、协议自我修复循环(开缺口 → 补进 AGENTS.md)、代码协作三棒无一处靠猜
+- ✅ **第 5 轮新增的**:协议能抓自身违规——上一棒没开交接 issue,下一棒按 On starting 撞空、开缺口 issue、长出 ADR-0009 边界条款,全程无人指路;L1 b-弱同意流程(维护者会话内说「同意」+ PR comment 留痕)首次实跑走通
 - 🔸 **部分成立的**:门禁拦事——纯函数区真拦,但 I/O 层和测试文件类型是持续暴露的盲区(打地鼠模式)
 - ❌ **未根治的**:门禁"全绿" ≠ "正确"——这是回归性保证的本质,无法用一份协议根治
 
-**诚实的边界**:n=1 项目 + 2 个 agent 的单次验证,不是普适证明。拷走后请按你的场景再验证。
+**诚实的边界——以下全部未验证,拷走后自担:**
 
-若某个 agent 不认 `AGENTS.md`，在 repo 里软链接：`ln -s AGENTS.md <该工具认的文件名>`。
+- **规模**:n=1 用户、2 个 agent、玩具级代码库。真实项目的代码量与业务复杂度没碰过
+- **并行**:整套协议建立在轮班制(一次一棒)上。多 agent 同时在场会打穿 ADR-0007 的前提(它自己写了推翻条件)
+- **分工**:ADR-0008 承认 n=0,占位符即答案
+- **L1 异步**:目前 b-弱同意都是维护者在场秒回;维护者离线时 L1 改动就挂着,这个瓶颈是明说接受的,但没尝过疼
+- **仪式成本**:每棒 issue + 五项 Memory + 协议改动必 ADR。协议实验里是数据,高频小任务场景里是税
 
 若某个 agent 不认 `AGENTS.md`，在 repo 里软链接：`ln -s AGENTS.md <该工具认的文件名>`。
 
