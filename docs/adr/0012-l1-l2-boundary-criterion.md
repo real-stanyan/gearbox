@@ -1,7 +1,7 @@
 # ADR-0012: L1/L2 边界判据——"机制引用优先"
 
 - Date: 2026-07-19
-- Status: accepted
+- Status: accepted, 定义豁免见 ADR-0019(CONTEXT.md 词条描述既有机制不触发本判据)
 - Supersedes: ADR-0006(ADR-0006 的 L1/L2 分层按内容类型分,本 ADR 补齐"新增内容怎么归类"的判据;ADR-0006 原文保留不删)
 
 ## Context
