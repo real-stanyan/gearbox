@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Scaffold structural self-check.
+// Gearbox structural self-check.
 //
 // This repo is all markdown — there's no app code to test. The gate instead
-// asserts the scaffold's own contract holds, so that:
+// asserts Gearbox's own contract holds, so that:
 //   - contributors can't accidentally break the template structure
 //   - the dogfood rule "CI runs the same command as AGENTS.md's Gate" is real
 //
@@ -83,8 +83,8 @@ if (existsSync(join(root, "AGENTS.md"))) {
   // 6. The Gate section must actually run this script — otherwise the
   //    "CI == AGENTS.md Gate" contract is only aspirational.
   check(
-    "AGENTS.md Gate section must run the same self-check as CI (node scripts/check-scaffold.js)",
-    agents.includes("node scripts/check-scaffold.js"),
+    "AGENTS.md Gate section must run the same self-check as CI (node scripts/check-gearbox.js)",
+    agents.includes("node scripts/check-gearbox.js"),
   );
 
   // 6b. The "open an issue on protocol gap, no silent judgment" rule is a
@@ -102,8 +102,8 @@ if (existsSync(join(root, "AGENTS.md"))) {
 //    ci.yml could drift to a different command and the check would stay green.
 if (existsSync(join(root, ".github/workflows/ci.yml"))) {
   check(
-    ".github/workflows/ci.yml must run the same self-check as AGENTS.md's Gate (node scripts/check-scaffold.js)",
-    readFile(".github/workflows/ci.yml").includes("node scripts/check-scaffold.js"),
+    ".github/workflows/ci.yml must run the same self-check as AGENTS.md's Gate (node scripts/check-gearbox.js)",
+    readFile(".github/workflows/ci.yml").includes("node scripts/check-gearbox.js"),
   );
 }
 
@@ -139,10 +139,10 @@ check(
 
 // Report
 if (failures.length > 0) {
-  console.error(`\n❌ Scaffold self-check failed (${failures.length}):\n`);
+  console.error(`\n❌ Gearbox self-check failed (${failures.length}):\n`);
   for (const f of failures) console.error(`  - ${f}`);
   console.error("");
   process.exit(1);
 }
 
-console.log("✅ Scaffold self-check passed — structure contract holds.");
+console.log("✅ Gearbox self-check passed — structure contract holds.");

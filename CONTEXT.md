@@ -1,4 +1,4 @@
-# Domain context — AGENTS.md scaffold
+# Domain context — Gearbox
 
 领域词汇表。所有 agent 对业务词的理解以此为准；代码命名与这里的术语保持一致。
 
@@ -11,7 +11,7 @@
 | 交接（handoff） | 一个 agent 把任务交给另一个 agent，**只发生在 issue 关闭 / PR 合并那一刻**，不在任务中途 | 不是"讲清楚了"就交接，是 issue 关了才交接 |
 | 协议缺口（protocol gap） | repo 的持久产物（AGENTS.md / ADR / CONTEXT.md）回答不了的问题 | 撞上必须开 issue，不许 silent 判断 |
 | Issue 三角色 | Issue/PR 在本协议中的三种用法，不重叠：**Task**（任务）/ **Memory**（交接记忆）/ **Protocol gap**（协议缺口） | 每个 issue 都该能归入其中一类，见 AGENTS.md |
-| 门禁（gate） | 收工前必须全绿的命令。本 repo 是 `node scripts/check-scaffold.js` | CI 跑同一套，红了不许 merge |
+| 门禁（gate） | 收工前必须全绿的命令。本 repo 是 `node scripts/check-gearbox.js` | CI 跑同一套，红了不许 merge |
 | Dogfood | 本 repo 用自己规定的协议开发自己 | 是验证手段，不是目的 |
 
 ## Key invariants

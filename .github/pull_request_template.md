@@ -1,5 +1,5 @@
 <!--
-本模板是 scaffold 的协议层契约载体 (ADR-0013)。
+本模板是 Gearbox 的协议层契约载体 (ADR-0013)。
 新建 PR 时 GitHub 会自动套用本模板。请按需填写, 不要删 Affects downstream 字段。
 -->
 
@@ -11,7 +11,7 @@
 
 <!-- 必填 (ADR-0013)。二选一:
 
-  - `no`  —— 本 PR 不影响下游项目 (如纯 scaffold 内部文档、CI 配置、ADR 模板改动)
+  - `no`  —— 本 PR 不影响下游项目 (如纯 Gearbox 内部文档、CI 配置、ADR 模板改动)
   - `yes` —— 本 PR 影响 downstream (协议级改动: Hard rules / Gate / Tech stack / Working agreement /
              索引 / 任何引用 L1/L2 分级或协议机制的新增内容, 见 ADR-0012 判据)
 
@@ -29,5 +29,5 @@
 ## Gate
 
 ```
-<!-- 粘贴 node scripts/check-scaffold.js 输出 -->
+<!-- 粘贴 node scripts/check-gearbox.js 输出 -->
 ```

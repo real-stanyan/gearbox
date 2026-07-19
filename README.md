@@ -1,16 +1,18 @@
-# AGENTS.md scaffold — 多 agent 协作项目骨架
+# Gearbox — 多 agent 协作项目骨架
+
+> 前身名 `agents-md-scaffold`,2026-07-19 改名 **Gearbox**(ADR-0015)。旧 GitHub URL 自动跳转。
 
 新项目开局把本目录内容拷进 repo 根：
 
 ```bash
-cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} <repo>/
+cp -r ~/Github/gearbox/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} <repo>/
 # 本 README.md 不拷
 ```
 
 然后：
 1. 填 `AGENTS.md` 里所有 `<占位符>`
-2. 按项目实际调整 `.github/workflows/ci.yml` 的命令——它默认跑 `node scripts/check-scaffold.js`,但 `scripts/` 是 scaffold 自身的门禁、**不随拷**;不换命令,新项目 CI 开局即红
-3. **删掉或改写 `.github/pull_request_template.md`**——它是 scaffold 专属的 B-3 回流载体(ADR-0013),引用的是 scaffold 自己的下游清单;你的项目没有下游就删,有下游就改成你自己的
+2. 按项目实际调整 `.github/workflows/ci.yml` 的命令——它默认跑 `node scripts/check-gearbox.js`,但 `scripts/` 是 Gearbox 自身的门禁、**不随拷**;不换命令,新项目 CI 开局即红
+3. **删掉或改写 `.github/pull_request_template.md`**——它是 Gearbox 专属的 B-3 回流载体(ADR-0013),引用的是 Gearbox 自己的下游清单;你的项目没有下游就删,有下游就改成你自己的
 4. 首个架构决策写进 `docs/adr/`（可参考 0001 模板）
 
 ## 架构（为什么长这样）
@@ -25,7 +27,7 @@ cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} 
 
 刻意**没有** `HANDOFF.md`：进度和交接走 GitHub Issues + PR（append-only、带时间戳、不腐烂）。
 
-## 验证过的实践（date-cli 实验 + scaffold 自食其力）
+## 验证过的实践（date-cli 实验 + Gearbox 自食其力）
 
 这套协议不是空想,在 [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli)（private）里跑过 **4 轮多 agent 协作验证**（Z Code 开局 + Claude Code 接力 3 轮,完整 git log / issues / PR / ADR 可查）,之后又在**本 repo 自身**用同一套协议跑了第 5、6 轮（自食其力:用协议维护协议）。长出的机制全部落成 ADR:
 
@@ -40,7 +42,7 @@ cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} 
 | 门禁断言分层 | 0010 | 收紧门禁 L2 零摩擦;放松/删除 L1 需人同意 | 第 5 轮 |
 | Subagent 模板与路由 | 0011 | 主 agent 派活缺统一模板;下游可按需回流 | 第 6 轮 |
 | L1/L2 边界判据(机制引用优先) | 0012 | agent 用「可选+纯新增」当 L2 通道扩张协议边界(PR #21 复盘) | 第 6 轮 |
-| 下游回流提醒(B-3) | 0013 | scaffold 是模板非依赖,下游漏接协议改进无感知 | 第 6 轮 |
+| 下游回流提醒(B-3) | 0013 | Gearbox 是模板非依赖,下游漏接协议改进无感知 | 第 6 轮 |
 
 **实验验证了什么成立、什么不成立:**
 
