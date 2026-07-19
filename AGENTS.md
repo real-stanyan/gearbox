@@ -93,6 +93,8 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 `<维护者>` 成为 L1 瓶颈,这个代价接受。
 
+**下游回流提醒**(ADR-0013):scaffold 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事("查 open issues")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。
+
 ### Gate（门禁 — 收工前必须全绿）
 
 ```bash
