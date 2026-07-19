@@ -14,6 +14,7 @@
 //   3. CONTEXT.md  协议词条随拷(去 Dogfood 行、gate 行去 check-gearbox 硬编码)
 //   4. docs/adr/   全量拷贝上游 ADR,每个加溯源行 + hash 戳记(ADR-0021 契约)
 //   5. ci.yml      生成,命令与 Gate 节字面一致(CI == Gate 契约)
+//   6. .gearbox-version  写入接入时的上游版本 tag(ADR-0023 戳记)
 //
 // 不做什么:
 //   - 不拷 pull_request_template.md(B-3 回流载体,Gearbox 专属)、scripts/、README.md
@@ -154,6 +155,14 @@ agents = mustReplace(
   "**下游回流提醒**(ADR-0013):Gearbox 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事(\"查 open issues\")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。",
   "> 本 repo 无下游项目,Gearbox 的下游回流机制(ADR-0013)在此只作接收端:Gearbox 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。",
   "B-3 节",
+);
+
+// 协议版本号节 → 接收端版(下游不发布协议版本,只持有戳记)
+agents = mustReplace(
+  agents,
+  "**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。",
+  "> 本 repo 不发布协议版本;根目录 `.gearbox-version` 记录接入时的 Gearbox 上游版本,由 gearbox-install / gearbox-update 维护,`gearbox-version` 读取对比(上游 ADR-0023)。",
+  "协议版本号节",
 );
 
 // Gate 命令 + 说明
@@ -299,6 +308,24 @@ writeFileSync(join(targetDir, "CONTEXT.md"), context);
 mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
 writeFileSync(join(targetDir, ".github/workflows/ci.yml"), ciYml);
 
+// .gearbox-version 戳记(ADR-0023): 记录接入时的上游版本,gearbox-version 读取对比
+let upstreamVersion = null;
+try {
+  // 取最大版本 tag(semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
+  upstreamVersion =
+    execSync("git tag -l 'v*' --sort=-v:refname", {
+      cwd: GEARBOX_DIR,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+      .trim()
+      .split("\n")[0] || null;
+} catch {
+  /* 上游无 tag(基线未打)→ 不写戳记,汇报里警告 */
+}
+if (upstreamVersion)
+  writeFileSync(join(targetDir, ".gearbox-version"), upstreamVersion + "\n");
+
 // git init(无 .git 时)
 let gitInited = false;
 if (!existsSync(join(targetDir, ".git"))) {
@@ -323,6 +350,10 @@ console.log(`  ${C.green("✓")} CLAUDE.md   ${C.dim("(@AGENTS.md 空壳契约)"
 console.log(`  ${C.green("✓")} CONTEXT.md  ${C.dim("(协议词条随拷)")}`);
 console.log(`  ${C.green("✓")} docs/adr/   ${C.dim(`(${adrFiles.length} 个上游 ADR, ${stamped} 个已加 hash 戳记 ADR-0021)`)}`);
 console.log(`  ${C.green("✓")} ci.yml      ${C.dim(gateCmd ? "(与 Gate 节同命令)" : "(占位命令, 故意红——填 Gate 前 CI 不该绿)")}`);
+if (upstreamVersion)
+  console.log(`  ${C.green("✓")} .gearbox-version ${C.dim(`(${upstreamVersion}, ADR-0023 版本戳记)`)}`);
+else
+  console.log(`  ${C.yellow("⚠")} .gearbox-version ${C.dim("未写——上游无 tag(基线 v0.0.0 未打?)")}`);
 if (gitInited) console.log(`  ${C.green("✓")} git init`);
 console.log("");
 console.log(C.bold("下一步:"));

@@ -104,6 +104,8 @@ L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 
 
 **下游回流提醒**(ADR-0013):Gearbox 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事("查 open issues")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。
 
+**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。
+
 ### Gate（门禁 — 收工前必须全绿）
 
 ```bash

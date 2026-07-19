@@ -25,6 +25,21 @@
 - 下游回流 issue 链接(yes 时必填, **按 `DOWNSTREAM.md`「已接入项目」清单逐项列出**, 一项一行):
   - <repo>: <回流 issue 链接>
 
+## Version bump
+
+<!-- 必填 (ADR-0023)。四选一:
+
+  - `major` —— 跨工具/跨 repo 契约变更 (hash 戳记格式 / install 锚点结构 / 文件布局 / 改名), 下游需人工干预
+  - `minor` —— 新增机制 (新 ADR / 新工具 / 新协议条款)
+  - `patch` —— 已有文件修订 (措辞 / status 行 / typo)
+  - `none`  —— 不动协议与工具 (需一句理由, 如 "纯 README typo")
+
+merge 后作者 agent 以 merge 时刻最新 tag 为基准打 annotated tag 并 push:
+  git tag -a v0.x.y -m "一句话摘要" && git push origin v0.x.y
+-->
+
+- Version bump: <!-- major | minor | patch | none -->
+
 ## Gate
 
 ```

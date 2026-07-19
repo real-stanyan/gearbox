@@ -19,6 +19,7 @@
 | 终局收工 | 归档 / 确认无下一棒时的收工形态：可不开交接 issue，但必须在最后关闭的 issue 里显式声明「无下一棒」+ 理由 | ADR-0009；沉默的终局不算终局 |
 | 下游（downstream） | 拷走本 Gearbox 协议后独立演进的项目；权威清单在 `DOWNSTREAM.md`「已接入项目」 | 入清单三条件见 DOWNSTREAM.md |
 | 回流（backfill） | Gearbox 协议改进通过在下游 repo 开提醒 issue 传达给下游；是提醒不是强制，下游可拒（关 issue 注明理由） | ADR-0013（B-3 模板强制） |
+| 协议版本号 | semver 变体 tag：**major** = 跨工具/跨 repo 契约变更；**minor** = 新增机制；**patch** = 已有文件修订。每个协议 PR 声明 `Version bump`，merge 后作者打 tag；下游本地版本记在 `.gearbox-version` 戳记（工具写工具读） | ADR-0023；基线 v0.0.0 |
 
 ## Key invariants
 
