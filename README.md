@@ -2,18 +2,17 @@
 
 > 前身名 `agents-md-scaffold`,2026-07-19 改名 **Gearbox**(ADR-0015)。旧 GitHub URL 自动跳转。
 
-新项目开局把本目录内容拷进 repo 根：
+新项目开局一条命令（ADR-0022,自动完成占位、门禁替换、B-3 接收端化、ADR 溯源+hash 戳记）：
 
 ```bash
-cp -r ~/Github/gearbox/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} <repo>/
-# 本 README.md 不拷
+node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <你的名字> --gate "npx tsc --noEmit"
+# 三个参数都可省: 省了就留 <占位符>,ci.yml 放故意失败的占位命令
 ```
 
 然后：
-1. 填 `AGENTS.md` 里所有 `<占位符>`
-2. 按项目实际调整 `.github/workflows/ci.yml` 的命令——它默认跑 `node scripts/check-gearbox.js`,但 `scripts/` 是 Gearbox 自身的门禁、**不随拷**;不换命令,新项目 CI 开局即红
-3. **删掉或改写 `.github/pull_request_template.md`**——它是 Gearbox 专属的 B-3 回流载体(ADR-0013),引用的是 Gearbox 自己的下游清单;你的项目没有下游就删,有下游就改成你自己的
-4. 首个架构决策写进 `docs/adr/`（可参考 0001 模板）
+1. 填 `AGENTS.md` 里剩余 `<占位符>`（`grep -n '<' AGENTS.md`）
+2. 首个自有架构决策写进 `docs/adr/`（编号接在拷入的上游 ADR 之后；0001 是模板）
+3. 想收上游协议更新提醒,在本 repo `DOWNSTREAM.md`「已接入项目」加一行（入清单三条件见该文件）
 
 ## 架构（为什么长这样）
 

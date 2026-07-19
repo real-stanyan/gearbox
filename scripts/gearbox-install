@@ -1,0 +1,338 @@
+#!/usr/bin/env node
+// gearbox-install — 在新项目一条命令初始化 Gearbox 骨架
+//
+// 用法: 在目标项目根目录跑 `gearbox-install`,或 `gearbox-install <目标目录>`
+//   --name <项目名>       AGENTS.md 标题(默认: 目标目录名)
+//   --maintainer <名字>   替换协议里的 <维护者> 占位符(默认: 保留占位符)
+//   --gate "<命令>"       Gate 门禁命令(默认: 留占位符,CI 同步生成)
+//
+// 做什么(自动完成 README 手动拷贝的全部调整步骤,ADR-0022):
+//   1. AGENTS.md   模板拷入 + 变换: 标题/简介占位、Tech stack 占位、删 dogfood 注
+//                  (保留 ADR-0018 标注定级注)、<维护者> 替换、B-3 节改接收端版、
+//                  Gate 命令填入、Where to find things 通用化
+//   2. CLAUDE.md   = `@AGENTS.md` 空壳契约
+//   3. CONTEXT.md  协议词条随拷(去 Dogfood 行、gate 行去 check-gearbox 硬编码)
+//   4. docs/adr/   全量拷贝上游 ADR,每个加溯源行 + hash 戳记(ADR-0021 契约)
+//   5. ci.yml      生成,命令与 Gate 节字面一致(CI == Gate 契约)
+//
+// 不做什么:
+//   - 不拷 pull_request_template.md(B-3 回流载体,Gearbox 专属)、scripts/、README.md
+//   - 不覆盖已存在的 AGENTS.md(已接入的项目用 gearbox-update 回流,不用本工具)
+//   - 不自动 commit(装完人工 review + 首 commit)
+//
+// 变换全部锚定上游 AGENTS.md 的已知文本;锚点找不到就报错退出,不静默出残缺骨架。
+
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+  mkdirSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
+import { join, resolve, basename } from "node:path";
+import { env, argv, exit, cwd } from "node:process";
+
+// ============== 配置 ==============
+
+const GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
+const GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+const GEARBOX_GITHUB_BASE =
+  "https://github.com/real-stanyan/gearbox/blob/master/docs/adr";
+
+const C = {
+  red: (s) => `\x1b[31m${s}\x1b[0m`,
+  green: (s) => `\x1b[32m${s}\x1b[0m`,
+  yellow: (s) => `\x1b[33m${s}\x1b[0m`,
+  dim: (s) => `\x1b[2m${s}\x1b[0m`,
+  bold: (s) => `\x1b[1m${s}\x1b[0m`,
+  cyan: (s) => `\x1b[36m${s}\x1b[0m`,
+};
+
+function die(msg, hint = "") {
+  console.error(C.red(`✗ ${msg}`));
+  if (hint) console.error(`  ${C.dim(hint)}`);
+  exit(1);
+}
+
+function pad4(n) {
+  return String(n).padStart(4, "0");
+}
+
+// ============== 参数 ==============
+
+const args = argv.slice(2);
+let targetDir = null;
+let projectName = null;
+let maintainer = null;
+let gateCmd = null;
+
+for (let i = 0; i < args.length; i++) {
+  const a = args[i];
+  if (a === "--name") projectName = args[++i];
+  else if (a === "--maintainer") maintainer = args[++i];
+  else if (a === "--gate") gateCmd = args[++i];
+  else if (a === "--help" || a === "-h") {
+    console.log(
+      'gearbox-install [目标目录] [--name 项目名] [--maintainer 名字] [--gate "命令"]',
+    );
+    exit(0);
+  } else if (a.startsWith("--")) die(`未知参数: ${a}`, "--help 看用法");
+  else if (targetDir) die(`多余的位置参数: ${a}`);
+  else targetDir = a;
+}
+
+targetDir = resolve(targetDir || cwd());
+projectName = projectName || basename(targetDir);
+
+// ============== 预检 ==============
+
+if (!existsSync(GEARBOX_ADR_DIR))
+  die(
+    `找不到 Gearbox: ${GEARBOX_DIR}`,
+    "设 GEARBOX_DIR 环境变量改路径, 或确认 Gearbox 在 ~/Github/gearbox/",
+  );
+if (!existsSync(targetDir)) die(`目标目录不存在: ${targetDir}`);
+if (existsSync(join(targetDir, "AGENTS.md")))
+  die(
+    `目标已有 AGENTS.md: ${targetDir}`,
+    "已接入的项目用 gearbox-update 回流 ADR,不用本工具重装",
+  );
+
+const agentsSrc = readFileSync(join(GEARBOX_DIR, "AGENTS.md"), "utf8");
+const contextSrc = readFileSync(join(GEARBOX_DIR, "CONTEXT.md"), "utf8");
+
+// 锚定变换: old 必须在文本中恰好出现一次,否则上游模板变了、本工具没跟上 → 报错
+function mustReplace(content, anchor, replacement, what) {
+  const idx = content.indexOf(anchor);
+  if (idx === -1)
+    die(
+      `AGENTS.md 模板锚点丢失: ${what}`,
+      "上游 AGENTS.md 结构变了——先更新 gearbox-install 的变换再装(锚点契约,ADR-0022)",
+    );
+  if (content.indexOf(anchor, idx + 1) !== -1)
+    die(`AGENTS.md 模板锚点不唯一: ${what}`);
+  return content.replace(anchor, replacement);
+}
+
+// ============== 1. AGENTS.md 变换 ==============
+
+let agents = agentsSrc;
+
+// 标题 + 简介
+agents = mustReplace(agents, "# Gearbox\n", `# ${projectName}\n`, "标题");
+agents = mustReplace(
+  agents,
+  "多 agent（Claude Code + Z Code 等）协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent 在同一个 repo 里轮流干活而不打架的人用。",
+  "<一句话:这个项目是什么、做到什么程度算成、范围边界在哪。>",
+  "简介段",
+);
+
+// Tech stack → 占位
+agents = mustReplace(
+  agents,
+  `- Node.js（结构自检脚本 + \`scripts/gearbox-update\` 下游回流 / \`scripts/gearbox-install\` 开局安装，无运行时依赖，ADR-0017/0022）
+- Bash（\`scripts/gearbox-version\` 下游同步速查，零依赖、只读，ADR-0016）
+- 纯 Markdown 文档（AGENTS.md / CONTEXT.md / ADR）`,
+  "<项目技术栈,每条一行。例:Next.js 15 / TypeScript / Postgres>",
+  "Tech stack",
+);
+
+// Hard rules: 删 dogfood 注,保留 ADR-0018 标注定级语义(接收端措辞)
+agents = mustReplace(
+  agents,
+  `> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(\`scripts/check-gearbox.js\` 是可执行的事实源)。协议正文中标注 **Hard rule** 的条款(如 B-3「无链接 = 不能 merge」,ADR-0013)**视同本节内容,受 L1 保护**:判据锚定 "Hard rule" 标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
+> 拷走本 Gearbox 时:删掉本注,把占位符换成你项目的硬规则。`,
+  `> 协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节的硬规则)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。`,
+  "Hard rules 注",
+);
+
+// B-3 下游回流节 → 接收端版(Blackbox 先例)
+agents = mustReplace(
+  agents,
+  "**下游回流提醒**(ADR-0013):Gearbox 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事(\"查 open issues\")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。",
+  "> 本 repo 无下游项目,Gearbox 的下游回流机制(ADR-0013)在此只作接收端:Gearbox 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。",
+  "B-3 节",
+);
+
+// Gate 命令 + 说明
+const gatePlaceholder = "<门禁命令,如: npx tsc --noEmit && npx vitest run>";
+const effectiveGate = gateCmd || gatePlaceholder;
+agents = mustReplace(
+  agents,
+  "```bash\nnode scripts/check-gearbox.js\n```",
+  "```bash\n" + effectiveGate + "\n```",
+  "Gate 命令",
+);
+agents = mustReplace(
+  agents,
+  `> 本 repo 是文档型模板(Gearbox 本体)，门禁不跑 vitest/tsc/lint，而是跑一个**结构自检脚本**：验证必需文件存在、\`CLAUDE.md\` 仍是 \`@AGENTS.md\` 空壳、关键章节锚点没被改名、不出现 \`HANDOFF\`、本 Gate 一节确实跑这个脚本（防止"CI 和 AGENTS.md 各跑各的"的契约漂移）。`,
+  `> 门禁按项目实际填,能自动化断言"没坏"即可(理由见 ADR-0002)。测试型门禁(vitest/tsc/lint)的 L1/L2 分层映射见 ADR-0020。命令必须与 \`.github/workflows/ci.yml\` 字面一致(CI == Gate 契约)。`,
+  "Gate 说明",
+);
+
+// Where to find things → 通用化
+agents = mustReplace(
+  agents,
+  `- \`CONTEXT.md\` — 领域词汇表
+- \`docs/adr/\` — 架构决策记录
+- \`scripts/\` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写，ADR-0016/0017/0022）
+- <其他模块文档目录，如 docs/modules/>`,
+  `- \`CONTEXT.md\` — 领域词汇表
+- \`docs/adr/\` — 架构决策记录（0001–${pad4(0)} 占位,由安装脚本改写）
+- <其他模块文档目录，如 docs/modules/>`,
+  "Where to find things",
+);
+
+// 维护者替换注: 工具已代劳(或留占位符),原注在下游是废话 → 删
+agents = mustReplace(
+  agents,
+  "\n> **拷走本 Gearbox 时:把 `<维护者>` 换成你(或你的团队)的名字。** 见 ADR-0006。\n",
+  "\n",
+  "维护者注",
+);
+
+// Division of labor: 去 Gearbox 专属措辞
+agents = mustReplace(
+  agents,
+  "分工是项目属性，模板不预设（ADR-0008）。拷走时三选一：",
+  "分工是项目属性，模板不预设（ADR-0008）。三选一：",
+  "Division 导语",
+);
+agents = mustReplace(
+  agents,
+  "3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-gearbox.js`）。",
+  "3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破门禁）。",
+  "Division 第 3 项",
+);
+
+// <维护者> 替换(可选)
+if (maintainer) agents = agents.replaceAll("<维护者>", maintainer);
+
+// ============== 2. docs/adr/ 全量拷贝 + hash 戳记 ==============
+
+const adrFiles = readdirSync(GEARBOX_ADR_DIR)
+  .filter((f) => /^\d{4}-.+\.md$/.test(f))
+  .sort();
+if (adrFiles.length === 0) die("上游 docs/adr/ 为空?");
+
+const lastNum = parseInt(adrFiles[adrFiles.length - 1].slice(0, 4), 10);
+
+// 补上 Where to find things 里的 ADR 范围(上面先占位,这里知道真实终号后改写)
+agents = agents.replace(
+  `（0001–${pad4(0)} 占位,由安装脚本改写）`,
+  `（0001–${pad4(lastNum)} 随 Gearbox 引入,${pad4(lastNum + 1)} 起为本项目自有）`,
+);
+
+mkdirSync(join(targetDir, "docs/adr"), { recursive: true });
+let stamped = 0;
+for (const f of adrFiles) {
+  let content = readFileSync(join(GEARBOX_ADR_DIR, f), "utf8");
+  // 溯源行 + hash 戳记(ADR-0021 契约: sha256 前 12 位)。已带溯源字段的不重复加。
+  if (!/- 溯源:/.test(content.split("\n").slice(0, 15).join("\n"))) {
+    const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
+    const num = f.slice(0, 4);
+    const provenanceLine = `- 溯源: 拷自 [gearbox ADR-${num}](${GEARBOX_GITHUB_BASE}/${f})（gearbox-install 初始化,上游 sha256:${hash}）`;
+    const lines = content.split("\n");
+    let insertAt = 1;
+    for (let i = 0; i < Math.min(lines.length, 8); i++) {
+      if (/^- Date:/.test(lines[i])) {
+        insertAt = i + 1;
+        break;
+      }
+    }
+    lines.splice(insertAt, 0, provenanceLine);
+    content = lines.join("\n");
+    stamped++;
+  }
+  writeFileSync(join(targetDir, "docs/adr", f), content);
+}
+
+// ============== 3. CONTEXT.md 变换 ==============
+
+let context = contextSrc;
+context = context.replace(
+  "# Domain context — Gearbox",
+  `# Domain context — ${projectName}`,
+);
+// 去 Dogfood 行(Gearbox 专属)
+context = context
+  .split("\n")
+  .filter((l) => !/^\| Dogfood \|/.test(l))
+  .join("\n");
+// gate 行去 check-gearbox 硬编码
+context = context.replace(
+  "收工前必须全绿的命令。本 repo 是 `node scripts/check-gearbox.js`",
+  "收工前必须全绿的命令。本 repo 的命令见 AGENTS.md Gate 节",
+);
+
+// ============== 4. CLAUDE.md + ci.yml ==============
+
+const claudeMd = "@AGENTS.md\n";
+
+const ciYml = `name: gate
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
+      # That sameness is the contract that lets CI enforce what agents promise.
+      - run: ${gateCmd || "echo '<填 Gate 命令,与 AGENTS.md Gate 节字面一致>' && exit 1"}
+`;
+
+// ============== 落盘 ==============
+
+writeFileSync(join(targetDir, "AGENTS.md"), agents);
+writeFileSync(join(targetDir, "CLAUDE.md"), claudeMd);
+writeFileSync(join(targetDir, "CONTEXT.md"), context);
+mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
+writeFileSync(join(targetDir, ".github/workflows/ci.yml"), ciYml);
+
+// git init(无 .git 时)
+let gitInited = false;
+if (!existsSync(join(targetDir, ".git"))) {
+  try {
+    execSync("git init -q", { cwd: targetDir });
+    gitInited = true;
+  } catch {
+    /* 没装 git 也不拦安装 */
+  }
+}
+
+// ============== 汇报 ==============
+
+console.log("");
+console.log(C.bold("⟳ gearbox-install"));
+console.log(`${C.dim("项目:")}    ${projectName}`);
+console.log(`${C.dim("目录:")}    ${targetDir}`);
+console.log(`${C.dim("上游:")}    ${GEARBOX_DIR}`);
+console.log("");
+console.log(`  ${C.green("✓")} AGENTS.md   ${C.dim(`(维护者: ${maintainer || "<维护者> 占位"}; Gate: ${gateCmd || "占位"})`)}`);
+console.log(`  ${C.green("✓")} CLAUDE.md   ${C.dim("(@AGENTS.md 空壳契约)")}`);
+console.log(`  ${C.green("✓")} CONTEXT.md  ${C.dim("(协议词条随拷)")}`);
+console.log(`  ${C.green("✓")} docs/adr/   ${C.dim(`(${adrFiles.length} 个上游 ADR, ${stamped} 个已加 hash 戳记 ADR-0021)`)}`);
+console.log(`  ${C.green("✓")} ci.yml      ${C.dim(gateCmd ? "(与 Gate 节同命令)" : "(占位命令, 故意红——填 Gate 前 CI 不该绿)")}`);
+if (gitInited) console.log(`  ${C.green("✓")} git init`);
+console.log("");
+console.log(C.bold("下一步:"));
+let step = 1;
+const placeholderHint =
+  "(简介 / Hard rules / Tech stack" +
+  (maintainer ? "" : " / <维护者>") +
+  (gateCmd ? ")" : " / Gate 命令,ci.yml 同步)");
+console.log(`  ${step++}. 填占位符: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
+console.log(`  ${step++}. 首个自有决策写 ${C.cyan(`docs/adr/${pad4(lastNum + 1)}-*.md`)} ${C.dim("(0001 是模板)")}`);
+console.log(`  ${step++}. 加入上游下游清单: ${C.cyan("~/Github/gearbox/DOWNSTREAM.md")} ${C.dim("「已接入项目」加一行(入清单三条件见该文件)——不加就收不到回流提醒")}`);
+console.log(`  ${step++}. 首 commit + push, 之后可用 ${C.cyan("gearbox-version")} 查同步状态`);
+console.log("");
