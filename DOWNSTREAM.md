@@ -14,7 +14,7 @@
 |---|---|---|---|
 | [`real-stanyan/dryrun`](https://github.com/real-stanyan/dryrun) | 2026-07-18 | ADR-0013(自有, subagent routing) | 已回流 Gearbox 0012(= dryrun 0012)+ 0011 §5.1(= dryrun 0013);0013(B-3)不适用(dryrun 无下游);见 [dryrun#38](https://github.com/real-stanyan/dryrun/issues/38) + [dryrun#40](https://github.com/real-stanyan/dryrun/pull/40) |
 | [`real-stanyan/mandys_bubble_tea_admin_app`](https://github.com/real-stanyan/mandys_bubble_tea_admin_app) | 2026-07-18 | ADR-0011(自有, native-swiftui) | 缺 Gearbox 0011+0012;回流提醒已开 → [mandys_app#1](https://github.com/real-stanyan/mandys_bubble_tea_admin_app/issues/1) |
-| [`real-stanyan/Blackbox`](https://github.com/real-stanyan/Blackbox) | 2026-07-19 | Gearbox 0001–0013 全量 + ADR-0014(自有, tsc gate) | 接入即全量同步,无欠账 |
+| [`real-stanyan/Blackbox`](https://github.com/real-stanyan/Blackbox) | 2026-07-19 | **Gearbox 0001–0020 全量**(0014–0020 重编号为本地 0015–0021)+ ADR-0014(自有, tsc gate) | 2026-07-19 [Blackbox#5](https://github.com/real-stanyan/Blackbox/pull/5) 回流(gearbox-update 首次实战);AGENTS.md 四项已回流(改名/0018/0019/0020);回流 issue #1–#4 已关 |
 
 ## 维护
 
