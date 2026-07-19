@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# gearbox-version — 查下游项目同步到了 Gearbox 的哪些 ADR
+#
+# 用法: 在任何下游 repo 根目录跑 `gearbox-version`
+#       (建议 symlink 到 PATH: ln -sf ~/Github/gearbox/scripts/gearbox-version ~/.local/bin/)
+#
+# 算法 (ADR-0016, 溯源优先——取代旧 scaffold-version 的纯文件名编号对比):
+# 上游 ADR-NNNN 视为「已同步」当且仅当:
+#   a) 下游存在**同 slug** 的 ADR 文件 (开局拷贝, 编号可以不同), 或
+#   b) 下游任一 ADR 文本引用了上游该编号:
+#      - 文字引用: "scaffold ADR-NNNN" / "Gearbox ADR-NNNN" (大小写不敏感)
+#      - URL 引用: agents-md-scaffold 或 gearbox repo 的 adr/NNNN- 链接
+# 这消掉旧脚本的已知误报: 下游自有 ADR 占了同号 (如 dryrun 0011 =
+# puppeteer ≠ 上游 0011 = subagent-system) 不再被当成"已同步"。
+#
+# 诚实边界:
+# - 下游「已评估并拒绝回流」(关 issue 声明不采纳) 本脚本看不见, 仍报"未同步"。
+# - 权威状态以上游 DOWNSTREAM.md 的「当前同步到」列为准, 本脚本只是本地速查。
+#
+# 不依赖: 纯 bash + grep + ls。只读, 不写任何文件。
+
+set -euo pipefail
+
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+DIM=$'\033[2m'
+RESET=$'\033[0m'
+
+GEARBOX_DIR="${GEARBOX_DIR:-$HOME/Github/gearbox}"
+UPSTREAM_ADR_DIR="$GEARBOX_DIR/docs/adr"
+
+if [[ ! -d "$UPSTREAM_ADR_DIR" ]]; then
+  echo "${RED}✗ 找不到 Gearbox ADR 目录: $UPSTREAM_ADR_DIR${RESET}"
+  echo "  设 GEARBOX_DIR 环境变量改路径, 或确认 Gearbox 在 ~/Github/gearbox/"
+  exit 1
+fi
+
+DOWNSTREAM_ADR_DIR="docs/adr"
+if [[ ! -d "$DOWNSTREAM_ADR_DIR" ]]; then
+  echo "${RED}✗ 当前目录没有 docs/adr/——请在下游 repo 根目录跑本命令${RESET}"
+  exit 1
+fi
+
+REPO_NAME=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]||; s|\.git$||' || basename "$PWD")
+[[ -z "$REPO_NAME" ]] && REPO_NAME=$(basename "$PWD")
+
+echo ""
+echo "${DIM}repo:${RESET}     $REPO_NAME"
+echo "${DIM}上游:${RESET}     $GEARBOX_DIR"
+echo ""
+
+missing_count=0
+synced_count=0
+
+for upstream_file in "$UPSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-*.md; do
+  base=$(basename "$upstream_file" .md)
+  num=${base:0:4}
+  slug=${base:5}
+
+  # a) 同 slug 拷贝 (下游编号可不同)
+  copy_match=$(ls "$DOWNSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-"$slug".md 2>/dev/null | head -1 || true)
+
+  # b) 溯源引用: 文字 "scaffold|gearbox ADR-NNNN" 或 repo URL 的 adr/NNNN-
+  ref_match=$(grep -lriE "((scaffold|gearbox)[[:space:]]+ADR-${num})|((agents-md-scaffold|gearbox)/blob/[^ )]*adr/${num}-)" \
+    "$DOWNSTREAM_ADR_DIR" 2>/dev/null | head -1 || true)
+
+  if [[ -n "$copy_match" ]]; then
+    echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(拷贝: $(basename "$copy_match"))${RESET}"
+    synced_count=$((synced_count + 1))
+  elif [[ -n "$ref_match" ]]; then
+    echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(回流: $(basename "$ref_match"))${RESET}"
+    synced_count=$((synced_count + 1))
+  else
+    echo "  ${YELLOW}✖ ADR-${num}${RESET} $slug"
+    missing_count=$((missing_count + 1))
+  fi
+done
+
+echo ""
+if [[ "$missing_count" -eq 0 ]]; then
+  echo "${DIM}状态:${RESET}     ${GREEN}✅ 全同步 (${synced_count} 项)${RESET}"
+else
+  echo "${DIM}状态:${RESET}     ${YELLOW}⚠️  ${missing_count} 项未同步${RESET} ${DIM}(已同步 ${synced_count})${RESET}"
+  echo ""
+  echo "${DIM}注: 「未同步」含下游已评估并拒绝回流的情况 (脚本看不见 issue 结论)。${RESET}"
+  echo "${DIM}    权威状态以上游 DOWNSTREAM.md 为准。回流流程见 Gearbox ADR-0013 (B-3)。${RESET}"
+fi
+echo ""
