@@ -1,7 +1,7 @@
 # ADR-0006: 协议变更分级授权——L1(Hard rules/Gate/Tech stack)需人同意,L2 自治
 
 - Date: 2026-07-17
-- Status: accepted
+- Status: partially superseded by ADR-0012(L1/L2 分层本身仍有效;但"新增协议级内容怎么归类"由 ADR-0012 补齐判据——机制引用优先)
 - 溯源:本决策源自 date-cli 路 A 实验(原 date-cli ADR-0009,经 Stan 拍板),在真实多 agent 协作中验证后回流到 scaffold
 
 ## Context
