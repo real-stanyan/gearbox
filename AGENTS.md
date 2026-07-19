@@ -92,6 +92,9 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 | 新增纯说明文档(如"如何贡献"),**不引用** 任何协议机制 | L2 | ADR-0012 |
 | 改现有协议文件(Hard rules / Gate / Tech stack / Working agreement 内容) | **L1** | ADR-0006 |
 | 改索引(Where to find things) | L2 | ADR-0005 |
+| CONTEXT.md 词条**定义**既有机制(仅改 CONTEXT.md + 注明出处 ADR + 不新增义务/不改流程边界,三要件缺一不可) | L2 | ADR-0019 |
+
+**定义豁免**(ADR-0019):判据抓的是**立法**(新增/修改机制语义),不是**描述**(把已立的法写进词汇表)。三要件任一不满足或拿不准 → 按 L1,不许自行豁免;借定义之名改语义 = 违规,revert + 重开 issue。
 
 > 为什么严:agent 容易用"可选+纯新增"当 L2 通道扩张协议边界(参见 PR #21 复盘——subagent-system 引用 L1/L2 却 L2 self-merge)。本判据把这条路堵掉。
 
