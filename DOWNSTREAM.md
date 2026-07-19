@@ -21,7 +21,7 @@
 - **新增项目接入时**:PR 引入协议 + 手动在本文件加一行
 - **回流 issue merge 后**:更新对应行的"当前同步到"列
 - **项目废弃**:保留行但备注"已归档,不再回流"
-- **本地速查**:在下游 repo 根目录跑 `~/Github/gearbox/scripts/gearbox-version`(溯源优先判定,ADR-0016)。速查非权威——权威是本文件;下游"已评估拒绝回流"脚本看不见
+- **本地速查**:在下游 repo 根目录跑 `~/Github/gearbox/scripts/gearbox-version`(溯源优先判定 ADR-0016 + hash 漂移检测 ADR-0021)。速查非权威——权威是本文件;下游"已评估拒绝回流"脚本看不见;无戳记的 legacy 拷贝漂移不可检测
 - **批量回流**:在下游 repo 根目录跑 `~/Github/gearbox/scripts/gearbox-update`(ADR-0017)——拷缺失 ADR + 重编号 + push 待 review 分支。护栏:不碰 AGENTS.md、不自动 PR、不自动 merge;终点仍是下游 L1 流程
 
 ## 不入清单的项目(已核实)

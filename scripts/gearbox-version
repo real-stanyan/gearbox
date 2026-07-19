@@ -13,9 +13,15 @@
 # 这消掉旧脚本的已知误报: 下游自有 ADR 占了同号 (如 dryrun 0011 =
 # puppeteer ≠ 上游 0011 = subagent-system) 不再被当成"已同步"。
 #
+# hash 戳记 (ADR-0021): gearbox-update 拷贝时在溯源行记上游文件 sha256 前 12 位。
+# 本脚本对 slug 匹配的拷贝比对「记录的 hash vs 上游文件当前 hash」:
+#   一致 → ✅; 不一致 → ⚠️ 上游已修订 (drift); 无戳记 → ✅ 照旧, 汇总报 legacy 数。
+#
 # 诚实边界:
 # - 下游「已评估并拒绝回流」(关 issue 声明不采纳) 本脚本看不见, 仍报"未同步"。
 # - 权威状态以上游 DOWNSTREAM.md 的「当前同步到」列为准, 本脚本只是本地速查。
+# - hash 检测只报「上游变了」, 不判断变动是否值得回流; legacy 拷贝 (无戳记) 与
+#   溯源引用型同步 (非拷贝) 的漂移不可检测。
 #
 # 不依赖: 纯 bash + grep + ls。只读, 不写任何文件。
 
@@ -52,6 +58,8 @@ echo ""
 
 missing_count=0
 synced_count=0
+drift_count=0
+legacy_count=0
 
 for upstream_file in "$UPSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-*.md; do
   base=$(basename "$upstream_file" .md)
@@ -66,8 +74,22 @@ for upstream_file in "$UPSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-*.md; do
     "$DOWNSTREAM_ADR_DIR" 2>/dev/null | head -1 || true)
 
   if [[ -n "$copy_match" ]]; then
-    echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(拷贝: $(basename "$copy_match"))${RESET}"
-    synced_count=$((synced_count + 1))
+    # hash 戳记比对 (ADR-0021): 拷贝里记录的上游 hash vs 上游文件当前 hash
+    recorded_hash=$(grep -oE 'sha256:[0-9a-f]{12}' "$copy_match" 2>/dev/null | head -1 | cut -d: -f2 || true)
+    if [[ -n "$recorded_hash" ]]; then
+      current_hash=$(shasum -a 256 "$upstream_file" | cut -c1-12)
+      if [[ "$recorded_hash" == "$current_hash" ]]; then
+        echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(拷贝: $(basename "$copy_match"))${RESET}"
+        synced_count=$((synced_count + 1))
+      else
+        echo "  ${YELLOW}⚠️  ADR-${num}${RESET} $slug ${YELLOW}上游已修订${RESET} ${DIM}(拷贝: $(basename "$copy_match"), 人工 diff 或重拷)${RESET}"
+        drift_count=$((drift_count + 1))
+      fi
+    else
+      echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(拷贝: $(basename "$copy_match"), 无戳记)${RESET}"
+      synced_count=$((synced_count + 1))
+      legacy_count=$((legacy_count + 1))
+    fi
   elif [[ -n "$ref_match" ]]; then
     echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(回流: $(basename "$ref_match"))${RESET}"
     synced_count=$((synced_count + 1))
@@ -78,12 +100,15 @@ for upstream_file in "$UPSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-*.md; do
 done
 
 echo ""
-if [[ "$missing_count" -eq 0 ]]; then
+if [[ "$missing_count" -eq 0 && "$drift_count" -eq 0 ]]; then
   echo "${DIM}状态:${RESET}     ${GREEN}✅ 全同步 (${synced_count} 项)${RESET}"
 else
-  echo "${DIM}状态:${RESET}     ${YELLOW}⚠️  ${missing_count} 项未同步${RESET} ${DIM}(已同步 ${synced_count})${RESET}"
+  echo "${DIM}状态:${RESET}     ${YELLOW}⚠️  ${missing_count} 项未同步, ${drift_count} 项上游已修订${RESET} ${DIM}(已同步 ${synced_count})${RESET}"
   echo ""
   echo "${DIM}注: 「未同步」含下游已评估并拒绝回流的情况 (脚本看不见 issue 结论)。${RESET}"
   echo "${DIM}    权威状态以上游 DOWNSTREAM.md 为准。回流流程见 Gearbox ADR-0013 (B-3)。${RESET}"
+fi
+if [[ "$legacy_count" -gt 0 ]]; then
+  echo "${DIM}legacy:   ${legacy_count} 项拷贝无 hash 戳记, 漂移不可检测 (ADR-0021; 戳记随未来回流自然出现)${RESET}"
 fi
 echo ""

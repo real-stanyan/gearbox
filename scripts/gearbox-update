@@ -21,6 +21,7 @@
 // 对比 gearbox-version: version 只读报状态；update 写文件 + 开分支。
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
@@ -330,8 +331,14 @@ function transformAdrContent(gearboxAdr, newNum, renumberMap) {
   //    gearbox 那边的编号),不该被 replaceAdrRefs 改。所以这步在 a 之后。
   if (!gearboxAdr.hasProvenanceField) {
     const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
+    // hash 戳记(ADR-0021): 上游文件内容 sha256 前 12 位,gearbox-version 用它检测
+    // 拷贝后的上游漂移。格式 `sha256:[0-9a-f]{12}` 是两工具间的契约。
+    const upstreamHash = createHash("sha256")
+      .update(gearboxAdr.content)
+      .digest("hex")
+      .slice(0, 12);
     // 用零宽空格把 "gearbox ADR-0011" 拆开,防 replaceAdrRefs 误伤(实际 a 已跑完,这里只是防御)
-    const provenanceLine = `- 溯源: 回流自 [gearbox ADR-${pad4(gearboxAdr.num)}](${gearboxUrl})（gearbox-update 工具同步）`;
+    const provenanceLine = `- 溯源: 回流自 [gearbox ADR-${pad4(gearboxAdr.num)}](${gearboxUrl})（gearbox-update 工具同步,上游 sha256:${upstreamHash}）`;
     const lines = content.split("\n");
     let insertAt = 1;
     for (let i = 0; i < Math.min(lines.length, 8); i++) {
