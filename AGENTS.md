@@ -1,4 +1,4 @@
-# AGENTS.md scaffold
+# Gearbox
 
 多 agent（Claude Code + Z Code 等）协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent 在同一个 repo 里轮流干活而不打架的人用。
 
@@ -69,7 +69,7 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 | **L1 严格层** | Hard rules / Gate 命令 / Tech stack / 本节自身 | issue + ADR + PR,**且必须 `<维护者>` 在会话或 PR comment 中明确同意后 agent 才能 merge** |
 | **L2 自治层** | Working agreement(除 Gate)/ 索引(Where to find things) | issue + ADR + PR,agent 可自主 merge |
 
-> **拷走本 scaffold 时:把 `<维护者>` 换成你(或你的团队)的名字。** 见 ADR-0006。
+> **拷走本 Gearbox 时:把 `<维护者>` 换成你(或你的团队)的名字。** 见 ADR-0006。
 
 「Gate 命令」的边界(ADR-0010):命令行本身与**放松/删除/改写门禁脚本现有断言** = L1;**新增收紧断言** = L2,随所属 PR 走。纯重构(行为不变)算 L2,举证责任在改的 agent。
 
@@ -93,15 +93,15 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 `<维护者>` 成为 L1 瓶颈,这个代价接受。
 
-**下游回流提醒**(ADR-0013):scaffold 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事("查 open issues")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。
+**下游回流提醒**(ADR-0013):Gearbox 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事("查 open issues")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。
 
 ### Gate（门禁 — 收工前必须全绿）
 
 ```bash
-node scripts/check-scaffold.js
+node scripts/check-gearbox.js
 ```
 
-> 本 repo 是文档型 scaffold，门禁不跑 vitest/tsc/lint，而是跑一个**结构自检脚本**：验证必需文件存在、`CLAUDE.md` 仍是 `@AGENTS.md` 空壳、关键章节锚点没被改名、不出现 `HANDOFF`、本 Gate 一节确实跑这个脚本（防止"CI 和 AGENTS.md 各跑各的"的契约漂移）。
+> 本 repo 是文档型模板(Gearbox 本体)，门禁不跑 vitest/tsc/lint，而是跑一个**结构自检脚本**：验证必需文件存在、`CLAUDE.md` 仍是 `@AGENTS.md` 空壳、关键章节锚点没被改名、不出现 `HANDOFF`、本 Gate 一节确实跑这个脚本（防止"CI 和 AGENTS.md 各跑各的"的契约漂移）。
 
 CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
@@ -118,7 +118,7 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 1. **填实**：哪类任务归哪个 agent。<未验证的候选示例：机械性批量修改、补测试 → Z Code；架构设计、难 bug → Claude Code>
 2. **不填**：默认规则 = **Task issue 认领制**——谁认领谁从头做到尾（见 While working），任务不按 agent 特长路由。
-3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-scaffold.js`）。
+3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-gearbox.js`）。
 
 ## Where to find things
 

@@ -1,11 +1,11 @@
 {
-  "name": "agents-md-scaffold",
+  "name": "gearbox",
   "version": "0.1.0",
   "private": true,
-  "description": "Single-source-of-truth AGENTS.md scaffold for multi-agent (Claude Code + Z Code) projects.",
+  "description": "Gearbox — single-source-of-truth AGENTS.md protocol for multi-agent (Claude Code + Z Code) projects.",
   "type": "module",
   "scripts": {
-    "test": "node scripts/check-scaffold.js"
+    "test": "node scripts/check-gearbox.js"
   },
   "license": "MIT"
 }

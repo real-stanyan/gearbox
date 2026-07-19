@@ -16,4 +16,4 @@ jobs:
       # No dependencies — the self-check uses node:fs only, so skip npm ci.
       # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
       # That sameness is the contract that lets CI enforce what agents promise.
-      - run: node scripts/check-scaffold.js
+      - run: node scripts/check-gearbox.js
