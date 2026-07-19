@@ -12,8 +12,8 @@
 
 | repo | 接入时间 | 当前同步到 | 回流备注 |
 |---|---|---|---|
-| [`real-stanyan/dryrun`](https://github.com/real-stanyan/dryrun) | 2026-07-18 | ADR-0011(自有, puppeteer) | 缺 scaffold 的 0011(subagent-system)+ 0012(L1/L2 边界判据) |
-| [`real-stanyan/mandys_bubble_tea_admin_app`](https://github.com/real-stanyan/mandys_bubble_tea_admin_app) | 2026-07-18 | ADR-0011(同步自 scaffold) | 缺 scaffold 的 0012(L1/L2 边界判据) |
+| [`real-stanyan/dryrun`](https://github.com/real-stanyan/dryrun) | 2026-07-18 | ADR-0011(自有, puppeteer) | 缺 scaffold 0011+0012;回流提醒已开 → [dryrun#38](https://github.com/real-stanyan/dryrun/issues/38) |
+| [`real-stanyan/mandys_bubble_tea_admin_app`](https://github.com/real-stanyan/mandys_bubble_tea_admin_app) | 2026-07-18 | ADR-0011(自有, native-swiftui) | 缺 scaffold 0011+0012;回流提醒已开 → [mandys_app#1](https://github.com/real-stanyan/mandys_bubble_tea_admin_app/issues/1) |
 
 ## 维护
 
