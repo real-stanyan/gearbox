@@ -1,7 +1,7 @@
 # ADR-0010: 门禁脚本断言分层——收紧 L2,放松/删除/改写 L1
 
 - Date: 2026-07-17
-- Status: accepted
+- Status: accepted, 测试型门禁的映射见 ADR-0020(本 ADR 判据只覆盖结构自检型)
 - 修订对象:ADR-0006(细化其 L1 表中「Gate 命令」的边界,不推翻分级本身)
 
 ## Context
