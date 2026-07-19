@@ -7,7 +7,7 @@
 
 ## Tech stack
 
-- Node.js（仅用于跑结构自检脚本，无运行时依赖）
+- Node.js（结构自检脚本 + `scripts/gearbox-update` 下游回流工具，无运行时依赖，ADR-0017）
 - Bash（`scripts/gearbox-version` 下游同步速查，零依赖、只读，ADR-0016）
 - 纯 Markdown 文档（AGENTS.md / CONTEXT.md / ADR）
 
@@ -125,5 +125,5 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 - `CONTEXT.md` — 领域词汇表
 - `docs/adr/` — 架构决策记录
-- `scripts/` — 门禁自检（check-gearbox.js）+ 下游同步速查（gearbox-version）
+- `scripts/` — 门禁自检（check-gearbox.js）+ 下游同步工具（gearbox-version 读 / gearbox-update 写，ADR-0016/0017）
 - <其他模块文档目录，如 docs/modules/>
