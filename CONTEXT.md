@@ -13,6 +13,12 @@
 | Issue 三角色 | Issue/PR 在本协议中的三种用法，不重叠：**Task**（任务）/ **Memory**（交接记忆）/ **Protocol gap**（协议缺口） | 每个 issue 都该能归入其中一类，见 AGENTS.md |
 | 门禁（gate） | 收工前必须全绿的命令。本 repo 是 `node scripts/check-gearbox.js` | CI 跑同一套，红了不许 merge |
 | Dogfood | 本 repo 用自己规定的协议开发自己 | 是验证手段，不是目的 |
+| L1/L2 分级 | 协议变更的两级授权：**L1 严格层**（Hard rules / Gate / Tech stack / 「协议自身的变更」节自身）需维护者明确同意才能 merge；**L2 自治层**（Working agreement 其余部分 / 索引）agent 可自主 merge | ADR-0006；边界判据见 ADR-0012 |
+| 机制引用（判据） | 新增内容只要引用 L1/L2 / Hard rules / Working agreement 等协议机制（关键词或语义依赖），一律按 L1 处理 | ADR-0012「机制引用优先」；防「可选+纯新增」当 L2 通道扩权 |
+| Memory 五项格式 | 交接 comment 的最小合格格式：① 做到哪 ② 卡在哪 ③ 下一步 ④ 完成则关 issue ⑤ 判断依据/权衡（无决策写「无」） | ADR-0004；少一项不算合格交接 |
+| 终局收工 | 归档 / 确认无下一棒时的收工形态：可不开交接 issue，但必须在最后关闭的 issue 里显式声明「无下一棒」+ 理由 | ADR-0009；沉默的终局不算终局 |
+| 下游（downstream） | 拷走本 Gearbox 协议后独立演进的项目；权威清单在 `DOWNSTREAM.md`「已接入项目」 | 入清单三条件见 DOWNSTREAM.md |
+| 回流（backfill） | Gearbox 协议改进通过在下游 repo 开提醒 issue 传达给下游；是提醒不是强制，下游可拒（关 issue 注明理由） | ADR-0013（B-3 模板强制） |
 
 ## Key invariants
 

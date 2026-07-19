@@ -22,9 +22,8 @@
 -->
 
 - Affects downstream: <!-- no | yes -->
-- 下游回流 issue 链接(yes 时必填):
-  - dryrun:
-  - mandys_bubble_tea_admin_app:
+- 下游回流 issue 链接(yes 时必填, **按 `DOWNSTREAM.md`「已接入项目」清单逐项列出**, 一项一行):
+  - <repo>: <回流 issue 链接>
 
 ## Gate
 
