@@ -87,6 +87,14 @@ if (existsSync(join(root, "AGENTS.md"))) {
     agents.includes("node scripts/check-gearbox.js"),
   );
 
+  // 6a. Hard-rule-by-designation (ADR-0018): the annotation making scattered
+  //     "Hard rule" markings L1-protected must survive — removing it silently
+  //     shrinks the L1 perimeter back to section-based fencing.
+  check(
+    "AGENTS.md must keep the hard-rule-by-designation annotation ('视同本节内容') in the Hard rules section (ADR-0018)",
+    agents.includes("视同本节内容"),
+  );
+
   // 6b. The "open an issue on protocol gap, no silent judgment" rule is a
   //     load-bearing protocol contract (ADR-0003), not stylistic preference.
   //     If an agent removes it, the self-repair loop silently dies. Assert the

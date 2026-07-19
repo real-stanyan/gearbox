@@ -15,6 +15,9 @@
 
 <不可违反的项目规则，每条一行。例：钱一律用 cents + BigInt；禁止向客户端暴露 SECRET_*。>
 
+> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(`scripts/check-gearbox.js` 是可执行的事实源)。协议正文中标注 **Hard rule** 的条款(如 B-3「无链接 = 不能 merge」,ADR-0013)**视同本节内容,受 L1 保护**:判据锚定 "Hard rule" 标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
+> 拷走本 Gearbox 时:删掉本注,把占位符换成你项目的硬规则。
+
 ## Working agreement (multi-agent)
 
 ### On starting a shift（开工三件事）
