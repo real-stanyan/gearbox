@@ -30,6 +30,10 @@ const requiredFiles = [
   "README.md",
   ".github/workflows/ci.yml",
   "docs/adr/0001-adr-template.md",
+  // B-3 carriers (ADR-0013): the downstream-backfill hard rule runs through
+  // these two files — if either disappears, the mechanism dies silently.
+  "DOWNSTREAM.md",
+  ".github/pull_request_template.md",
 ];
 for (const f of requiredFiles) {
   check(`missing required file: ${f}`, existsSync(join(root, f)));
@@ -100,6 +104,29 @@ if (existsSync(join(root, ".github/workflows/ci.yml"))) {
   check(
     ".github/workflows/ci.yml must run the same self-check as AGENTS.md's Gate (node scripts/check-scaffold.js)",
     readFile(".github/workflows/ci.yml").includes("node scripts/check-scaffold.js"),
+  );
+}
+
+// 7b. B-3 (ADR-0013) contract: the PR template must keep the mandatory
+//     "Affects downstream" field, AGENTS.md must keep the backfill hard rule,
+//     and DOWNSTREAM.md must keep its project-list section. Losing any of the
+//     three silently kills the downstream-backfill mechanism.
+if (existsSync(join(root, ".github/pull_request_template.md"))) {
+  check(
+    ".github/pull_request_template.md must keep the mandatory 'Affects downstream' field (ADR-0013)",
+    readFile(".github/pull_request_template.md").includes("Affects downstream"),
+  );
+}
+if (existsSync(join(root, "AGENTS.md"))) {
+  check(
+    "AGENTS.md must keep the downstream-backfill rule referencing 'Affects downstream' (ADR-0013)",
+    readFile("AGENTS.md").includes("Affects downstream"),
+  );
+}
+if (existsSync(join(root, "DOWNSTREAM.md"))) {
+  check(
+    "DOWNSTREAM.md must keep its '## 已接入项目' section (the list the B-3 hard rule iterates over)",
+    readFile("DOWNSTREAM.md").includes("## 已接入项目"),
   );
 }
 

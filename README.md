@@ -9,8 +9,9 @@ cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} 
 
 然后：
 1. 填 `AGENTS.md` 里所有 `<占位符>`
-2. 按项目实际调整 `.github/workflows/ci.yml` 的命令
-3. 首个架构决策写进 `docs/adr/`（可参考 0001 模板）
+2. 按项目实际调整 `.github/workflows/ci.yml` 的命令——它默认跑 `node scripts/check-scaffold.js`,但 `scripts/` 是 scaffold 自身的门禁、**不随拷**;不换命令,新项目 CI 开局即红
+3. **删掉或改写 `.github/pull_request_template.md`**——它是 scaffold 专属的 B-3 回流载体(ADR-0013),引用的是 scaffold 自己的下游清单;你的项目没有下游就删,有下游就改成你自己的
+4. 首个架构决策写进 `docs/adr/`（可参考 0001 模板）
 
 ## 架构（为什么长这样）
 
@@ -26,7 +27,7 @@ cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} 
 
 ## 验证过的实践（date-cli 实验 + scaffold 自食其力）
 
-这套协议不是空想,在 [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli)（private）里跑过 **4 轮多 agent 协作验证**（Z Code 开局 + Claude Code 接力 3 轮,完整 git log / issues / PR / ADR 可查）,之后又在**本 repo 自身**用同一套协议跑了第 5 轮（自食其力:用协议维护协议）。长出的机制全部落成 ADR:
+这套协议不是空想,在 [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli)（private）里跑过 **4 轮多 agent 协作验证**（Z Code 开局 + Claude Code 接力 3 轮,完整 git log / issues / PR / ADR 可查）,之后又在**本 repo 自身**用同一套协议跑了第 5、6 轮（自食其力:用协议维护协议）。长出的机制全部落成 ADR:
 
 | 机制 | ADR | 解决的问题 | 出处 |
 |---|---|---|---|
@@ -37,11 +38,15 @@ cp -r ~/Github/agents-md-scaffold/{AGENTS.md,CLAUDE.md,CONTEXT.md,docs,.github} 
 | 分工占位符显式化 | 0008 | 分工是项目属性;无约定时兜底 = Task issue 认领制 | 第 5 轮 |
 | 终局收工豁免 | 0009 | 「违规收工」和「工作到头」分得开;沉默的终局不算终局 | 第 5 轮 |
 | 门禁断言分层 | 0010 | 收紧门禁 L2 零摩擦;放松/删除 L1 需人同意 | 第 5 轮 |
+| Subagent 模板与路由 | 0011 | 主 agent 派活缺统一模板;下游可按需回流 | 第 6 轮 |
+| L1/L2 边界判据(机制引用优先) | 0012 | agent 用「可选+纯新增」当 L2 通道扩张协议边界(PR #21 复盘) | 第 6 轮 |
+| 下游回流提醒(B-3) | 0013 | scaffold 是模板非依赖,下游漏接协议改进无感知 | 第 6 轮 |
 
 **实验验证了什么成立、什么不成立:**
 
 - ✅ **成立的**:交接零口述、协议自我修复循环(开缺口 → 补进 AGENTS.md)、代码协作三棒无一处靠猜
 - ✅ **第 5 轮新增的**:协议能抓自身违规——上一棒没开交接 issue,下一棒按 On starting 撞空、开缺口 issue、长出 ADR-0009 边界条款,全程无人指路;L1 b-弱同意流程(维护者会话内说「同意」+ PR comment 留痕)首次实跑走通
+- ✅ **第 6 轮新增的**:协议抓越权(PR #21 agent 用 L2 self-merge 引入引用 L1/L2 的模板,复盘长出 0012 判据堵路)+ 回流机制自举闭环(0013 引入 B-3 的 PR 自己按 B-3 补开下游 issue,证据链完整)
 - 🔸 **部分成立的**:门禁拦事——纯函数区真拦,但 I/O 层和测试文件类型是持续暴露的盲区(打地鼠模式)
 - ❌ **未根治的**:门禁"全绿" ≠ "正确"——这是回归性保证的本质,无法用一份协议根治
 
