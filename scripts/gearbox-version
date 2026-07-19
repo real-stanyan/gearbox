@@ -17,6 +17,9 @@
 # 本脚本对 slug 匹配的拷贝比对「记录的 hash vs 上游文件当前 hash」:
 #   一致 → ✅; 不一致 → ⚠️ 上游已修订 (drift); 无戳记 → ✅ 照旧, 汇总报 legacy 数。
 #
+# 版本摘要 (ADR-0023): 上游最新 tag vs 下游 .gearbox-version 戳记, 输出一行
+# 「上游 vX / 本地 vY (落后 段位)」。摘要非事实源——明细(逐条 ADR + hash)才是。
+#
 # 诚实边界:
 # - 下游「已评估并拒绝回流」(关 issue 声明不采纳) 本脚本看不见, 仍报"未同步"。
 # - 权威状态以上游 DOWNSTREAM.md 的「当前同步到」列为准, 本脚本只是本地速查。
@@ -51,9 +54,40 @@ fi
 REPO_NAME=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]||; s|\.git$||' || basename "$PWD")
 [[ -z "$REPO_NAME" ]] && REPO_NAME=$(basename "$PWD")
 
+# 版本摘要 (ADR-0023): 上游最新 tag vs 本地 .gearbox-version 戳记
+semver_lag() {
+  # $1=本地 $2=上游; 输出差在哪一段。非法格式输出 "?"
+  local a=${1#v} b=${2#v}
+  if [[ ! "$a" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$b" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "?"
+    return
+  fi
+  local a1 a2 a3 b1 b2 b3
+  IFS=. read -r a1 a2 a3 <<< "$a"
+  IFS=. read -r b1 b2 b3 <<< "$b"
+  if [[ "$a1" -ne "$b1" ]]; then echo "major"
+  elif [[ "$a2" -ne "$b2" ]]; then echo "minor"
+  else echo "patch"; fi
+}
+
+# 取最大版本 tag(v:refname 按 semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
+upstream_version=$(git -C "$GEARBOX_DIR" tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1 || true)
+local_version=""
+[[ -f .gearbox-version ]] && local_version=$(head -1 .gearbox-version | tr -d '[:space:]')
+
 echo ""
 echo "${DIM}repo:${RESET}     $REPO_NAME"
 echo "${DIM}上游:${RESET}     $GEARBOX_DIR"
+if [[ -n "$upstream_version" ]]; then
+  if [[ -z "$local_version" ]]; then
+    echo "${DIM}版本:${RESET}     上游 $upstream_version / 本地 ${DIM}无戳记 (下次 gearbox-update 回流自动写入, ADR-0023)${RESET}"
+  elif [[ "$local_version" == "$upstream_version" ]]; then
+    echo "${DIM}版本:${RESET}     ${GREEN}上游 $upstream_version / 本地 $local_version (一致)${RESET}"
+  else
+    lag=$(semver_lag "$local_version" "$upstream_version")
+    echo "${DIM}版本:${RESET}     ${YELLOW}上游 $upstream_version / 本地 $local_version (落后 $lag)${RESET}"
+  fi
+fi
 echo ""
 
 missing_count=0

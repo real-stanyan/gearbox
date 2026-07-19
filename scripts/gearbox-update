@@ -8,8 +8,9 @@
 //   2. 撞号时自动重编号（如下游 0011 已被占用 → gearbox 0011 拷成下游 0014）
 //   3. 全文替换 ADR-XXXX 交叉引用
 //   4. 同步 supersede 关系（gearbox 0012 → 下游 0006 status 改 partially superseded）
-//   5. git add + commit + push 到新分支 docs/gearbox-backfill-{date}
-//   6. 输出 gearbox-update-report.md 提示用户手改 AGENTS.md（脚本不碰 AGENTS.md）
+//   5. 更新 .gearbox-version 戳记为上游最新 tag（ADR-0023）
+//   6. git add + commit + push 到新分支 docs/gearbox-backfill-{date}
+//   7. 输出 gearbox-update-report.md 提示用户手改 AGENTS.md（脚本不碰 AGENTS.md）
 //
 // 不做什么:
 //   - 不改下游 AGENTS.md（L1 文件，只报告）
@@ -404,6 +405,21 @@ const AGENTS_MD_IMPACT = {
   15: null, // rename-to-gearbox——纯称呼,下游改不改自便(有单独回流提醒 issue)
   16: null, // gearbox-version 工具入库——上游侧工具,不动下游 AGENTS.md
   17: null, // gearbox-update 工具入库——同上
+  18: {
+    section: "## Hard rules",
+    note: "加「标注 Hard rule 的条款视同本节内容,受 L1 保护」注(判据锚定标注,不锚定章节)。参考 gearbox AGENTS.md Hard rules 注。",
+  },
+  19: {
+    section: "### 协议自身的变更",
+    note: "归类表加 CONTEXT.md 定义豁免行 + 「定义豁免」段(三要件)。参考 gearbox AGENTS.md 同名小节。",
+  },
+  20: {
+    section: "### 协议自身的变更",
+    note: "加「测试型门禁」段(配置层套上行 / 内容层按动机定级 / 为绿而删 = L1)。参考 gearbox AGENTS.md 同名小节。",
+  },
+  21: null, // hash 戳记漂移检测——工具层契约,不动下游 AGENTS.md
+  22: null, // gearbox-install 工具入库——上游侧工具
+  23: null, // 协议版本号——上游侧机制;下游只持有 .gearbox-version 戳记,由本工具自动维护
 };
 
 function generateReport({
@@ -537,7 +553,7 @@ function generateReport({
 
 // ============== git 操作 ==============
 
-function gitOps(downDir, assignments, supersedeResult, renumberMap, branchName) {
+function gitOps(downDir, assignments, supersedeResult, renumberMap, branchName, upstreamVersion) {
   // 创建分支
   run(`git checkout -b ${branchName}`);
 
@@ -570,6 +586,17 @@ by gearbox-update tool. ${collisionNote}
 
 gearbox 0012 supersedes 0006,本 commit 把下游 0006 的 status 行
 同步为 partially superseded 状态。by gearbox-update tool。`;
+    runWithStdin(`git commit -F -`, commitMsg);
+  }
+
+  // .gearbox-version 戳记(ADR-0023): 回流完成即视为同步到上游当前版本
+  if (upstreamVersion) {
+    writeFileSync(join(downDir, ".gearbox-version"), upstreamVersion + "\n");
+    run("git add .gearbox-version");
+    const commitMsg = `chore: .gearbox-version → ${upstreamVersion}
+
+回流完成,版本戳记更新为上游最新 tag(gearbox ADR-0023)。
+by gearbox-update tool。`;
     runWithStdin(`git commit -F -`, commitMsg);
   }
 
@@ -701,6 +728,11 @@ function main() {
   const reportDate = new Date().toISOString().slice(0, 10);
   const branchName = `docs/gearbox-backfill-${reportDate}`;
 
+  // 上游最大版本 tag(ADR-0023 戳记用;semver 排序,无 tag 则跳过戳记)
+  const upstreamVersion =
+    (tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
+      .split("\n")[0] || null;
+
   stdout.write(C.bold(`git 操作(分支 ${branchName}):\n`));
   try {
     const { pushResult } = gitOps(
@@ -709,6 +741,7 @@ function main() {
       supersedeResult,
       renumberMap,
       branchName,
+      upstreamVersion,
     );
     for (const { action, newNum } of assignments) {
       stdout.write(
@@ -717,6 +750,15 @@ function main() {
     }
     if (supersedeResult && !supersedeResult.alreadyApplied) {
       stdout.write(`  ${C.green("✓ commit")} 0006 status 同步\n`);
+    }
+    if (upstreamVersion) {
+      stdout.write(
+        `  ${C.green("✓ commit")} .gearbox-version → ${upstreamVersion} ${C.dim("(ADR-0023 戳记)")}\n`,
+      );
+    } else {
+      stdout.write(
+        `  ${C.yellow("⚠")} .gearbox-version 未更新——上游无 tag\n`,
+      );
     }
     if (pushResult) {
       stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
