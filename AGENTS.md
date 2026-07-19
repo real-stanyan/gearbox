@@ -80,6 +80,17 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 - **协议变更比代码改动更重**:代码只在架构性决策时才要 ADR,协议变更一律要。
 - **人保留事后否决权**:revert 对应 PR + 重开 issue,即撤销该变更——即便当时没拦住。
 
+**L1/L2 边界判据**(ADR-0012,**机制引用优先**):新增内容只要**引用了 L1/L2 分级 / Hard rules / Working agreement 的机制**(无论是否"可选"、是否动现有文件),按 **L1** 处理。客观判据——文本中出现 `L1` / `L2` / `Hard rule` / `Working agreement` / `分级授权` 等机制关键词,或语义上依赖这些机制运转(如 subagent 路由依赖 L1/L2 决定派谁)。
+
+| 场景 | 归类 | 依据 |
+|---|---|---|
+| 新增模板/子系统,**引用** 协议机制 | **L1** | ADR-0012 |
+| 新增纯说明文档(如"如何贡献"),**不引用** 任何协议机制 | L2 | ADR-0012 |
+| 改现有协议文件(Hard rules / Gate / Tech stack / Working agreement 内容) | **L1** | ADR-0006 |
+| 改索引(Where to find things) | L2 | ADR-0005 |
+
+> 为什么严:agent 容易用"可选+纯新增"当 L2 通道扩张协议边界(参见 PR #21 复盘——subagent-system 引用 L1/L2 却 L2 self-merge)。本判据把这条路堵掉。
+
 L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 `<维护者>` 成为 L1 瓶颈,这个代价接受。
 
 ### Gate（门禁 — 收工前必须全绿）
