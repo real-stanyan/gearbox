@@ -164,7 +164,7 @@ agents = mustReplace(
   agents,
   "3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工",
   `3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
-4. 跑 \`npx @real-stanyan/gearbox version\` 自查协议版本 — 落后就 \`npx @real-stanyan/gearbox update\` 回流（pull 触发，ADR-0026/0028；本步是接收端向上游对齐，非上游推送。装了本地 Gearbox 亦可直接跑 \`gearbox-version\`/\`gearbox-update\`）`,
+4. 跑 \`npx gearbox-agents version\` 自查协议版本 — 落后就 \`npx gearbox-agents update\` 回流（pull 触发，ADR-0026/0028；本步是接收端向上游对齐，非上游推送。装了本地 Gearbox 亦可直接跑 \`gearbox-version\`/\`gearbox-update\`）`,
   "开工三件事自查步",
 );
 

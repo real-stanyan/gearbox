@@ -8,7 +8,7 @@
 
 ADR-0027 解决上游**数据**寻址(去哪找 ADR/tag),但留了**脚本分发**缺口:`gearbox-install`/`version`/`update` 脚本本身只住上游 `scripts/`,陌生人要先 clone gearbox + 把脚本弄上 PATH 才能跑。ADR-0026 注入下游开工第 4 步还硬编码 `~/Github/gearbox/scripts/`(维护者布局),对陌生人是错路径。
 
-维护者选定分发渠道 = **npm / npx**(会话决策):陌生人 `npx @real-stanyan/gearbox <cmd>` 零配置上手,有 node 即可,无需 clone / symlink / 配 PATH。
+维护者选定分发渠道 = **npm / npx**(会话决策):陌生人 `npx gearbox-agents <cmd>` 零配置上手,有 node 即可,无需 clone / symlink / 配 PATH。
 
 ## Decision
 
@@ -33,7 +33,7 @@ npm 剥掉 `.git`,包里 `git tag` 取不到。dispatcher 读 `package.json` 的
 
 ### 5. 版本耦合:npm version === 协议 git tag
 
-npm 包版本与协议 git tag(ADR-0023)**同一个号**。发布流程:release PR 里把 `package.json` version 改成本次目标版本;merge 后作者 agent 打同名 annotated tag(ADR-0023 原流程)+ **维护者跑 `npm publish`**。step-4 注入 / install 提示改用 `npx @real-stanyan/gearbox <cmd>`。
+npm 包版本与协议 git tag(ADR-0023)**同一个号**。发布流程:release PR 里把 `package.json` version 改成本次目标版本;merge 后作者 agent 打同名 annotated tag(ADR-0023 原流程)+ **维护者跑 `npm publish`**。step-4 注入 / install 提示改用 `npx gearbox-agents <cmd>`。
 
 ### 6. publish 是维护者动作(工具/agent 不代跑)
 
@@ -41,10 +41,10 @@ npm 包版本与协议 git tag(ADR-0023)**同一个号**。发布流程:release 
 
 ## Consequences
 
-- **陌生人零配置闭环**:`npx @real-stanyan/gearbox install`(铺骨架,上游=包快照)→ 开工 `npx @real-stanyan/gearbox version` 自查 → 落后 `npx ... update` 回流。无 clone、无 symlink、无 PATH 配置。ADR-0027 留的脚本分发缺口至此闭合。
+- **陌生人零配置闭环**:`npx gearbox-agents install`(铺骨架,上游=包快照)→ 开工 `npx gearbox-agents version` 自查 → 落后 `npx ... update` 回流。无 clone、无 symlink、无 PATH 配置。ADR-0027 留的脚本分发缺口至此闭合。
 - **两条分发并存**:① npx(陌生人,包快照作上游)② git-clone + 本地/远端寻址(维护者舰队 + 想追 git 的人)。维护者本地跑 `gearbox-version` 行为零变(GEARBOX_DIR 命中本地 git repo,不设 env override)。
 - **版本耦合的维护成本(诚实记录)**:`package.json` version 必须与 git tag 手动保持一致(release PR 改 package.json + merge 后打 tag)。漏改则 npx 报的上游版本与 tag 不符。用一个号(不是两套)把认知负担压到最小,代价是每次 release 多改一行 + 记得 publish。
 - **bash 依赖(诚实记录)**:npx version 在无 bash 的纯 Windows 环境不可用(install/update 可用)。可接受的降级,已文档化。
-- **包名待定**:`@real-stanyan/gearbox` 是占位,维护者 publish 前确认/改名(改则同步 dispatcher 帮助文本 + install step-4 注入 + README)。
+- **包名**:`gearbox-agents`(unscoped)。原拟 `gearbox` 被占(npm 上是个 DI 容器),`@real-stanyan/gearbox` scoped 亦可但维护者选 unscoped 短名。名字散在 4 处(package.json / dispatcher 帮助 / install step-4 注入 / README),改名要一起动。
 - **分级 / 版本**:纯工具/分发能力,不动 AGENTS.md 协议正文(ADR-0017「个人工具非协议改动」先例)→ **L2**,三件套照走。新增 npx 分发机制、向后兼容(git-clone 路径不变)→ **minor** → v1.1.0 之后为 **v1.2.0**。
 - **考虑过但未采纳**:curl|bash 引导脚本(否决——curl|bash 信任面 + 需自托管 URL,维护者选了 npm 标准渠道);把 version 改写成 node 做纯 node 包(否决——推翻 ADR-0016 且重写已验证 bash,shell-out 够用);npm 版本与协议版本解耦成两套号(否决——双号认知负担 > 手动同步一行的成本)。

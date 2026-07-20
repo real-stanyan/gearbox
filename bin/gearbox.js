@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // gearbox — npx dispatcher (ADR-0028).
 //
-// 让陌生人零配置用工具家族:`npx @real-stanyan/gearbox <install|version|update>`。
+// 让陌生人零配置用工具家族:`npx gearbox-agents <install|version|update>`。
 // npm 包自带上游快照(打包 AGENTS.md / CONTEXT.md / docs/adr/,见 package.json
 // "files"),dispatcher 把 GEARBOX_DIR 指向包根 → 三工具复用现有本地路径逻辑,
 // npx 路径根本不碰远端(ADR-0027 远端寻址是 git-clone 下游的兜底,非 npx 路径)。
@@ -42,7 +42,7 @@ if (!sub || sub === "-h" || sub === "--help") {
       "  install   在当前(或指定)目录铺 Gearbox 骨架\n" +
       "  version   查当前下游 repo 同步到上游哪个版本 / 哪些 ADR\n" +
       "  update    回流:拷上游缺失 ADR 到当前下游 repo\n\n" +
-      "例: npx @real-stanyan/gearbox install --maintainer you --gate \"npm test\"\n",
+      "例: npx gearbox-agents install --maintainer you --gate \"npm test\"\n",
   );
   exit(sub ? 0 : 1);
 }

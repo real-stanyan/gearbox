@@ -8,12 +8,12 @@
 
 ```bash
 # 在新项目目录里铺 Gearbox 骨架(占位、门禁、ADR 溯源+hash 戳记全自动)
-npx @real-stanyan/gearbox install --maintainer <你的名字> --gate "npx tsc --noEmit"
+npx gearbox-agents install --maintainer <你的名字> --gate "npx tsc --noEmit"
 # 三个参数都可省: 省了就留 <占位符>,ci.yml 放故意失败的占位命令
 
 # 之后随时查同步 / 回流上游协议更新(pull 触发,ADR-0026)
-npx @real-stanyan/gearbox version    # 查当前 repo 同步到上游哪个版本 / 哪些 ADR
-npx @real-stanyan/gearbox update     # 拷上游缺失 ADR 到当前 repo,产出待 review 分支
+npx gearbox-agents version    # 查当前 repo 同步到上游哪个版本 / 哪些 ADR
+npx gearbox-agents update     # 拷上游缺失 ADR 到当前 repo,产出待 review 分支
 ```
 
 > npx 路径:包自带上游快照,`version`/`update` 拿包快照作上游对比(ADR-0028)。
@@ -28,7 +28,7 @@ node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <你的名字>
 装完：
 1. 填 `AGENTS.md` 里剩余 `<占位符>`（`grep -n '<' AGENTS.md`）
 2. 首个自有架构决策写进 `docs/adr/`（编号接在拷入的上游 ADR 之后；0001 是模板）
-3. 开工三件事第 4 步跑 `npx @real-stanyan/gearbox version` 自查协议版本(pull 触发)
+3. 开工三件事第 4 步跑 `npx gearbox-agents version` 自查协议版本(pull 触发)
 
 ## 架构（为什么长这样）
 
