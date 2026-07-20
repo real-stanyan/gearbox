@@ -1,7 +1,7 @@
 # ADR-0013: 下游回流提醒机制——B-3 模板强制(scaffold 协议 PR 必填 Affects downstream)
 
 - Date: 2026-07-19
-- Status: accepted
+- Status: accepted（部分修订：ADR-0026 将触发从 push 降级为 pull，「无链接=不能 merge」硬门禁退役，`Affects downstream` 声明改为信息性；本 ADR 记录的动机与 scaffold 断联问题仍有效，只是解法从 push 改 pull）
 
 ## Context
 

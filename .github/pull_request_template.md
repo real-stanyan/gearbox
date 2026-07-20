@@ -9,21 +9,20 @@
 
 ## Affects downstream
 
-<!-- 必填 (ADR-0013)。二选一:
+<!-- 信息性声明 (ADR-0013 → ADR-0026 pull 模型)。二选一:
 
   - `no`  —— 本 PR 不影响下游项目 (如纯 Gearbox 内部文档、CI 配置、ADR 模板改动)
   - `yes` —— 本 PR 影响 downstream (协议级改动: Hard rules / Gate / Tech stack / Working agreement /
              索引 / 任何引用 L1/L2 分级或协议机制的新增内容, 见 ADR-0012 判据)
 
-若 `yes`: 必须给 DOWNSTREAM.md 清单里的每个项目各开一个回流 issue, 引用本 PR + 标 L1/L2,
-然后把链接附在下面。**无下游 issue 链接 = 本 PR 不能 merge (ADR-0013 硬规则)。**
+回流靠 pull: 下游开工跑 `gearbox-version` 自查、落后就 `gearbox-update` (ADR-0026)。
+本字段**不再阻塞 merge**——填 `yes` 无需逐下游开 issue。仅在判断影响面 + 帮维护者决定是否
+可选地对私有舰队 (`DOWNSTREAM.md` 已登记项目) 开告知 issue。
 
 若 `no`: 简要说明为什么不影响 (如 "纯 ADR 模板格式调整, 不改协议内容")。
 -->
 
-- Affects downstream: <!-- no | yes -->
-- 下游回流 issue 链接(yes 时必填, **按 `DOWNSTREAM.md`「已接入项目」清单逐项列出**, 一项一行):
-  - <repo>: <回流 issue 链接>
+- Affects downstream: <!-- no | yes + 一句影响面说明 -->
 
 ## Version bump
 

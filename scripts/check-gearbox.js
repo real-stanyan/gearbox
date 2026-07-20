@@ -115,25 +115,27 @@ if (existsSync(join(root, ".github/workflows/ci.yml"))) {
   );
 }
 
-// 7b. B-3 (ADR-0013) contract: the PR template must keep the mandatory
-//     "Affects downstream" field, AGENTS.md must keep the backfill hard rule,
-//     and DOWNSTREAM.md must keep its project-list section. Losing any of the
-//     three silently kills the downstream-backfill mechanism.
+// 7b. Downstream-backfill carriers (ADR-0013 → ADR-0026 pull model): the PR
+//     template must keep the 'Affects downstream' declaration field (now
+//     informational, no longer a merge gate), AGENTS.md must keep the
+//     downstream-backfill rule referencing it, and DOWNSTREAM.md must keep its
+//     project-list section (now an optional fleet dashboard, not a B-3 gate).
+//     These stay presence-checked so the carriers can't be silently deleted.
 if (existsSync(join(root, ".github/pull_request_template.md"))) {
   check(
-    ".github/pull_request_template.md must keep the mandatory 'Affects downstream' field (ADR-0013)",
+    ".github/pull_request_template.md must keep the 'Affects downstream' declaration field (ADR-0013, informational per ADR-0026)",
     readFile(".github/pull_request_template.md").includes("Affects downstream"),
   );
 }
 if (existsSync(join(root, "AGENTS.md"))) {
   check(
-    "AGENTS.md must keep the downstream-backfill rule referencing 'Affects downstream' (ADR-0013)",
+    "AGENTS.md must keep the downstream-backfill rule referencing 'Affects downstream' (ADR-0013/0026)",
     readFile("AGENTS.md").includes("Affects downstream"),
   );
 }
 if (existsSync(join(root, "DOWNSTREAM.md"))) {
   check(
-    "DOWNSTREAM.md must keep its '## 已接入项目' section (the list the B-3 hard rule iterates over)",
+    "DOWNSTREAM.md must keep its '## 已接入项目' section (optional fleet dashboard, ADR-0026)",
     readFile("DOWNSTREAM.md").includes("## 已接入项目"),
   );
 }
