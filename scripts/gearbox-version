@@ -101,8 +101,11 @@ semver_lag() {
 }
 
 # 取最大版本 tag(v:refname 按 semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
-# 远端缓存是浅克隆、不保证带全历史 tag,故远端用 ls-remote 直接问上游 (ADR-0027)
-if [[ "$UPSTREAM_IS_REMOTE" -eq 1 ]]; then
+# 优先级: env override(npx 包传 package.json 版本, ADR-0028) > 远端 ls-remote(ADR-0027,
+# 浅克隆不保证带全 tag) > 本地 git tag。
+if [[ -n "${GEARBOX_UPSTREAM_VERSION:-}" ]]; then
+  upstream_version="$GEARBOX_UPSTREAM_VERSION"
+elif [[ "$UPSTREAM_IS_REMOTE" -eq 1 ]]; then
   upstream_version=$(git ls-remote --tags --sort=-v:refname "$UPSTREAM_URL" 2>/dev/null \
     | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
 else

@@ -2,17 +2,33 @@
 
 > 前身名 `agents-md-scaffold`,2026-07-19 改名 **Gearbox**(ADR-0015)。旧 GitHub URL 自动跳转。
 
-新项目开局一条命令（ADR-0022,自动完成占位、门禁替换、B-3 接收端化、ADR 溯源+hash 戳记）：
+## 快速上手（零配置,ADR-0028）
+
+有 node 即可,无需 clone / 配 PATH：
+
+```bash
+# 在新项目目录里铺 Gearbox 骨架(占位、门禁、ADR 溯源+hash 戳记全自动)
+npx @real-stanyan/gearbox install --maintainer <你的名字> --gate "npx tsc --noEmit"
+# 三个参数都可省: 省了就留 <占位符>,ci.yml 放故意失败的占位命令
+
+# 之后随时查同步 / 回流上游协议更新(pull 触发,ADR-0026)
+npx @real-stanyan/gearbox version    # 查当前 repo 同步到上游哪个版本 / 哪些 ADR
+npx @real-stanyan/gearbox update     # 拷上游缺失 ADR 到当前 repo,产出待 review 分支
+```
+
+> npx 路径:包自带上游快照,`version`/`update` 拿包快照作上游对比(ADR-0028)。
+> `version` 需环境有 bash(mac/linux 天然;Windows 用 Git Bash / WSL);`install`/`update` 是 node,跨平台。
+
+**维护者 / 贡献者**(改 Gearbox 本身)用本地 clone：
 
 ```bash
 node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <你的名字> --gate "npx tsc --noEmit"
-# 三个参数都可省: 省了就留 <占位符>,ci.yml 放故意失败的占位命令
 ```
 
-然后：
+装完：
 1. 填 `AGENTS.md` 里剩余 `<占位符>`（`grep -n '<' AGENTS.md`）
 2. 首个自有架构决策写进 `docs/adr/`（编号接在拷入的上游 ADR 之后；0001 是模板）
-3. 想收上游协议更新提醒,在本 repo `DOWNSTREAM.md`「已接入项目」加一行（入清单三条件见该文件）
+3. 开工三件事第 4 步跑 `npx @real-stanyan/gearbox version` 自查协议版本(pull 触发)
 
 ## 架构（为什么长这样）
 

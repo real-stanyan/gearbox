@@ -164,7 +164,7 @@ agents = mustReplace(
   agents,
   "3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工",
   `3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
-4. 跑 \`~/Github/gearbox/scripts/gearbox-version\`（上游路径记在 \`.gearbox-version\`）自查协议版本 — 落后就 \`~/Github/gearbox/scripts/gearbox-update\` 回流（pull 触发，ADR-0026；本步是接收端向上游对齐，非上游推送）`,
+4. 跑 \`npx @real-stanyan/gearbox version\` 自查协议版本 — 落后就 \`npx @real-stanyan/gearbox update\` 回流（pull 触发，ADR-0026/0028；本步是接收端向上游对齐，非上游推送。装了本地 Gearbox 亦可直接跑 \`gearbox-version\`/\`gearbox-update\`）`,
   "开工三件事自查步",
 );
 
@@ -320,26 +320,29 @@ mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
 writeFileSync(join(targetDir, ".github/workflows/ci.yml"), ciYml);
 
 // .gearbox-version 戳记(ADR-0023): 记录接入时的上游版本,gearbox-version 读取对比
-let upstreamVersion = null;
-try {
-  // 取最大版本 tag(semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
-  upstreamVersion =
-    execSync("git tag -l 'v*' --sort=-v:refname", {
-      cwd: GEARBOX_DIR,
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "pipe"],
-    })
-      .trim()
-      .split("\n")[0] || null;
-} catch {
-  /* 上游无 tag(基线未打)→ 不写戳记,汇报里警告 */
+// 优先级: env override(npx 包传 package.json 版本, ADR-0028) > 本地 git tag。
+let upstreamVersion = env.GEARBOX_UPSTREAM_VERSION || null;
+if (!upstreamVersion) {
+  try {
+    // 取最大版本 tag(semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
+    upstreamVersion =
+      execSync("git tag -l 'v*' --sort=-v:refname", {
+        cwd: GEARBOX_DIR,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+        .trim()
+        .split("\n")[0] || null;
+  } catch {
+    /* 上游无 tag(基线未打)→ 不写戳记,汇报里警告 */
+  }
 }
 if (upstreamVersion)
   writeFileSync(join(targetDir, ".gearbox-version"), upstreamVersion + "\n");
 
 // .gearbox-upstream config(ADR-0027): 上游 git URL,供下游在无本地 GEARBOX_DIR 时
-// 远端寻址(陌生 fork 的 pull)。取上游 clone 的 origin URL;取不到则跳过(维护者
-// 本地舰队有 GEARBOX_DIR 兜底,无此文件也能跑)。
+// 远端寻址(陌生 fork 的 pull)。优先取上游 clone 的 origin URL;npx 场景(包非 git
+// repo)回退读 package.json 的 repository.url;都取不到则跳过。
 let upstreamUrl = null;
 try {
   upstreamUrl = execSync("git remote get-url origin", {
@@ -348,7 +351,15 @@ try {
     stdio: ["pipe", "pipe", "pipe"],
   }).trim() || null;
 } catch {
-  /* 上游 clone 无 origin remote → 跳过,下游靠本地 GEARBOX_DIR */
+  /* 上游 clone 无 origin remote(如 npx 包)→ 试 package.json */
+}
+if (!upstreamUrl) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(GEARBOX_DIR, "package.json"), "utf8"));
+    upstreamUrl = (pkg.repository && pkg.repository.url) || null;
+  } catch {
+    /* 无 package.json / 无 repository → 跳过,下游靠 GEARBOX_DIR */
+  }
 }
 if (upstreamUrl)
   writeFileSync(join(targetDir, ".gearbox-upstream"), upstreamUrl + "\n");
