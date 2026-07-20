@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 // gearbox-update — 激进版下游 ADR 同步工具
 //
-// 用法: 在下游 repo 根目录跑 `gearbox-update [--refresh-drift]`
+// 用法: 在下游 repo 根目录跑 `gearbox-update [--refresh-drift] [--force-redo] [--allow-branch]`
 //   --refresh-drift  重拷「上游已修订」的漂移拷贝(ADR-0024): 带 sha256 戳记的
 //                    slug 匹配拷贝, 记录 hash ≠ 上游当前 hash 时用上游最新内容
 //                    重跑变换覆盖(保留下游编号, 戳记换新)。会丢下游对拷贝的
 //                    本地修改——靠分支 + PR review 兜底, 所以是 opt-in。
+//   --force-redo     今日回流分支已存在时删掉重建(ADR-0025), push 用
+//                    --force-with-lease 覆盖远端。分支上的手工修改会丢——
+//                    确认没有再用。默认(无 flag)报错不删。
+//   --allow-branch   跳过「自动切回 main/master」(ADR-0025), 基于当前分支跑。
+//                    基分支正确性自担——基不对产物就不可信。
+//
+// 开跑防呆(ADR-0025): clean 检查豁免本工具自己的 gearbox-update-report.md;
+// 不在 main/master 时自动 git checkout main(除非 --allow-branch)。
 //
 // 做什么:
 //   1. 扫描 gearbox 有而下游缺的 ADR
@@ -40,10 +48,16 @@ const GEARBOX_GITHUB_BASE =
 
 // CLI 参数
 let refreshDrift = false;
+let forceRedo = false;
+let allowBranch = false;
 for (const a of argv.slice(2)) {
   if (a === "--refresh-drift") refreshDrift = true;
+  else if (a === "--force-redo") forceRedo = true;
+  else if (a === "--allow-branch") allowBranch = true;
   else if (a === "--help" || a === "-h") {
-    console.log("gearbox-update [--refresh-drift]");
+    console.log(
+      "gearbox-update [--refresh-drift] [--force-redo] [--allow-branch]",
+    );
     exit(0);
   } else {
     console.error(`未知参数: ${a} (--help 看用法)`);
@@ -190,34 +204,70 @@ function validateContext() {
     die("当前目录不是 git repo", "gearbox-update 需要 git 操作");
   }
 
-  // 工作树 clean 校验
-  const status = run("git status --porcelain");
-  if (status) {
+  // 工作树 clean 校验(ADR-0025: 豁免本工具自己的报告文件——用完即弃, 每次覆盖)
+  const statusLines = run("git status --porcelain")
+    .split("\n")
+    .filter(Boolean)
+    .filter((l) => !/gearbox-update-report\.md$/.test(l));
+  if (statusLines.length > 0) {
     die(
       "工作树不 clean,有未提交改动:",
       "先 commit 或 stash,再跑 gearbox-update(避免脚本污染你的改动):\n" +
-        status,
+        statusLines.join("\n"),
     );
   }
 
-  // 当前分支(警告但不阻塞)
-  const branch = run("git rev-parse --abbrev-ref HEAD");
+  // 基分支(ADR-0025): 不在 main/master → 自动切回, 防止回流分支从错误的基
+  // 分叉(继承旧拷贝, 产物不可信)。--allow-branch 跳过, 基分支正确性自担。
+  let branch = run("git rev-parse --abbrev-ref HEAD");
   if (branch !== "main" && branch !== "master") {
-    stdout.write(
-      C.yellow(`⚠️  当前在 ${branch} 分支(不是 main/master)\n`) +
-        C.dim("  脚本会创建新分支 docs/gearbox-backfill-*,继续...\n"),
-    );
+    if (allowBranch) {
+      stdout.write(
+        C.yellow(`⚠️  --allow-branch: 基于 ${branch} 分支跑(不是 main/master)\n`) +
+          C.dim("  基分支正确性自担——基不对产物就不可信\n"),
+      );
+    } else {
+      const target = tryRun("git rev-parse --verify --quiet main")
+        ? "main"
+        : tryRun("git rev-parse --verify --quiet master")
+          ? "master"
+          : null;
+      if (!target) {
+        die(
+          `当前在 ${branch} 分支,且找不到 main/master 可切换`,
+          "回流分支必须基于主分支(ADR-0025)。真要基于当前分支: --allow-branch",
+        );
+      }
+      run(`git checkout ${target}`);
+      stdout.write(
+        C.yellow(`⚠️  当前在 ${branch},已自动切回 ${target}(ADR-0025)\n`) +
+          C.dim("  真要基于原分支跑: --allow-branch\n"),
+      );
+      branch = target;
+    }
   }
 
-  // 预检查:今日分支名是否已存在(避免半成品冲突)
+  // 预检查:今日分支名是否已存在。默认报错(分支上可能有手工 L1 修改,
+  // 自动删 = 可能销毁人工工作); --force-redo 显式删掉重建(ADR-0025)。
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
   const branchExists = tryRun(`git rev-parse --verify ${plannedBranch} 2>/dev/null`);
   if (branchExists) {
-    die(
-      `今日分支已存在: ${plannedBranch}`,
-      `可能今天已经跑过一次。手动处理:\n  git branch -D ${plannedBranch}\n  (确认没 push 过的半成品后再删)`,
-    );
+    if (forceRedo) {
+      run(`git branch -D ${plannedBranch}`);
+      stdout.write(
+        C.yellow(`⚠️  --force-redo: 已删本地分支 ${plannedBranch},重建\n`) +
+          C.dim("  push 将用 --force-with-lease 覆盖远端(若存在)\n"),
+      );
+    } else {
+      die(
+        `今日分支已存在: ${plannedBranch}`,
+        `今天已经跑过一次。三选一:\n` +
+          `  1) 分支上有你的手工改动 → 回该分支继续,不重跑\n` +
+          `  2) 废弃重来 → gearbox-update --force-redo(删本地分支重建,--force-with-lease 覆盖远端)\n` +
+          `  3) 手动: git branch -D ${plannedBranch}`,
+      );
+    }
   }
 
   return { downDir, downAdrDir, branch };
@@ -706,8 +756,12 @@ by gearbox-update tool。`;
     }
   }
 
-  // push
-  const pushResult = tryRun(`git push -u origin ${branchName} 2>&1`);
+  // push(--force-redo 重建过分支 → --force-with-lease 覆盖远端, ADR-0025)
+  const pushResult = tryRun(
+    forceRedo
+      ? `git push --force-with-lease -u origin ${branchName} 2>&1`
+      : `git push -u origin ${branchName} 2>&1`,
+  );
   return { pushResult, stampUpdated };
 }
 
