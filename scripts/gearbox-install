@@ -15,6 +15,8 @@
 //   4. docs/adr/   全量拷贝上游 ADR,每个加溯源行 + hash 戳记(ADR-0021 契约)
 //   5. ci.yml      生成,命令与 Gate 节字面一致(CI == Gate 契约)
 //   6. .gearbox-version  写入接入时的上游版本 tag(ADR-0023 戳记)
+//   7. .gearbox-upstream 写入上游 git URL(ADR-0027 远端寻址;供下游无本地
+//                        GEARBOX_DIR 时 gearbox-version/update 克隆缓存拉取)
 //
 // 不做什么:
 //   - 不拷 pull_request_template.md(B-3 回流载体,Gearbox 专属)、scripts/、README.md
@@ -335,6 +337,22 @@ try {
 if (upstreamVersion)
   writeFileSync(join(targetDir, ".gearbox-version"), upstreamVersion + "\n");
 
+// .gearbox-upstream config(ADR-0027): 上游 git URL,供下游在无本地 GEARBOX_DIR 时
+// 远端寻址(陌生 fork 的 pull)。取上游 clone 的 origin URL;取不到则跳过(维护者
+// 本地舰队有 GEARBOX_DIR 兜底,无此文件也能跑)。
+let upstreamUrl = null;
+try {
+  upstreamUrl = execSync("git remote get-url origin", {
+    cwd: GEARBOX_DIR,
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  }).trim() || null;
+} catch {
+  /* 上游 clone 无 origin remote → 跳过,下游靠本地 GEARBOX_DIR */
+}
+if (upstreamUrl)
+  writeFileSync(join(targetDir, ".gearbox-upstream"), upstreamUrl + "\n");
+
 // git init(无 .git 时)
 let gitInited = false;
 if (!existsSync(join(targetDir, ".git"))) {
@@ -363,6 +381,8 @@ if (upstreamVersion)
   console.log(`  ${C.green("✓")} .gearbox-version ${C.dim(`(${upstreamVersion}, ADR-0023 版本戳记)`)}`);
 else
   console.log(`  ${C.yellow("⚠")} .gearbox-version ${C.dim("未写——上游无 tag(基线 v0.0.0 未打?)")}`);
+if (upstreamUrl)
+  console.log(`  ${C.green("✓")} .gearbox-upstream ${C.dim(`(${upstreamUrl}, ADR-0027 远端寻址)`)}`);
 if (gitInited) console.log(`  ${C.green("✓")} git init`);
 console.log("");
 console.log(C.bold("下一步:"));
