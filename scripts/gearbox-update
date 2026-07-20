@@ -528,6 +528,11 @@ const AGENTS_MD_IMPACT = {
   22: null, // gearbox-install 工具入库——上游侧工具
   23: null, // 协议版本号——上游侧机制;下游只持有 .gearbox-version 戳记,由本工具自动维护
   24: null, // --refresh-drift 漂移重拷——本工具自身能力,不动下游 AGENTS.md
+  25: null, // update 开跑防呆——本工具自身行为,不动下游 AGENTS.md
+  26: {
+    section: "### On starting a shift",
+    note: "开工三件事加第 4 步:跑 gearbox-version 自查协议版本,落后就 gearbox-update(回流从 push 触发改 pull 触发,ADR-0026)。新装下游由 gearbox-install 自动注入;存量下游手动加。参考 gearbox-install 的「开工三件事自查步」变换。",
+  },
 };
 
 function generateReport({

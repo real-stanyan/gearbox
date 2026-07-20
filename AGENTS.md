@@ -15,7 +15,7 @@
 
 <不可违反的项目规则，每条一行。例：钱一律用 cents + BigInt；禁止向客户端暴露 SECRET_*。>
 
-> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(`scripts/check-gearbox.js` 是可执行的事实源)。协议正文中标注 **Hard rule** 的条款(如 B-3「无链接 = 不能 merge」,ADR-0013)**视同本节内容,受 L1 保护**:判据锚定 "Hard rule" 标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
+> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(`scripts/check-gearbox.js` 是可执行的事实源)。协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节「必须开 issue,不许 silent 判断」硬规则,ADR-0003)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
 > 拷走本 Gearbox 时:删掉本注,把占位符换成你项目的硬规则。
 
 ## Working agreement (multi-agent)
@@ -102,7 +102,7 @@ agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
 
 L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 `<维护者>` 成为 L1 瓶颈,这个代价接受。
 
-**下游回流提醒**(ADR-0013):Gearbox 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事("查 open issues")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。
+**下游回流**(ADR-0013,pull 触发见 ADR-0026):回流以 **pull 为主**——下游开工时跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update`(触发不依赖上游认识下游,适配公共 fork)。上游侧:每个协议改动 PR 仍在 PR body 声明 `Affects downstream`(`yes`/`no` + 一句理由),但**降为信息性——帮判断影响面,不再逐下游开 issue、不再阻塞 merge**(「无链接=不能 merge」已随 ADR-0026 退役)。维护者若维护私有舰队,可**可选地**对 `DOWNSTREAM.md` 已登记项目开告知 issue,非强制。
 
 **协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。
 

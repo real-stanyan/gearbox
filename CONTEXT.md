@@ -17,8 +17,8 @@
 | 机制引用（判据） | 新增内容只要引用 L1/L2 / Hard rules / Working agreement 等协议机制（关键词或语义依赖），一律按 L1 处理 | ADR-0012「机制引用优先」；防「可选+纯新增」当 L2 通道扩权 |
 | Memory 五项格式 | 交接 comment 的最小合格格式：① 做到哪 ② 卡在哪 ③ 下一步 ④ 完成则关 issue ⑤ 判断依据/权衡（无决策写「无」） | ADR-0004；少一项不算合格交接 |
 | 终局收工 | 归档 / 确认无下一棒时的收工形态：可不开交接 issue，但必须在最后关闭的 issue 里显式声明「无下一棒」+ 理由 | ADR-0009；沉默的终局不算终局 |
-| 下游（downstream） | 拷走本 Gearbox 协议后独立演进的项目；权威清单在 `DOWNSTREAM.md`「已接入项目」 | 入清单三条件见 DOWNSTREAM.md |
-| 回流（backfill） | Gearbox 协议改进通过在下游 repo 开提醒 issue 传达给下游；是提醒不是强制，下游可拒（关 issue 注明理由） | ADR-0013（B-3 模板强制） |
+| 下游（downstream） | 拷走本 Gearbox 协议后独立演进的项目；`DOWNSTREAM.md`「已接入项目」是维护者的可选舰队仪表盘（非权威、非门禁，ADR-0026） | 入清单三条件见 DOWNSTREAM.md |
+| 回流（backfill） | 下游把 Gearbox 协议改进拉取到本地；**pull 触发**——下游开工跑 `gearbox-version` 自查、落后就 `gearbox-update`，不依赖上游推送；是对齐不是强制，下游可拒 | ADR-0013 → ADR-0026（push 触发降级为 pull） |
 | 协议版本号 | semver 变体 tag：**major** = 跨工具/跨 repo 契约变更；**minor** = 新增机制；**patch** = 已有文件修订。每个协议 PR 声明 `Version bump`，merge 后作者打 tag；下游本地版本记在 `.gearbox-version` 戳记（工具写工具读） | ADR-0023；基线 v0.0.0 |
 
 ## Key invariants

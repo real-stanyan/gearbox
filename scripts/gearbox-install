@@ -143,18 +143,27 @@ agents = mustReplace(
 // Hard rules: 删 dogfood 注,保留 ADR-0018 标注定级语义(接收端措辞)
 agents = mustReplace(
   agents,
-  `> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(\`scripts/check-gearbox.js\` 是可执行的事实源)。协议正文中标注 **Hard rule** 的条款(如 B-3「无链接 = 不能 merge」,ADR-0013)**视同本节内容,受 L1 保护**:判据锚定 "Hard rule" 标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
+  `> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(\`scripts/check-gearbox.js\` 是可执行的事实源)。协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节「必须开 issue,不许 silent 判断」硬规则,ADR-0003)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
 > 拷走本 Gearbox 时:删掉本注,把占位符换成你项目的硬规则。`,
   `> 协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节的硬规则)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。`,
   "Hard rules 注",
 );
 
-// B-3 下游回流节 → 接收端版(Blackbox 先例)
+// B-3 下游回流节 → 接收端版(pull 模型, ADR-0026)
 agents = mustReplace(
   agents,
-  "**下游回流提醒**(ADR-0013):Gearbox 的每个协议改动 PR,merge 前必须 declare `Affects downstream`(通过 `.github/pull_request_template.md`)。`yes` 时,**必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue(引用本 PR + 标 L1/L2),并附链接到本 PR body**——**无链接 = 不能 merge**。`no` 时简要说明为什么不影响。下游 agent 用现有开工三件事(\"查 open issues\")自动撞到回流 issue,**不需要改下游的 AGENTS.md**。",
-  "> 本 repo 无下游项目,Gearbox 的下游回流机制(ADR-0013)在此只作接收端:Gearbox 侧的协议更新会以回流 issue 形式出现在本 repo 的 Issues 里,按开工三件事自然撞到。",
+  "**下游回流**(ADR-0013,pull 触发见 ADR-0026):回流以 **pull 为主**——下游开工时跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update`(触发不依赖上游认识下游,适配公共 fork)。上游侧:每个协议改动 PR 仍在 PR body 声明 `Affects downstream`(`yes`/`no` + 一句理由),但**降为信息性——帮判断影响面,不再逐下游开 issue、不再阻塞 merge**(「无链接=不能 merge」已随 ADR-0026 退役)。维护者若维护私有舰队,可**可选地**对 `DOWNSTREAM.md` 已登记项目开告知 issue,非强制。",
+  "> 本 repo 是 Gearbox 下游。回流按 pull 模型(ADR-0026):开工三件事第 4 步跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update` 回流——不依赖上游推送,主动向上游对齐。",
   "B-3 节",
+);
+
+// 开工三件事注入自查第 4 步(pull 触发, ADR-0026)——仅下游有,上游 Gearbox 自身无上游可查
+agents = mustReplace(
+  agents,
+  "3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工",
+  `3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
+4. 跑 \`~/Github/gearbox/scripts/gearbox-version\`（上游路径记在 \`.gearbox-version\`）自查协议版本 — 落后就 \`~/Github/gearbox/scripts/gearbox-update\` 回流（pull 触发，ADR-0026；本步是接收端向上游对齐，非上游推送）`,
+  "开工三件事自查步",
 );
 
 // 协议版本号节 → 接收端版(下游不发布协议版本,只持有戳记)
@@ -364,6 +373,6 @@ const placeholderHint =
   (gateCmd ? ")" : " / Gate 命令,ci.yml 同步)");
 console.log(`  ${step++}. 填占位符: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
 console.log(`  ${step++}. 首个自有决策写 ${C.cyan(`docs/adr/${pad4(lastNum + 1)}-*.md`)} ${C.dim("(0001 是模板)")}`);
-console.log(`  ${step++}. 加入上游下游清单: ${C.cyan("~/Github/gearbox/DOWNSTREAM.md")} ${C.dim("「已接入项目」加一行(入清单三条件见该文件)——不加就收不到回流提醒")}`);
-console.log(`  ${step++}. 首 commit + push, 之后可用 ${C.cyan("gearbox-version")} 查同步状态`);
+console.log(`  ${step++}. 首 commit + push, 之后开工三件事第 4 步跑 ${C.cyan("gearbox-version")} 自查协议版本(pull 触发, ADR-0026)`);
+console.log(`  ${C.dim(`  (可选) 维护者可把本项目加进 ~/Github/gearbox/DOWNSTREAM.md 舰队仪表盘——非必需,回流靠下游自查不靠清单`)}`);
 console.log("");

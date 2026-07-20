@@ -1,6 +1,8 @@
 # Downstream projects
 
-在用本 Gearbox 协议的项目清单。**Gearbox 的协议改动 PR,merge 前必须 declare `Affects downstream`**(ADR-0013);`yes` 时,每个列入本清单的项目都必须各开一个回流 issue。
+> **本表是非规范性的可选仪表盘(ADR-0026)。** 回流靠 pull——下游开工跑 `gearbox-version` 自查、落后就 `gearbox-update`,不依赖上游推送;本表不再是 merge 门禁,也不是任何硬规则的遍历目标。它只是**维护者自用的私有舰队视图**,记录「我这些 repo 各同步到哪」。**拷走 Gearbox 自建上游时,整个「已接入项目」表可清空**——判定标准与「不入清单」两节是通用文档,保留即可。
+
+在用本 Gearbox 协议的项目清单(维护者舰队)。协议改动 PR 仍在 PR body 声明 `Affects downstream`(信息性,ADR-0013 → ADR-0026);维护者可**可选地**对下列项目开告知 issue,但非强制——下游本就会靠开工自查撞到落后。
 
 ## 判定标准(必须同时满足才入清单)
 
