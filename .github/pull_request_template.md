@@ -33,8 +33,11 @@
   - `patch` —— 已有文件修订 (措辞 / status 行 / typo)
   - `none`  —— 不动协议与工具 (需一句理由, 如 "纯 README typo")
 
+同一 PR 里作者把 package.json 的 version 改成本次目标版本(= 最新 tag + 段位, ADR-0028/0029)。
 merge 后作者 agent 以 merge 时刻最新 tag 为基准打 annotated tag 并 push:
   git tag -a v0.x.y -m "一句话摘要" && git push origin v0.x.y
+然后维护者跑 npm publish 发布 npx 包(ADR-0029; 需 npm 凭据, agent 不代跑)。
+none 段位不触发 tag/publish, 也不动 package.json version。
 -->
 
 - Version bump: <!-- major | minor | patch | none -->

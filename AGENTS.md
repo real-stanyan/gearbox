@@ -104,7 +104,7 @@ L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 
 
 **下游回流**(ADR-0013,pull 触发见 ADR-0026):回流以 **pull 为主**——下游开工时跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update`(触发不依赖上游认识下游,适配公共 fork)。上游侧:每个协议改动 PR 仍在 PR body 声明 `Affects downstream`(`yes`/`no` + 一句理由),但**降为信息性——帮判断影响面,不再逐下游开 issue、不再阻塞 merge**(「无链接=不能 merge」已随 ADR-0026 退役)。维护者若维护私有舰队,可**可选地**对 `DOWNSTREAM.md` 已登记项目开告知 issue,非强制。
 
-**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。
+**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程(ADR-0029 补全至 npm 上线)——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);**同一 PR 里作者把 `package.json` 的 `version` 改成本次目标版本(= 最新 tag + 段位,与 git tag 恒等号,ADR-0028)**;merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push;**然后维护者跑 `npm publish` 发布 npx 包(ADR-0028/0029;发外部 registry、需凭据,agent 不代跑)**。`none` 段位不触发 tag/publish、不动 `package.json` version。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。
 
 ### Gate（门禁 — 收工前必须全绿）
 
