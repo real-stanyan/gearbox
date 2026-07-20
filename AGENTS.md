@@ -7,7 +7,7 @@
 
 ## Tech stack
 
-- Node.js（结构自检脚本 + `scripts/gearbox-update` 下游回流 / `scripts/gearbox-install` 开局安装，无运行时依赖，ADR-0017/0022）
+- Node.js（结构自检脚本 + `scripts/gearbox-update` 下游回流 / `scripts/gearbox-install` 开局安装 / `scripts/gearbox-prune` 分支卫生，无运行时依赖，ADR-0017/0022/0030）
 - Bash（`scripts/gearbox-version` 下游同步速查，零依赖、只读，ADR-0016）
 - 纯 Markdown 文档（AGENTS.md / CONTEXT.md / ADR）
 
@@ -123,6 +123,16 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 3. 做完的 Task issue 照常关闭；做到一半的,进度写到该 issue 的 comment
 4. **开下一棒的交接 issue**（Task 类,保持 open,ADR-0005）:body 写现状与下一步建议,本轮 Memory comment（五项格式,ADR-0004）留在这里。**这是下一棒唯一保证撞见的入口**——Memory 不再埋进随手关闭的 Task issue。**唯一例外——终局收工**（ADR-0009）:归档 / 确认无下一棒时可不开,但必须在最后关闭的 issue 里 comment 显式声明「无下一棒」+ 理由,沉默的终局不算终局
 
+### 分支卫生（可选）
+
+收工前（或开工撞到 stale refs 时）跑 `npx gearbox-agents prune`（本仓库可直接跑 `node scripts/gearbox-prune`）。清理三样（ADR-0030）：
+
+- 本地已合并分支（`git branch -d` 安全删，失败响亮）
+- stale remote-tracking refs（`git fetch --prune`）
+- 远程已合并分支（`--apply-remote`，删前打印清单 + 确认）
+
+默认 dry-run 不删任何东西；白名单保护当前分支 / 默认分支 / `gearbox-backfill-*`；永不强删（`-D`）。不替代 GitHub 的 `delete_branch_on_merge` 设置——推荐仓库 owner 开启（根治），工具是兜底（`--check-settings` 核对并给出开启命令，不自动改）。
+
 ### Division of labor（可选，按需填）
 
 分工是项目属性，模板不预设（ADR-0008）。拷走时三选一：
@@ -135,5 +145,5 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 - `CONTEXT.md` — 领域词汇表
 - `docs/adr/` — 架构决策记录
-- `scripts/` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写，ADR-0016/0017/0022）
+- `scripts/` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写 / gearbox-prune 分支卫生，ADR-0016/0017/0022/0030）
 - <其他模块文档目录，如 docs/modules/>
