@@ -32,6 +32,7 @@ const ROUTES = {
   install: { cmd: "node", file: "scripts/gearbox-install" },
   version: { cmd: "bash", file: "scripts/gearbox-version" },
   update: { cmd: "node", file: "scripts/gearbox-update" },
+  prune: { cmd: "node", file: "scripts/gearbox-prune" },
 };
 
 const [sub, ...rest] = argv.slice(2);
@@ -41,7 +42,8 @@ if (!sub || sub === "-h" || sub === "--help") {
     "gearbox <command> [args]\n\n" +
       "  install   在当前(或指定)目录铺 Gearbox 骨架\n" +
       "  version   查当前下游 repo 同步到上游哪个版本 / 哪些 ADR\n" +
-      "  update    回流:拷上游缺失 ADR 到当前下游 repo\n\n" +
+      "  update    回流:拷上游缺失 ADR 到当前下游 repo\n" +
+      "  prune     分支卫生:清已合并/stale 分支(默认 dry-run,ADR-0030)\n\n" +
       "例: npx gearbox-agents install --maintainer you --gate \"npm test\"\n",
   );
   exit(sub ? 0 : 1);

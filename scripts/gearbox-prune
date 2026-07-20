@@ -1,0 +1,324 @@
+#!/usr/bin/env node
+// gearbox-prune — 分支卫生:清理已合并/stale 分支(工具家族第四件,ADR-0030)
+//
+// 用法: 在任意 git 仓库根(或子目录)跑 `gearbox-prune`,或 `npx gearbox-agents prune`
+//   (默认)            dry-run:列出将清理的清单 + 设置核对,不删任何东西
+//   --apply-local     执行本地已合并分支 `git branch -d` + `git fetch --prune`
+//   --apply-remote    执行远程已合并分支 `git push origin --delete`(打印清单 + 交互确认)
+//   --yes             跳过 --apply-remote 的交互确认(非 TTY / CI 场景)
+//   --check-settings  只核对 `delete_branch_on_merge` 仓库设置(需 gh CLI)
+//
+// 硬约束(ADR-0030,不可放松):
+//   - 永禁强删(-D)——强删丢未合并工作
+//   - 只碰已合并分支;未合并的哪怕名字像废弃也不碰(保护工作中的任务分支)
+//   - 白名单保护:当前分支 / 默认分支(main/master)/ `gearbox-backfill-*` 前缀
+//   - 不自动改 GitHub 仓库设置——`delete_branch_on_merge` 只读取 + 提示开启命令
+//   - 非 git 仓库 / 无 origin → 响亮报错退出,不静默
+//   - `gh` 没装/没认证 → 只降级设置核对档,分支清理照常(分支操作纯 git)
+//
+// 不依赖 gearbox 协议文件——纯 git/gh 操作,任何 repo 都能用。
+
+import { execFileSync, spawnSync } from "node:child_process";
+import { createInterface } from "node:readline";
+import { argv, exit, stdin, stdout } from "node:process";
+
+const C = {
+  red: (s) => `\x1b[31m${s}\x1b[0m`,
+  green: (s) => `\x1b[32m${s}\x1b[0m`,
+  yellow: (s) => `\x1b[33m${s}\x1b[0m`,
+  dim: (s) => `\x1b[2m${s}\x1b[0m`,
+  bold: (s) => `\x1b[1m${s}\x1b[0m`,
+  cyan: (s) => `\x1b[36m${s}\x1b[0m`,
+};
+
+function die(msg, hint = "") {
+  console.error(C.red(`✗ ${msg}`));
+  if (hint) console.error(`  ${C.dim(hint)}`);
+  exit(1);
+}
+
+function git(args, opts = {}) {
+  return execFileSync("git", args, { encoding: "utf8", ...opts }).trim();
+}
+
+function tryGit(args) {
+  try {
+    return git(args, { stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return null;
+  }
+}
+
+// ============== 参数 ==============
+
+const args = argv.slice(2);
+const FLAGS = new Set([
+  "--apply-local",
+  "--apply-remote",
+  "--yes",
+  "--check-settings",
+  "-h",
+  "--help",
+]);
+for (const a of args) {
+  if (!FLAGS.has(a)) die(`未知参数: ${a}`, "gearbox-prune --help 看用法");
+}
+const applyLocal = args.includes("--apply-local");
+const applyRemote = args.includes("--apply-remote");
+const yes = args.includes("--yes");
+const settingsOnly = args.includes("--check-settings");
+
+if (args.includes("-h") || args.includes("--help")) {
+  console.log(`gearbox-prune — 分支卫生(ADR-0030)
+
+  (默认)            dry-run:列清单不删
+  --apply-local     删本地已合并分支(git branch -d)+ git fetch --prune
+  --apply-remote    删远程已合并分支(git push origin --delete),打印清单后交互确认
+  --yes             跳过 --apply-remote 确认(CI / 非 TTY 用)
+  --check-settings  只核对 delete_branch_on_merge 仓库设置(需 gh CLI)
+
+白名单保护: 当前分支 / 默认分支 / gearbox-backfill-* 前缀。永不强删(-D)。
+只删已合并分支;未合并分支一律不碰。`);
+  exit(0);
+}
+
+// ============== 前置检查(响亮失败) ==============
+
+if (!tryGit(["rev-parse", "--git-dir"])) {
+  die("当前目录不是 git 仓库", "cd 到目标 repo 再跑");
+}
+if (!tryGit(["remote", "get-url", "origin"])) {
+  die("没有 origin remote", "本工具按 origin 判定默认分支与远程分支");
+}
+
+// 默认分支: 先问远端(权威——本地 origin/HEAD 是 clone 时快照,可能过期,
+// 按过期默认分支判"已合并"会误删),离线回退本地 origin/HEAD,再回退 main/master 探测
+let defaultBranch = null;
+const lsRemoteHead = tryGit(["ls-remote", "--symref", "origin", "HEAD"]);
+const remoteHeadMatch = lsRemoteHead && lsRemoteHead.match(/^ref: refs\/heads\/(\S+)\s+HEAD/m);
+if (remoteHeadMatch) {
+  defaultBranch = remoteHeadMatch[1];
+} else {
+  const originHead = tryGit(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+  if (originHead) {
+    defaultBranch = originHead.replace(/^origin\//, "");
+  } else {
+    for (const cand of ["main", "master"]) {
+      if (tryGit(["show-ref", "--verify", `refs/remotes/origin/${cand}`]) !== null) {
+        defaultBranch = cand;
+        break;
+      }
+    }
+  }
+}
+if (!defaultBranch) {
+  die(
+    "识别不出默认分支(origin/HEAD 未设置,origin 上也没有 main/master)",
+    "跑 `git remote set-head origin --auto` 后重试",
+  );
+}
+
+const currentBranch = tryGit(["branch", "--show-current"]) || "";
+
+// 白名单: 当前 / 默认 / main / master / 进行中回流分支
+function isProtected(branch) {
+  return (
+    branch === currentBranch ||
+    branch === defaultBranch ||
+    branch === "main" ||
+    branch === "master" ||
+    branch.startsWith("gearbox-backfill-")
+  );
+}
+
+const hasGh = (() => {
+  try {
+    execFileSync("gh", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+// ============== 收集清单 ==============
+
+// 1. 本地已合并分支(相对 origin/<default>)
+function localMergedBranches() {
+  const out = tryGit(["branch", "--merged", `origin/${defaultBranch}`, "--format=%(refname:short)"]);
+  if (out === null) return [];
+  return out.split("\n").filter((b) => b && !isProtected(b));
+}
+
+// 2. stale remote-tracking refs(origin 已删,本地 tracking 还在)
+//    `git fetch --prune --dry-run` 打 " - [deleted] ... -> origin/<b>" 到 stderr
+function staleTrackingRefs() {
+  const r = spawnSync("git", ["fetch", "--prune", "--dry-run", "origin"], {
+    encoding: "utf8",
+  });
+  if (r.status !== 0) return null; // 离线等 fetch 失败:标记未知,不当成"没有"
+  return ((r.stderr + r.stdout).match(/\[deleted\].*-> +\S+/g) || []).map((l) =>
+    l.replace(/.*-> +/, ""),
+  );
+}
+
+// 3. 远程已合并分支: fetch 后按 merge-base --is-ancestor 判定
+//    (feature prompt 建议的 gh api branches/:branch `merged` 字段不存在——
+//     该端点只有 name/commit/protected;git ancestor 判定零 API、零分页,ADR-0030)
+function remoteMergedBranches() {
+  const out = tryGit([
+    "for-each-ref",
+    "refs/remotes/origin",
+    "--format=%(refname:short)",
+  ]);
+  if (out === null) return [];
+  const merged = [];
+  for (const ref of out.split("\n").filter(Boolean)) {
+    if (ref === "origin/HEAD" || ref === "origin") continue;
+    const branch = ref.replace(/^origin\//, "");
+    if (isProtected(branch)) continue;
+    try {
+      execFileSync(
+        "git",
+        ["merge-base", "--is-ancestor", ref, `origin/${defaultBranch}`],
+        { stdio: "ignore" },
+      );
+      merged.push(branch);
+    } catch {
+      /* 未合并 → 不碰 */
+    }
+  }
+  return merged;
+}
+
+// 4. delete_branch_on_merge 设置(只读;gh 没装 → 降级提示)
+function checkSettings() {
+  if (!hasGh) {
+    console.log(
+      C.yellow("⚠ gh CLI 没装 — 跳过 delete_branch_on_merge 核对") +
+        C.dim("(brew install gh 后重试;分支清理不受影响)"),
+    );
+    return;
+  }
+  let val;
+  try {
+    val = execFileSync(
+      "gh",
+      ["api", "repos/{owner}/{repo}", "--jq", ".delete_branch_on_merge"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    console.log(
+      C.yellow("⚠ 读不到仓库设置(gh 未认证或无权限)— 跳过核对"),
+    );
+    return;
+  }
+  if (val === "true") {
+    console.log(C.green("✓ delete_branch_on_merge = true(merge 后 GitHub 自动删 head 分支)"));
+  } else {
+    console.log(C.yellow("⚠ delete_branch_on_merge = false — 建议 owner 开启(根治,merge 后自动删):"));
+    console.log(
+      C.cyan("  gh api -X PATCH repos/{owner}/{repo} -F delete_branch_on_merge=true"),
+    );
+  }
+}
+
+// ============== 执行 ==============
+
+async function confirm(question) {
+  if (yes) return true;
+  if (!stdin.isTTY) {
+    die(
+      "--apply-remote 需要交互确认,但当前不是 TTY",
+      "加 --yes 跳过确认(CI 场景),或在终端交互跑",
+    );
+  }
+  const rl = createInterface({ input: stdin, output: stdout });
+  const answer = await new Promise((res) => rl.question(question, res));
+  rl.close();
+  return answer.trim().toLowerCase() === "y";
+}
+
+function listOrNone(items, color = C.yellow) {
+  if (!items || items.length === 0) return console.log(C.dim("  (无)"));
+  for (const b of items) console.log(`  ${color(b)}`);
+}
+
+async function main() {
+  console.log(C.bold(`gearbox-prune — 默认分支 origin/${defaultBranch},当前分支 ${currentBranch || "(detached)"}`));
+  console.log("");
+
+  if (settingsOnly) {
+    checkSettings();
+    return;
+  }
+
+  if (applyRemote) {
+    // 删远程前先刷新视图——本地 tracking refs 可能过期,按旧清单 push --delete 会撞不存在的分支
+    execFileSync("git", ["fetch", "--prune", "origin"], {
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+  }
+
+  const localMerged = localMergedBranches();
+  const stale = staleTrackingRefs();
+  const remoteMerged = remoteMergedBranches();
+
+  // --- 本地 ---
+  console.log(C.bold(`本地已合并分支(git branch -d 安全删):`));
+  listOrNone(localMerged);
+  console.log("");
+  console.log(C.bold("stale remote-tracking refs(git fetch --prune 清):"));
+  if (stale === null) console.log(C.dim("  (fetch 失败——离线?未知)"));
+  else listOrNone(stale);
+  console.log("");
+
+  if (applyLocal) {
+    for (const b of localMerged) {
+      // -d 安全删: 只删已合并;万一竞态变未合并,-d 自己会响亮失败
+      git(["branch", "-d", b], { stdio: ["ignore", "pipe", "inherit"] });
+      console.log(C.green(`✓ 已删本地 ${b}`));
+    }
+    execFileSync("git", ["fetch", "--prune", "origin"], { stdio: "inherit" });
+    console.log(C.green("✓ git fetch --prune 完成"));
+    console.log("");
+  }
+
+  // --- 远程 ---
+  console.log(C.bold("远程已合并分支(git push origin --delete):"));
+  listOrNone(remoteMerged);
+  console.log("");
+
+  if (applyRemote && remoteMerged.length > 0) {
+    const ok = await confirm(
+      C.yellow(`即将删除 origin 上 ${remoteMerged.length} 个已合并分支(不可逆)。继续? [y/N] `),
+    );
+    if (!ok) {
+      console.log(C.dim("已取消,远程分支未动。"));
+    } else {
+      for (const b of remoteMerged) {
+        execFileSync("git", ["push", "origin", "--delete", b], {
+          stdio: ["ignore", "inherit", "inherit"],
+        });
+        console.log(C.green(`✓ 已删远程 ${b}`));
+      }
+      // 远程删完顺手清本地 tracking refs
+      execFileSync("git", ["fetch", "--prune", "origin"], { stdio: "ignore" });
+    }
+    console.log("");
+  } else if (applyRemote) {
+    console.log(C.dim("远程无可删分支。"));
+    console.log("");
+  }
+
+  // --- 设置核对 ---
+  checkSettings();
+
+  if (!applyLocal && !applyRemote) {
+    console.log("");
+    console.log(
+      C.dim("dry-run 结束,什么都没删。--apply-local 删本地,--apply-remote 删远程(需确认)。"),
+    );
+  }
+}
+
+await main();
