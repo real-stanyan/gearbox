@@ -1,11 +1,38 @@
 {
-  "name": "gearbox",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Gearbox — single-source-of-truth AGENTS.md protocol for multi-agent (Claude Code + Z Code) projects.",
+  "name": "@real-stanyan/gearbox",
+  "version": "1.2.0",
+  "description": "Gearbox — single-source-of-truth AGENTS.md protocol for multi-agent (Claude Code + Z Code) projects. Scaffold + downstream sync tools.",
   "type": "module",
+  "bin": {
+    "gearbox": "bin/gearbox.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "docs/adr/",
+    "AGENTS.md",
+    "CONTEXT.md"
+  ],
   "scripts": {
     "test": "node scripts/check-gearbox.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agents",
+    "agents-md",
+    "claude-code",
+    "scaffold",
+    "multi-agent",
+    "adr"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/real-stanyan/gearbox.git"
   },
   "license": "MIT"
 }

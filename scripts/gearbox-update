@@ -998,14 +998,17 @@ function main() {
   const branchName = `docs/gearbox-backfill-${reportDate}`;
 
   // 上游最大版本 tag(ADR-0023 戳记用;semver 排序,无 tag 则跳过戳记)
-  // 远端缓存是浅克隆、不保证带全 tag,故远端用 ls-remote 直接问上游(ADR-0027)
-  const upstreamVersion = UPSTREAM_URL
-    ? ((tryRun(`git ls-remote --tags --sort=-v:refname "${UPSTREAM_URL}"`) || "")
-        .split("\n")
-        .map((l) => (l.match(/v[0-9]+\.[0-9]+\.[0-9]+$/) || [])[0])
-        .filter(Boolean)[0] || null)
-    : ((tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
-        .split("\n")[0] || null);
+  // 优先级: env override(npx 包传 package.json 版本, ADR-0028) > 远端 ls-remote
+  // (ADR-0027,浅克隆不保证带全 tag)> 本地 git tag。
+  const upstreamVersion =
+    env.GEARBOX_UPSTREAM_VERSION ||
+    (UPSTREAM_URL
+      ? ((tryRun(`git ls-remote --tags --sort=-v:refname "${UPSTREAM_URL}"`) || "")
+          .split("\n")
+          .map((l) => (l.match(/v[0-9]+\.[0-9]+\.[0-9]+$/) || [])[0])
+          .filter(Boolean)[0] || null)
+      : ((tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
+          .split("\n")[0] || null));
 
   stdout.write(C.bold(`git 操作(分支 ${branchName}):\n`));
   try {
