@@ -580,6 +580,9 @@ const AGENTS_MD_IMPACT = {
     section: "### On starting a shift",
     note: "开工三件事加第 4 步:跑 gearbox-version 自查协议版本,落后就 gearbox-update(回流从 push 触发改 pull 触发,ADR-0026)。新装下游由 gearbox-install 自动注入;存量下游手动加。参考 gearbox-install 的「开工三件事自查步」变换。",
   },
+  27: null, // 远端上游寻址——工具能力,不动下游 AGENTS.md
+  28: null, // npx 分发——上游侧打包/发布,不动下游 AGENTS.md
+  29: null, // release 纳入 npm publish——上游发布流程;下游不发布 gearbox 协议包
 };
 
 function generateReport({

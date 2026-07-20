@@ -171,7 +171,7 @@ agents = mustReplace(
 // 协议版本号节 → 接收端版(下游不发布协议版本,只持有戳记)
 agents = mustReplace(
   agents,
-  "**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。",
+  "**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程(ADR-0029 补全至 npm 上线)——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);**同一 PR 里作者把 `package.json` 的 `version` 改成本次目标版本(= 最新 tag + 段位,与 git tag 恒等号,ADR-0028)**;merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push;**然后维护者跑 `npm publish` 发布 npx 包(ADR-0028/0029;发外部 registry、需凭据,agent 不代跑)**。`none` 段位不触发 tag/publish、不动 `package.json` version。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。",
   "> 本 repo 不发布协议版本;根目录 `.gearbox-version` 记录接入时的 Gearbox 上游版本,由 gearbox-install / gearbox-update 维护,`gearbox-version` 读取对比(上游 ADR-0023)。",
   "协议版本号节",
 );
