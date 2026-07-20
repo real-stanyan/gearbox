@@ -32,8 +32,11 @@
 //
 // 协议合规: 个人工具，不是 gearbox 协议改动。回流 PR 仍走下游 L1 流程。
 // 对比 gearbox-version: version 只读报状态；update 写文件 + 开分支。
+//
+// 上游寻址 (ADR-0027): env GEARBOX_DIR > 本地 ~/Github/gearbox > .gearbox-upstream
+// 远端缓存 (~/.cache/gearbox/, 浅克隆)。远端取不到 → 硬报错 (拉不到不能假装成功)。
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
@@ -41,8 +44,11 @@ import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 
 // ============== 配置 ==============
 
-const GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
-const GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+// 上游寻址(ADR-0027): 运行时 resolveUpstream() 解析——env/本地默认命中用本地,
+// 否则 .gearbox-upstream 远端浅克隆缓存。这三个在 main() 开头被 resolveUpstream 重写。
+let GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
+let GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+let UPSTREAM_URL = null; // 远端时 = .gearbox-upstream URL;本地时 = null
 const GEARBOX_GITHUB_BASE =
   "https://github.com/real-stanyan/gearbox/blob/master/docs/adr";
 
@@ -102,6 +108,47 @@ function tryRun(cmd) {
   } catch {
     return null;
   }
+}
+
+// 上游寻址(ADR-0027): env > 本地默认 > .gearbox-upstream 远端缓存。
+// 重写模块级 GEARBOX_DIR / GEARBOX_ADR_DIR / UPSTREAM_URL。main() 开头调用。
+function resolveUpstream() {
+  const localDir = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
+  if (existsSync(join(localDir, "docs/adr"))) {
+    GEARBOX_DIR = localDir; // 本地命中(维护者舰队),不碰远端
+    GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+    return;
+  }
+  const cfgPath = join(cwd(), ".gearbox-upstream");
+  if (existsSync(cfgPath)) {
+    const url = (readFileSync(cfgPath, "utf8").split("\n")[0] || "").trim();
+    if (url) {
+      const cacheRoot = join(env.XDG_CACHE_HOME || `${env.HOME}/.cache`, "gearbox");
+      const cacheDir = join(cacheRoot, sha12(url));
+      try {
+        if (existsSync(join(cacheDir, ".git"))) {
+          run(`git -C "${cacheDir}" fetch -q --depth 1 origin`);
+          run(`git -C "${cacheDir}" reset -q --hard FETCH_HEAD`);
+        } else {
+          mkdirSync(cacheRoot, { recursive: true });
+          run(`git clone -q --depth 1 "${url}" "${cacheDir}"`);
+        }
+      } catch {
+        // update 主动拉取,取不到就是取不到——硬报错(ADR-0027)
+        die(
+          `无法访问上游远端(离线?): ${url}`,
+          "gearbox-update 需能拉取上游;检查网络或 .gearbox-upstream URL(ADR-0027)",
+        );
+      }
+      GEARBOX_DIR = cacheDir;
+      GEARBOX_ADR_DIR = join(cacheDir, "docs/adr");
+      UPSTREAM_URL = url;
+      return;
+    }
+  }
+  // 都没有:保持本地默认,后续 existsSync(GEARBOX_ADR_DIR) 报错兜底
+  GEARBOX_DIR = localDir;
+  GEARBOX_ADR_DIR = join(localDir, "docs/adr");
 }
 
 // 跑 git 命令并喂 stdin(用于多行 commit message)
@@ -188,7 +235,7 @@ function validateContext() {
   if (!existsSync(GEARBOX_ADR_DIR)) {
     die(
       `找不到 gearbox ADR 目录: ${GEARBOX_ADR_DIR}`,
-      "设 GEARBOX_DIR 环境变量,或确认 gearbox 在 ~/Github/gearbox/",
+      "设 GEARBOX_DIR 环境变量,或在 .gearbox-upstream 写上游 git URL(ADR-0027 远端寻址)",
     );
   }
   if (!existsSync(downAdrDir)) {
@@ -776,6 +823,7 @@ function main() {
   stdout.write(C.bold(C.cyan("\n⟳ gearbox-update\n")));
   stdout.write(C.dim("  激进版下游 ADR 同步工具\n\n"));
 
+  resolveUpstream(); // 上游寻址(本地/远端), 重写 GEARBOX_DIR (ADR-0027)
   const { downDir, downAdrDir, branch } = validateContext();
   // PR base 用检测到的主分支;若当前在别的分支上跑,兜底 master
   const baseBranch = branch === "main" || branch === "master" ? branch : "master";
@@ -787,7 +835,11 @@ function main() {
     downDir.split("/").pop();
 
   stdout.write(`${C.dim("下游:")}     ${downRepo}\n`);
-  stdout.write(`${C.dim("gearbox:")} ${GEARBOX_DIR}\n\n`);
+  stdout.write(
+    UPSTREAM_URL
+      ? `${C.dim("gearbox:")} ${UPSTREAM_URL} ${C.dim(`(远端缓存 ${GEARBOX_DIR}, ADR-0027)`)}\n\n`
+      : `${C.dim("gearbox:")} ${GEARBOX_DIR}\n\n`,
+  );
 
   // 扫描两侧
   const gearboxIndex = buildAdrIndex(GEARBOX_ADR_DIR);
@@ -946,9 +998,14 @@ function main() {
   const branchName = `docs/gearbox-backfill-${reportDate}`;
 
   // 上游最大版本 tag(ADR-0023 戳记用;semver 排序,无 tag 则跳过戳记)
-  const upstreamVersion =
-    (tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
-      .split("\n")[0] || null;
+  // 远端缓存是浅克隆、不保证带全 tag,故远端用 ls-remote 直接问上游(ADR-0027)
+  const upstreamVersion = UPSTREAM_URL
+    ? ((tryRun(`git ls-remote --tags --sort=-v:refname "${UPSTREAM_URL}"`) || "")
+        .split("\n")
+        .map((l) => (l.match(/v[0-9]+\.[0-9]+\.[0-9]+$/) || [])[0])
+        .filter(Boolean)[0] || null)
+    : ((tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
+        .split("\n")[0] || null);
 
   stdout.write(C.bold(`git 操作(分支 ${branchName}):\n`));
   try {
