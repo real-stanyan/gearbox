@@ -16,13 +16,12 @@
 // 不在 main/master 时自动 git checkout main(除非 --allow-branch)。
 //
 // 做什么:
-//   1. 扫描 gearbox 有而下游缺的 ADR
-//   2. 撞号时自动重编号（如下游 0011 已被占用 → gearbox 0011 拷成下游 0014）
-//   3. 全文替换 ADR-XXXX 交叉引用（映射 = 全部已存在 slug/溯源配对 ∪ 本次新拷, ADR-0024）
-//   4. 同步 supersede 关系（gearbox 0012 → 下游 0006 status 改 partially superseded）
-//   5. 更新 .gearbox-version 戳记为上游最新 tag（ADR-0023）
-//   6. git add + commit + push 到新分支 docs/gearbox-backfill-{date}
-//   7. 输出 gearbox-update-report.md 提示用户手改 AGENTS.md（脚本不碰 AGENTS.md）
+//   1. 扫描 gearbox 有而下游缺的 ADR,按上游原号拷入 docs/gearbox-adr/
+//      (双目录分家后协议 ADR 号与上游 1:1 恒等,不撞号、不重编号,ADR-0031)
+//   2. 同步 supersede 关系（gearbox 0012 → 下游 0006 status 改 partially superseded）
+//   3. 更新 .gearbox-version 戳记为上游最新 tag（ADR-0023）
+//   4. git add + commit + push 到新分支 docs/gearbox-backfill-{date}
+//   5. 输出 gearbox-update-report.md 提示用户手改 AGENTS.md（脚本不碰 AGENTS.md）
 //
 // 不做什么:
 //   - 不改下游 AGENTS.md（L1 文件，只报告）
@@ -47,10 +46,10 @@ import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 // 上游寻址(ADR-0027): 运行时 resolveUpstream() 解析——env/本地默认命中用本地,
 // 否则 .gearbox-upstream 远端浅克隆缓存。这三个在 main() 开头被 resolveUpstream 重写。
 let GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
-let GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+let GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
 let UPSTREAM_URL = null; // 远端时 = .gearbox-upstream URL;本地时 = null
 const GEARBOX_GITHUB_BASE =
-  "https://github.com/real-stanyan/gearbox/blob/master/docs/adr";
+  "https://github.com/real-stanyan/gearbox/blob/master/docs/gearbox-adr";
 
 // CLI 参数
 let refreshDrift = false;
@@ -114,9 +113,9 @@ function tryRun(cmd) {
 // 重写模块级 GEARBOX_DIR / GEARBOX_ADR_DIR / UPSTREAM_URL。main() 开头调用。
 function resolveUpstream() {
   const localDir = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
-  if (existsSync(join(localDir, "docs/adr"))) {
+  if (existsSync(join(localDir, "docs/gearbox-adr"))) {
     GEARBOX_DIR = localDir; // 本地命中(维护者舰队),不碰远端
-    GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+    GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
     return;
   }
   const cfgPath = join(cwd(), ".gearbox-upstream");
@@ -141,14 +140,14 @@ function resolveUpstream() {
         );
       }
       GEARBOX_DIR = cacheDir;
-      GEARBOX_ADR_DIR = join(cacheDir, "docs/adr");
+      GEARBOX_ADR_DIR = join(cacheDir, "docs/gearbox-adr");
       UPSTREAM_URL = url;
       return;
     }
   }
   // 都没有:保持本地默认,后续 existsSync(GEARBOX_ADR_DIR) 报错兜底
   GEARBOX_DIR = localDir;
-  GEARBOX_ADR_DIR = join(localDir, "docs/adr");
+  GEARBOX_ADR_DIR = join(localDir, "docs/gearbox-adr");
 }
 
 // 跑 git 命令并喂 stdin(用于多行 commit message)
@@ -230,7 +229,7 @@ function buildAdrIndex(adrDir) {
 
 function validateContext() {
   const downDir = cwd();
-  const downAdrDir = join(downDir, "docs/adr");
+  const downAdrDir = join(downDir, "docs/gearbox-adr");
 
   if (!existsSync(GEARBOX_ADR_DIR)) {
     die(
@@ -240,8 +239,8 @@ function validateContext() {
   }
   if (!existsSync(downAdrDir)) {
     die(
-      "当前目录没有 docs/adr/",
-      "请在下游 repo 根目录跑本命令(gearbox 协议项目都有 docs/adr/)",
+      "当前目录没有 docs/gearbox-adr/",
+      "请在下游 repo 根目录跑本命令(gearbox 协议项目都有 docs/gearbox-adr/)",
     );
   }
 
@@ -325,7 +324,6 @@ function validateContext() {
 // 对每个 gearbox ADR,判断下游是否已有,以及如何回流
 function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
   const actions = []; // { type: 'skip'|'copy'|'refresh', gearbox, target?, reason? }
-  const usedDownNums = new Set(downIndex.keys());
 
   for (const [gearboxNum, gearboxAdr] of gearboxIndex) {
     // 1. slug 匹配(下游有 slug 相同的 ADR → 已回流)
@@ -378,24 +376,10 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
       continue;
     }
 
-    // 3. 撞号(下游 num 相同但 slug 不同)
-    if (usedDownNums.has(gearboxNum)) {
-      const occupiedBy = downIndex.get(gearboxNum);
-      actions.push({
-        type: "copy",
-        gearbox: gearboxAdr,
-        collision: true,
-        occupiedBy,
-        reason: `撞号: 下游 ADR-${pad4(gearboxNum)} = ${occupiedBy.slug},需重编号`,
-      });
-      continue;
-    }
-
-    // 4. 纯缺
+    // 3. 缺: 按 gearbox 原号拷入 gearbox-adr/(不撞号,号恒等)
     actions.push({
       type: "copy",
       gearbox: gearboxAdr,
-      collision: false,
       reason: "下游缺,按 gearbox 原号拷",
     });
   }
@@ -403,121 +387,36 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
   return actions;
 }
 
-// 全量编号映射(ADR-0024): 上游号 → 下游号, 含所有已存在的 slug/溯源配对。
-// 只有本次新拷的 renumberMap 会漏掉历史重编号——增量回流时新拷内文引用
-// 旧条目(如 ADR-0016)不映射, 在下游指向错误文件(Blackbox 实锤)。
-function buildExistingNumMap(gearboxIndex, downIndex) {
-  const map = new Map();
-  for (const [gearboxNum, gearboxAdr] of gearboxIndex) {
-    for (const [, downAdr] of downIndex) {
-      if (
-        downAdr.slug === gearboxAdr.slug ||
-        downAdr.provenanceGearboxNum === gearboxNum
-      ) {
-        map.set(gearboxNum, downAdr.num);
-        break;
-      }
+// ============== 拷贝 ==============
+
+// 拷贝单个 ADR + 应用溯源戳记(不重编号——双目录分家后号与上游 1:1 恒等,
+// ADR-XXXX 交叉引用无需改写)
+function transformAdrContent(gearboxAdr) {
+  const content0 = gearboxAdr.content;
+
+  // 溯源字段(若 gearbox ADR 没自带,追加一行机器生成版)
+  if (gearboxAdr.hasProvenanceField) return content0;
+
+  const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
+  // hash 戳记(ADR-0021): 上游文件内容 sha256 前 12 位,gearbox-version 用它检测
+  // 拷贝后的上游漂移。格式 `sha256:[0-9a-f]{12}` 是两工具间的契约。
+  const upstreamHash = sha12(gearboxAdr.content);
+  const provenanceLine = `- 溯源: 回流自 [gearbox ADR-${pad4(gearboxAdr.num)}](${gearboxUrl})（gearbox-update 工具同步,上游 sha256:${upstreamHash}）`;
+  const lines = content0.split("\n");
+  let insertAt = 1;
+  for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    if (/^- Date:/.test(lines[i])) {
+      insertAt = i + 1;
+      break;
     }
   }
-  return map;
-}
-
-// 分配下游新编号
-// 关键不变式: 所有分配的号必须互不冲突,且不与下游已有号冲突。
-// 算法: 按 gearbox num 升序处理,每项先试 gearbox 原号(若空),
-// 否则递增到下一个真正空闲的号。这样无论撞号与否,统一走同一逻辑。
-function assignDownstreamNums(actions, downIndex) {
-  const usedNums = new Set(downIndex.keys());
-  let nextCandidate = Math.max(0, ...usedNums) + 1;
-
-  const renumberMap = new Map(); // gearboxNum → downstreamNum
-  const assignments = []; // { action, newNum }
-
-  // 只处理 copy 项,按 gearbox num 升序(保证编号稳定)
-  const copyActions = actions
-    .filter((a) => a.type === "copy")
-    .sort((a, b) => a.gearbox.num - b.gearbox.num);
-
-  for (const action of copyActions) {
-    let newNum;
-    // 先试 gearbox 原号
-    if (!usedNums.has(action.gearbox.num)) {
-      newNum = action.gearbox.num;
-    } else {
-      // 原号被占(撞号,或被前面分配的项占了)→ 找下一个空号
-      while (usedNums.has(nextCandidate)) nextCandidate++;
-      newNum = nextCandidate;
-    }
-    usedNums.add(newNum);
-    nextCandidate = Math.max(nextCandidate, newNum + 1);
-
-    renumberMap.set(action.gearbox.num, newNum);
-    assignments.push({ action, newNum });
-  }
-
-  return { renumberMap, assignments };
-}
-
-// ============== 拷贝 + 重编号 + 替换 ==============
-
-// 替换 content 里的 ADR-XXXX 引用(单遍 token 替换,避免链式替换误伤)
-// 关键: 不能 in-place 链式替换(0011→0012 后再 0012→0013 会二次替换)
-// 算法: 一次正则扫所有 ADR-XXXX token,每个查 renumberMap 直接换目标号
-function replaceAdrRefs(content, renumberMap) {
-  return content.replace(/\bADR-(\d{4})\b/g, (match, numStr) => {
-    const num = parseInt(numStr, 10);
-    if (renumberMap.has(num)) {
-      return `ADR-${pad4(renumberMap.get(num))}`;
-    }
-    return match; // 不在 renumberMap 里(下游已有 / 下游原创引用) → 不动
-  });
-}
-
-// 拷贝单个 ADR + 应用所有变换
-function transformAdrContent(gearboxAdr, newNum, renumberMap) {
-  // a. 单遍全文替换 ADR-XXXX token(包括标题行)
-  //    replaceAdrRefs 用单遍 callback,不会链式替换
-  //    所以标题 `ADR-{gearboxNum}` 会被换成 `ADR-{newNum}`,body 里所有
-  //    ADR-{gearboxNum} 引用也一并换。renumberMap 里其他 key 同样处理。
-  let content = replaceAdrRefs(gearboxAdr.content, renumberMap);
-
-  // b. 溯源字段(若 gearbox ADR 没自带,追加一行机器生成版)
-  //    注意: 溯源行里的 `gearbox ADR-{gearboxAdr.num}` 是字面描述(指向
-  //    gearbox 那边的编号),不该被 replaceAdrRefs 改。所以这步在 a 之后。
-  if (!gearboxAdr.hasProvenanceField) {
-    const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
-    // hash 戳记(ADR-0021): 上游文件内容 sha256 前 12 位,gearbox-version 用它检测
-    // 拷贝后的上游漂移。格式 `sha256:[0-9a-f]{12}` 是两工具间的契约。
-    const upstreamHash = createHash("sha256")
-      .update(gearboxAdr.content)
-      .digest("hex")
-      .slice(0, 12);
-    // 用零宽空格把 "gearbox ADR-0011" 拆开,防 replaceAdrRefs 误伤(实际 a 已跑完,这里只是防御)
-    const provenanceLine = `- 溯源: 回流自 [gearbox ADR-${pad4(gearboxAdr.num)}](${gearboxUrl})（gearbox-update 工具同步,上游 sha256:${upstreamHash}）`;
-    const lines = content.split("\n");
-    let insertAt = 1;
-    for (let i = 0; i < Math.min(lines.length, 8); i++) {
-      if (/^- Date:/.test(lines[i])) {
-        insertAt = i + 1;
-        break;
-      }
-    }
-    lines.splice(insertAt, 0, provenanceLine);
-    content = lines.join("\n");
-  }
-
-  return content;
+  lines.splice(insertAt, 0, provenanceLine);
+  return lines.join("\n");
 }
 
 // supersede 联动: 若本次回流含 gearbox 0012,改下游 0006 status
-function applySupersedeLink(downAdrDir, renumberMap, assignments) {
-  // gearbox 0012 supersedes 0006
-  const gearbox0012Backfilled = assignments.find(
-    (a) => a.action.gearbox.num === 12,
-  );
-  if (!gearbox0012Backfilled) return null;
-
-  const newNumFor0012 = gearbox0012Backfilled.newNum;
+// (号与上游 1:1 恒等,下游落地号恒为 12,调用方已确认本次 toCopy 含 0012 才会调用)
+function applySupersedeLink(downAdrDir) {
   const downstream0006Path = join(downAdrDir, "0006-tiered-change-authority.md");
   if (!existsSync(downstream0006Path)) return null;
 
@@ -527,16 +426,16 @@ function applySupersedeLink(downAdrDir, renumberMap, assignments) {
 
   const currentStatus = statusLineMatch[1].trim();
   if (/partially superseded/.test(currentStatus)) {
-    return { alreadyApplied: true, newNum: newNumFor0012 };
+    return { alreadyApplied: true, newNum: 12 };
   }
 
-  const newStatus = `partially superseded by ADR-${pad4(newNumFor0012)}（由 gearbox-update 自动同步）`;
+  const newStatus = `partially superseded by ADR-0012（由 gearbox-update 自动同步）`;
   content = content.replace(
     /^(- Status:\s*).+$/m,
     `$1${newStatus}`,
   );
   writeFileSync(downstream0006Path, content);
-  return { alreadyApplied: false, newNum: newNumFor0012, file: downstream0006Path };
+  return { alreadyApplied: false, newNum: 12, file: downstream0006Path };
 }
 
 // ============== AGENTS.md 报告 ==============
@@ -594,7 +493,6 @@ function generateReport({
   assignments,
   refreshes,
   supersedeResult,
-  renumberMap,
   branchName,
   reportDate,
   baseBranch,
@@ -622,44 +520,22 @@ function generateReport({
       "上游已修订、下游拷贝被**覆盖**的文件。⚠️ 若下游曾对这些拷贝做过本地修改, 已丢失——review diff 时重点看:",
     );
     lines.push("");
-    lines.push("| gearbox | 下游(保留编号) | slug |");
-    lines.push("|---|---|---|");
+    lines.push("| gearbox | slug |");
+    lines.push("|---|---|");
     for (const a of refreshes) {
-      lines.push(
-        `| ADR-${pad4(a.gearbox.num)} | ADR-${pad4(a.target.num)} | ${a.gearbox.slug} |`,
-      );
+      lines.push(`| ADR-${pad4(a.gearbox.num)} | ${a.gearbox.slug} |`);
     }
     lines.push("");
   }
 
-  // 已回流表
+  // 已回流表(号与上游 1:1 恒等,不再重编号)
   if (assignments.length > 0) {
-  lines.push("## 已回流的 ADR");
-  lines.push("");
-  lines.push("| gearbox | 下游新编号 | slug | 重编号原因 |");
-  lines.push("|---|---|---|---|");
-  for (const { action, newNum } of assignments) {
-    const reason = action.collision
-      ? `撞号(下游 ${pad4(action.gearbox.num)} = ${action.occupiedBy.slug})`
-      : "原号空,直接拷";
-    lines.push(
-      `| ADR-${pad4(action.gearbox.num)} | ADR-${pad4(newNum)} | ${action.gearbox.slug} | ${reason} |`,
-    );
-  }
-  lines.push("");
-  }
-
-  // 全文替换的 ADR-XXXX 引用清单
-  const renumbered = [...renumberMap.entries()].filter(
-    ([s, d]) => s !== d,
-  );
-  if (renumbered.length > 0) {
-    lines.push("## 全文替换的 ADR-XXXX 引用");
+    lines.push("## 已回流的 ADR");
     lines.push("");
-    lines.push("| 原(gearbox) | 新(下游) |");
+    lines.push("| gearbox | slug |");
     lines.push("|---|---|");
-    for (const [s, d] of renumbered) {
-      lines.push(`| ADR-${pad4(s)} | ADR-${pad4(d)} |`);
+    for (const action of assignments) {
+      lines.push(`| ADR-${pad4(action.gearbox.num)} | ${action.gearbox.slug} |`);
     }
     lines.push("");
   }
@@ -674,7 +550,7 @@ function generateReport({
       );
     } else {
       lines.push(
-        `- 下游 \`docs/adr/0006-tiered-change-authority.md\` status 改为 \`partially superseded by ADR-${pad4(supersedeResult.newNum)}\``,
+        `- 下游 \`docs/gearbox-adr/0006-tiered-change-authority.md\` status 改为 \`partially superseded by ADR-${pad4(supersedeResult.newNum)}\``,
       );
     }
     lines.push("");
@@ -682,10 +558,9 @@ function generateReport({
 
   // AGENTS.md 需手改
   const agentsMdTasks = assignments
-    .map((a) => ({
-      adr: a.action.gearbox,
-      newNum: a.newNum,
-      impact: AGENTS_MD_IMPACT[a.action.gearbox.num],
+    .map((action) => ({
+      adr: action.gearbox,
+      impact: AGENTS_MD_IMPACT[action.gearbox.num],
     }))
     .filter((t) => t.impact);
 
@@ -698,7 +573,7 @@ function generateReport({
     lines.push("");
     for (const t of agentsMdTasks) {
       lines.push(
-        `### ADR-${pad4(t.newNum)} (${t.adr.slug}) → 改 \`${t.impact.section}\``,
+        `### ADR-${pad4(t.adr.num)} (${t.adr.slug}) → 改 \`${t.impact.section}\``,
       );
       lines.push("");
       lines.push(`${t.impact.note}`);
@@ -723,14 +598,14 @@ function generateReport({
     `gh pr create --base ${baseBranch} --head ${branchName} \\`,
   );
   const titleParts = [
-    ...assignments.map((a) => pad4(a.action.gearbox.num)),
+    ...assignments.map((action) => pad4(action.gearbox.num)),
     ...refreshes.map((a) => `${pad4(a.gearbox.num)}(重拷)`),
   ];
   lines.push(`  --title "docs(adr): 回流 gearbox ADR ${titleParts.join(" + ")}" \\`);
   lines.push(`  --body "..."`);
   lines.push("```");
   lines.push("");
-  lines.push("- [ ] review diff(特别看 ADR-XXXX 替换是否正确)");
+  lines.push("- [ ] review diff");
   lines.push("- [ ] 按 AGENTS.md 章节(上面)手改 AGENTS.md(L1)");
   lines.push("- [ ] 跑下游门禁");
   lines.push("- [ ] 开 PR,等维护者在 PR comment 写'同意'才能 merge(L1 b-弱形态)");
@@ -745,16 +620,16 @@ function generateReport({
 
 // ============== git 操作 ==============
 
-function gitOps(downDir, assignments, refreshes, supersedeResult, renumberMap, branchName, upstreamVersion) {
+function gitOps(downDir, assignments, refreshes, supersedeResult, branchName, upstreamVersion) {
   // 创建分支
   run(`git checkout -b ${branchName}`);
 
   // 每个漂移重拷一个 commit(ADR-0024)
   for (const a of refreshes) {
-    const dstPath = `docs/adr/${pad4(a.target.num)}-${a.gearbox.slug}.md`;
+    const dstPath = `docs/gearbox-adr/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`;
     run(`git add ${dstPath}`);
     const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`;
-    const commitMsg = `docs(adr): 漂移重拷 ADR-${pad4(a.target.num)}（${a.gearbox.slug}）
+    const commitMsg = `docs(adr): 漂移重拷 ADR-${pad4(a.gearbox.num)}（${a.gearbox.slug}）
 
 上游 gearbox ADR-${pad4(a.gearbox.num)} 已修订(hash 漂移), 用上游最新内容
 重跑变换覆盖, 溯源戳记换新 → sha256:${sha12(a.gearbox.content)}。
@@ -763,20 +638,16 @@ by gearbox-update --refresh-drift (gearbox ADR-0024)。
     runWithStdin(`git commit -F -`, commitMsg);
   }
 
-  // 每个回流 ADR 一个 commit
-  for (const { action, newNum } of assignments) {
+  // 每个回流 ADR 一个 commit(号与上游 1:1 恒等,不再重编号)
+  for (const action of assignments) {
     const gearboxAdr = action.gearbox;
-    const dstPath = `docs/adr/${pad4(newNum)}-${gearboxAdr.slug}.md`;
+    const dstPath = `docs/gearbox-adr/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
     run(`git add ${dstPath}`);
 
-    const collisionNote = action.collision
-      ? `\n重编号原因: 下游 ADR-${pad4(gearboxAdr.num)} 已被占用(${action.occupiedBy.slug})。`
-      : "";
-
     const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
-    const commitMsg = `docs(adr): 回流 gearbox ADR-${pad4(gearboxAdr.num)} → ADR-${pad4(newNum)}（${gearboxAdr.slug}）
+    const commitMsg = `docs(adr): 回流 gearbox ADR-${pad4(gearboxAdr.num)}（${gearboxAdr.slug}）
 
-by gearbox-update tool. ${collisionNote}
+by gearbox-update tool.
 溯源: ${gearboxUrl}
 
 注: AGENTS.md 对应章节需用户手动改(L1 文件,脚本不碰)。
@@ -787,7 +658,7 @@ by gearbox-update tool. ${collisionNote}
 
   // supersede 联动 commit(若改了)
   if (supersedeResult && !supersedeResult.alreadyApplied) {
-    run(`git add docs/adr/0006-tiered-change-authority.md`);
+    run(`git add docs/gearbox-adr/0006-tiered-change-authority.md`);
     const commitMsg = `docs(adr): 同步 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
 
 gearbox 0012 supersedes 0006,本 commit 把下游 0006 的 status 行
@@ -866,9 +737,11 @@ function main() {
   // 匹配
   const actions = matchAdrs(gearboxIndex, downIndex, refreshDrift);
 
-  // 打印诊断
+  // 打印诊断(按 gearbox num 升序,保证输出/commit 顺序稳定)
   const skipped = actions.filter((a) => a.type === "skip");
-  const toCopy = actions.filter((a) => a.type === "copy");
+  const toCopy = actions
+    .filter((a) => a.type === "copy")
+    .sort((a, b) => a.gearbox.num - b.gearbox.num);
   const toRefresh = actions.filter((a) => a.type === "refresh");
   const driftedSkips = skipped.filter((a) => a.drifted);
 
@@ -894,11 +767,8 @@ function main() {
   if (toCopy.length > 0) {
     stdout.write(C.yellow(`⚠️  待回流 ${toCopy.length} 个:\n`));
     for (const a of toCopy) {
-      const tag = a.collision
-        ? C.red(`[撞号 → 重编号]`)
-        : C.green(`[原号拷]`);
       stdout.write(
-        `  ${tag} gearbox ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
+        `  ${C.green("[原号拷]")} gearbox ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
       );
     }
   }
@@ -925,32 +795,13 @@ function main() {
   }
   stdout.write("\n");
 
-  // 分配下游新编号
-  const { renumberMap, assignments } = assignDownstreamNums(actions, downIndex);
-
-  // 全量引用映射(ADR-0024): 历史配对 ∪ 本次新拷。新拷与重拷的变换都用它。
-  const fullNumMap = new Map([
-    ...buildExistingNumMap(gearboxIndex, downIndex),
-    ...renumberMap,
-  ]);
-
-  if (assignments.length > 0) {
-    stdout.write(C.bold("分配结果:\n"));
-    for (const { action, newNum } of assignments) {
-      const arrow =
-        action.gearbox.num === newNum ? "→" : C.yellow("→(重编号)");
-      stdout.write(
-        `  gearbox ADR-${pad4(action.gearbox.num)} ${arrow} 下游 ADR-${pad4(newNum)} (${action.gearbox.slug})\n`,
-      );
-    }
-    stdout.write("\n");
-
-    // 执行拷贝
-    stdout.write(C.bold("拷贝 + 重编号 + 全文替换:\n"));
-    for (const { action, newNum } of assignments) {
+  // 拷贝(号与上游 1:1 恒等,不再分配/重编号)
+  if (toCopy.length > 0) {
+    stdout.write(C.bold("拷贝:\n"));
+    for (const action of toCopy) {
       const gearboxAdr = action.gearbox;
-      const dstPath = join(downAdrDir, `${pad4(newNum)}-${gearboxAdr.slug}.md`);
-      const transformed = transformAdrContent(gearboxAdr, newNum, fullNumMap);
+      const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
+      const transformed = transformAdrContent(gearboxAdr);
       writeFileSync(dstPath, transformed);
       stdout.write(
         `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")}\n`,
@@ -959,16 +810,15 @@ function main() {
     stdout.write("\n");
   }
 
-  // 执行漂移重拷(ADR-0024): 保留下游编号, 上游最新内容重跑变换覆盖
+  // 执行漂移重拷(ADR-0024): 保留下游编号(= 上游原号), 上游最新内容重跑变换覆盖
   if (toRefresh.length > 0) {
     stdout.write(C.bold("漂移重拷(覆盖, 戳记换新):\n"));
     for (const a of toRefresh) {
-      const downNum = a.target.num;
       const dstPath = join(
         downAdrDir,
-        `${pad4(downNum)}-${a.gearbox.slug}.md`,
+        `${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`,
       );
-      const transformed = transformAdrContent(a.gearbox, downNum, fullNumMap);
+      const transformed = transformAdrContent(a.gearbox);
       writeFileSync(dstPath, transformed);
       stdout.write(
         `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")} ${C.dim(`(上游 sha256:${sha12(a.gearbox.content)})`)}\n`,
@@ -977,11 +827,11 @@ function main() {
     stdout.write("\n");
   }
 
-  // supersede 联动
+  // supersede 联动(仅当本次实际回流了 gearbox 0012 才触发)
   let supersedeResult = null;
-  if (renumberMap.has(12)) {
+  if (toCopy.some((a) => a.gearbox.num === 12)) {
     stdout.write(C.bold("supersede 联动(gearbox 0012 → 下游 0006):\n"));
-    supersedeResult = applySupersedeLink(downAdrDir, renumberMap, assignments);
+    supersedeResult = applySupersedeLink(downAdrDir);
     if (supersedeResult) {
       if (supersedeResult.alreadyApplied) {
         stdout.write(
@@ -1021,21 +871,20 @@ function main() {
   try {
     const { pushResult, stampUpdated } = gitOps(
       downDir,
-      assignments,
+      toCopy,
       toRefresh,
       supersedeResult,
-      renumberMap,
       branchName,
       upstreamVersion,
     );
     for (const a of toRefresh) {
       stdout.write(
-        `  ${C.green("✓ commit")} 漂移重拷 ADR-${pad4(a.target.num)} (${a.gearbox.slug})\n`,
+        `  ${C.green("✓ commit")} 漂移重拷 ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})\n`,
       );
     }
-    for (const { action, newNum } of assignments) {
+    for (const action of toCopy) {
       stdout.write(
-        `  ${C.green("✓ commit")} ADR-${pad4(action.gearbox.num)} → ADR-${pad4(newNum)}\n`,
+        `  ${C.green("✓ commit")} ADR-${pad4(action.gearbox.num)}\n`,
       );
     }
     if (supersedeResult && !supersedeResult.alreadyApplied) {
@@ -1065,7 +914,7 @@ function main() {
   } catch (e) {
     die(
       `git 操作失败: ${e.message}`,
-      "本地文件已写入但未 commit/push,手动处理:\n  git status\n  git add docs/adr/\n  git commit\n  git push",
+      "本地文件已写入但未 commit/push,手动处理:\n  git status\n  git add docs/gearbox-adr/\n  git commit\n  git push",
     );
   }
   stdout.write("\n");
@@ -1073,10 +922,9 @@ function main() {
   // 生成报告
   const report = generateReport({
     downstreamRepo: downRepo,
-    assignments,
+    assignments: toCopy,
     refreshes: toRefresh,
     supersedeResult,
-    renumberMap,
     branchName,
     reportDate,
     baseBranch,
