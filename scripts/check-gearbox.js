@@ -29,7 +29,7 @@ const requiredFiles = [
   "CONTEXT.md",
   "README.md",
   ".github/workflows/ci.yml",
-  "docs/adr/0001-adr-template.md",
+  "docs/gearbox-adr/0001-adr-template.md",
   // B-3 carriers (ADR-0013): the downstream-backfill hard rule runs through
   // these two files — if either disappears, the mechanism dies silently.
   "DOWNSTREAM.md",
@@ -49,8 +49,8 @@ if (existsSync(join(root, "CLAUDE.md"))) {
   );
 }
 
-// 3. docs/adr/ is a directory
-check("docs/adr/ must be a directory", existsSync(join(root, "docs", "adr")) && statSync(join(root, "docs", "adr")).isDirectory());
+// 3. docs/gearbox-adr/ is a directory
+check("docs/gearbox-adr/ must be a directory", existsSync(join(root, "docs", "gearbox-adr")) && statSync(join(root, "docs", "gearbox-adr")).isDirectory());
 
 // 4. AGENTS.md contains the load-bearing section anchors that the working
 //    agreement depends on. Renaming any of these silently breaks the protocol.
