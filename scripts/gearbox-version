@@ -46,7 +46,7 @@ UPSTREAM_URL=""
 [[ -f .gearbox-upstream ]] && UPSTREAM_URL=$(head -1 .gearbox-upstream | tr -d '[:space:]')
 UPSTREAM_IS_REMOTE=0
 
-if [[ -d "$DEFAULT_LOCAL/docs/adr" ]]; then
+if [[ -d "$DEFAULT_LOCAL/docs/gearbox-adr" ]]; then
   GEARBOX_DIR="$DEFAULT_LOCAL"                       # 本地上游命中 (维护者舰队走这条)
 elif [[ -n "$UPSTREAM_URL" ]]; then
   UPSTREAM_IS_REMOTE=1                               # 陌生 fork: 浅克隆缓存
@@ -64,20 +64,20 @@ elif [[ -n "$UPSTREAM_URL" ]]; then
   fi
 else
   echo "${RED}✗ 找不到 Gearbox 上游${RESET}"
-  echo "  本地无 $DEFAULT_LOCAL/docs/adr, 且根目录无 .gearbox-upstream 配置"
+  echo "  本地无 $DEFAULT_LOCAL/docs/gearbox-adr, 且根目录无 .gearbox-upstream 配置"
   echo "  设 GEARBOX_DIR 环境变量, 或在 .gearbox-upstream 写上游 git URL (ADR-0027)"
   exit 1
 fi
-UPSTREAM_ADR_DIR="$GEARBOX_DIR/docs/adr"
+UPSTREAM_ADR_DIR="$GEARBOX_DIR/docs/gearbox-adr"
 
 if [[ ! -d "$UPSTREAM_ADR_DIR" ]]; then
   echo "${RED}✗ 上游 ADR 目录缺失: $UPSTREAM_ADR_DIR${RESET}"
   exit 1
 fi
 
-DOWNSTREAM_ADR_DIR="docs/adr"
+DOWNSTREAM_ADR_DIR="docs/gearbox-adr"
 if [[ ! -d "$DOWNSTREAM_ADR_DIR" ]]; then
-  echo "${RED}✗ 当前目录没有 docs/adr/——请在下游 repo 根目录跑本命令${RESET}"
+  echo "${RED}✗ 当前目录没有 docs/gearbox-adr/——请在下游 repo 根目录跑本命令${RESET}"
   exit 1
 fi
 
