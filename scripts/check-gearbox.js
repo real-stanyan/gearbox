@@ -52,6 +52,24 @@ if (existsSync(join(root, "CLAUDE.md"))) {
 // 3. docs/gearbox-adr/ is a directory
 check("docs/gearbox-adr/ must be a directory", existsSync(join(root, "docs", "gearbox-adr")) && statSync(join(root, "docs", "gearbox-adr")).isDirectory());
 
+// 3b. package.json `files` allowlist must ship the ADR dir that actually exists.
+//     Guards the npm/npx channel (ADR-0028): if `files` points at a moved/renamed
+//     ADR dir, `npm pack` silently ships zero ADRs and every `npx gearbox-agents`
+//     command crashes. Caught exactly this in the docs/adr → docs/gearbox-adr move.
+if (existsSync(join(root, "package.json"))) {
+  let files = [];
+  try {
+    files = JSON.parse(readFile("package.json")).files || [];
+  } catch {
+    check("package.json must be valid JSON", false);
+  }
+  const shipsAdrDir = files.some((f) => f.replace(/\/$/, "") === "docs/gearbox-adr");
+  check(
+    "package.json `files` must include \"docs/gearbox-adr/\" (else npm pack ships zero ADRs — ADR-0028/0031)",
+    shipsAdrDir,
+  );
+}
+
 // 4. AGENTS.md contains the load-bearing section anchors that the working
 //    agreement depends on. Renaming any of these silently breaks the protocol.
 if (existsSync(join(root, "AGENTS.md"))) {
