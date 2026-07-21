@@ -27,7 +27,7 @@ node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <你的名字>
 
 装完：
 1. 填 `AGENTS.md` 里剩余 `<占位符>`（`grep -n '<' AGENTS.md`）
-2. 首个自有架构决策写进 `docs/adr/`（编号接在拷入的上游 ADR 之后；0001 是模板）
+2. 首个自有架构决策写进 `docs/adr/`（项目 ADR 独立编号，从 0001 起）；协议 ADR 在 `docs/gearbox-adr/`（工具管，格式见其 0001-adr-template.md）
 3. 开工三件事第 4 步跑 `npx gearbox-agents version` 自查协议版本(pull 触发)
 
 ## 架构（为什么长这样）
@@ -37,7 +37,7 @@ node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <你的名字>
 | `AGENTS.md` | 单一事实源。所有 agent（Claude Code、Z Code 等）都读它。规则只写这一份 |
 | `CLAUDE.md` | 空壳，`@AGENTS.md` 一行。兼容旧版 Claude Code + 未来 Claude 专属内容挂载点 |
 | `CONTEXT.md` | 领域词汇表。防止不同 agent 对同一个业务词理解不同 |
-| `docs/adr/` | 决策记录。防止后来的 agent 把有意为之的设计"好心"改回去 |
+| `docs/gearbox-adr/` | 协议 ADR（拷自 Gearbox，工具管）。`docs/adr/` 则放本项目自有决策 |
 | `.github/workflows/ci.yml` | 硬门禁。红了 merge 不进——唯一不依赖 agent 自觉的约束 |
 
 刻意**没有** `HANDOFF.md`：进度和交接走 GitHub Issues + PR（append-only、带时间戳、不腐烂）。

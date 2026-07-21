@@ -31,7 +31,7 @@
 - 小步 commit，message 写清 **why**，不只是 what
 - 一个任务从头到尾一个 agent 做完；交接只发生在任务边界（issue 关闭 / PR 合并），不在任务中间
 - 非 trivial 改动走分支 + PR；typo 级小改可直接进 main
-- 架构性决策写 `docs/adr/`（一个决策一个文件）
+- **项目自有**架构决策写 `docs/adr/`（一个决策一个文件，从 0001 起）；协议 ADR 在 `docs/gearbox-adr/`，由 gearbox 工具管，手别改
 - 业务术语的定义查 `CONTEXT.md`；新术语出现时补进去
 
 ### Issue & PR 的角色
@@ -51,7 +51,7 @@ Issues 和 PR 是 agent 之间（以及 agent ↔ 人之间）带时间戳、app
 - **交接 = issue 关闭 / PR 合并的那一刻**，不是"我觉得讲清楚了"。没关 issue 就换人 = 任务中途换手，违反上一节。
 - **PR 是 Task 的实施载体，不是独立角色**：PR 引用它实现的 Task issue，merge 时关 issue。PR review 中发现的新问题另开 issue，不在 PR 评论里堆。
 
-> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/adr/0003-issue-roles.md`。为什么 Memory 留在 open 交接 issue 而不是关闭的 Task issue：见 `docs/adr/0005-handoff-lives-in-an-open-issue.md`。
+> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/gearbox-adr/0003-issue-roles.md`。为什么 Memory 留在 open 交接 issue 而不是关闭的 Task issue：见 `docs/gearbox-adr/0005-handoff-lives-in-an-open-issue.md`。
 
 ### PR 处置（merge 规则）
 
@@ -144,6 +144,7 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 ## Where to find things
 
 - `CONTEXT.md` — 领域词汇表
-- `docs/adr/` — 架构决策记录
+- `docs/gearbox-adr/` — 协议 ADR（拷自 Gearbox，工具管，手别改）
+- `docs/adr/` — 本项目自有架构决策（从 0001 起）
 - `scripts/` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写 / gearbox-prune 分支卫生，ADR-0016/0017/0022/0030）
 - <其他模块文档目录，如 docs/modules/>
