@@ -40,9 +40,9 @@ import { env, argv, exit, cwd } from "node:process";
 // ============== 配置 ==============
 
 const GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
-const GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/adr");
+const GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
 const GEARBOX_GITHUB_BASE =
-  "https://github.com/real-stanyan/gearbox/blob/master/docs/adr";
+  "https://github.com/real-stanyan/gearbox/blob/master/docs/gearbox-adr";
 
 const C = {
   red: (s) => `\x1b[31m${s}\x1b[0m`,
@@ -200,7 +200,8 @@ agents = mustReplace(
 - \`scripts/\` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写 / gearbox-prune 分支卫生，ADR-0016/0017/0022/0030）
 - <其他模块文档目录，如 docs/modules/>`,
   `- \`CONTEXT.md\` — 领域词汇表
-- \`docs/adr/\` — 架构决策记录（0001–${pad4(0)} 占位,由安装脚本改写）
+- \`docs/gearbox-adr/\` — 协议 ADR（拷自 Gearbox,工具管,手别改）
+- \`docs/adr/\` — 本项目自有架构决策（从 0001 起,人写）
 - <其他模块文档目录，如 docs/modules/>`,
   "Where to find things",
 );
@@ -230,22 +231,14 @@ agents = mustReplace(
 // <维护者> 替换(可选)
 if (maintainer) agents = agents.replaceAll("<维护者>", maintainer);
 
-// ============== 2. docs/adr/ 全量拷贝 + hash 戳记 ==============
+// ============== 2. docs/gearbox-adr/ 全量拷贝 + hash 戳记 ==============
 
 const adrFiles = readdirSync(GEARBOX_ADR_DIR)
   .filter((f) => /^\d{4}-.+\.md$/.test(f))
   .sort();
-if (adrFiles.length === 0) die("上游 docs/adr/ 为空?");
+if (adrFiles.length === 0) die("上游 docs/gearbox-adr/ 为空?");
 
-const lastNum = parseInt(adrFiles[adrFiles.length - 1].slice(0, 4), 10);
-
-// 补上 Where to find things 里的 ADR 范围(上面先占位,这里知道真实终号后改写)
-agents = agents.replace(
-  `（0001–${pad4(0)} 占位,由安装脚本改写）`,
-  `（0001–${pad4(lastNum)} 随 Gearbox 引入,${pad4(lastNum + 1)} 起为本项目自有）`,
-);
-
-mkdirSync(join(targetDir, "docs/adr"), { recursive: true });
+mkdirSync(join(targetDir, "docs/gearbox-adr"), { recursive: true });
 let stamped = 0;
 for (const f of adrFiles) {
   let content = readFileSync(join(GEARBOX_ADR_DIR, f), "utf8");
@@ -266,7 +259,7 @@ for (const f of adrFiles) {
     content = lines.join("\n");
     stamped++;
   }
-  writeFileSync(join(targetDir, "docs/adr", f), content);
+  writeFileSync(join(targetDir, "docs/gearbox-adr", f), content);
 }
 
 // ============== 3. CONTEXT.md 变换 ==============
@@ -386,7 +379,7 @@ console.log("");
 console.log(`  ${C.green("✓")} AGENTS.md   ${C.dim(`(维护者: ${maintainer || "<维护者> 占位"}; Gate: ${gateCmd || "占位"})`)}`);
 console.log(`  ${C.green("✓")} CLAUDE.md   ${C.dim("(@AGENTS.md 空壳契约)")}`);
 console.log(`  ${C.green("✓")} CONTEXT.md  ${C.dim("(协议词条随拷)")}`);
-console.log(`  ${C.green("✓")} docs/adr/   ${C.dim(`(${adrFiles.length} 个上游 ADR, ${stamped} 个已加 hash 戳记 ADR-0021)`)}`);
+console.log(`  ${C.green("✓")} docs/gearbox-adr/ ${C.dim(`(${adrFiles.length} 个上游协议 ADR, ${stamped} 个已加 hash 戳记 ADR-0021)`)}`);
 console.log(`  ${C.green("✓")} ci.yml      ${C.dim(gateCmd ? "(与 Gate 节同命令)" : "(占位命令, 故意红——填 Gate 前 CI 不该绿)")}`);
 if (upstreamVersion)
   console.log(`  ${C.green("✓")} .gearbox-version ${C.dim(`(${upstreamVersion}, ADR-0023 版本戳记)`)}`);
@@ -403,7 +396,7 @@ const placeholderHint =
   (maintainer ? "" : " / <维护者>") +
   (gateCmd ? ")" : " / Gate 命令,ci.yml 同步)");
 console.log(`  ${step++}. 填占位符: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
-console.log(`  ${step++}. 首个自有决策写 ${C.cyan(`docs/adr/${pad4(lastNum + 1)}-*.md`)} ${C.dim("(0001 是模板)")}`);
+console.log(`  ${step++}. 首个自有决策写 ${C.cyan(`docs/adr/0001-*.md`)} ${C.dim("(项目 ADR 独立编号;协议 ADR 在 docs/gearbox-adr/,格式见 0001-adr-template.md)")}`);
 console.log(`  ${step++}. 首 commit + push, 之后开工三件事第 4 步跑 ${C.cyan("gearbox-version")} 自查协议版本(pull 触发, ADR-0026)`);
 console.log(`  ${C.dim(`  (可选) 维护者可把本项目加进 ~/Github/gearbox/DOWNSTREAM.md 舰队仪表盘——非必需,回流靠下游自查不靠清单`)}`);
 console.log("");
