@@ -9,7 +9,7 @@
   "files": [
     "bin/",
     "scripts/",
-    "docs/adr/",
+    "docs/gearbox-adr/",
     "AGENTS.md",
     "CONTEXT.md"
   ],

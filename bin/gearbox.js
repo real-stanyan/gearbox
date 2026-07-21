@@ -2,7 +2,7 @@
 // gearbox — npx dispatcher (ADR-0028).
 //
 // 让陌生人零配置用工具家族:`npx gearbox-agents <install|version|update>`。
-// npm 包自带上游快照(打包 AGENTS.md / CONTEXT.md / docs/adr/,见 package.json
+// npm 包自带上游快照(打包 AGENTS.md / CONTEXT.md / docs/gearbox-adr/,见 package.json
 // "files"),dispatcher 把 GEARBOX_DIR 指向包根 → 三工具复用现有本地路径逻辑,
 // npx 路径根本不碰远端(ADR-0027 远端寻址是 git-clone 下游的兜底,非 npx 路径)。
 //

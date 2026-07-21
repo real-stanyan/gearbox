@@ -343,7 +343,6 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
         actions.push({
           type: "refresh",
           gearbox: gearboxAdr,
-          target: slugMatch,
           reason: `漂移重拷: 记录 sha256:${recorded} ≠ 上游当前, 覆盖下游 ADR-${pad4(slugMatch.num)}`,
         });
         continue;
