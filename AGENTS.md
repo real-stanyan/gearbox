@@ -1,8 +1,8 @@
 # Gearbox
 
-多 agent（Claude Code + Z Code 等）协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent 在同一个 repo 里轮流干活而不打架的人用。
+多 agent 协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent（不限工具——Claude Code、Z Code、Cursor 等任意 agent coding tool 皆可）在同一个 repo 里轮流干活而不打架的人用。
 
-> This file is the single source of truth for ALL coding agents (Claude Code, Z Code, etc.).
+> This file is the single source of truth for ALL AI coding agents, whatever the tool (Claude Code, Z Code, Cursor, etc.).
 > Rules live here and only here. Do not duplicate them elsewhere.
 
 ## Tech stack
@@ -137,7 +137,7 @@ CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
 
 分工是项目属性，模板不预设（ADR-0008）。拷走时三选一：
 
-1. **填实**：哪类任务归哪个 agent。<未验证的候选示例：机械性批量修改、补测试 → Z Code；架构设计、难 bug → Claude Code>
+1. **填实**：哪类任务归哪个 agent（按能力分，不绑定具体工具）。<未验证的候选示例：机械性批量修改、补测试 → 擅长批量执行的 agent；架构设计、难 bug → 擅长深推理的 agent>
 2. **不填**：默认规则 = **Task issue 认领制**——谁认领谁从头做到尾（见 While working），任务不按 agent 特长路由。
 3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-gearbox.js`）。
 

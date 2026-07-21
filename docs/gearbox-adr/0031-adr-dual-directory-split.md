@@ -23,7 +23,7 @@
 
 ## Consequences
 
-- **跨工具契约变更(文件布局)= major**(ADR-0023)→ v1.3.0 后为 v2.0.0。碰 Gate 锚点 + 三工具 = L1(ADR-0006)。
+- **版本 = minor → v1.4.0**。文件布局变更按 ADR-0023 字面为 major,但**无外部采纳者**(存量 3 下游均为自测舰队),实际不产生下游破坏,维护者定为 minor(按「新增双目录机制」计,ADR-0023)。碰 Gate 锚点 + 三工具 = **L1**(ADR-0006,与版本段位正交)。
 - `gearbox-update` 大幅简化:删撞号/重编号/内文改写,回流即「缺则按上游原号拷入 gearbox-adr/」。
 - 下游项目 ADR 从 0001 独立编号,语义清晰:`ls docs/adr/` 只见自家决策,`ls docs/gearbox-adr/` 只见协议。
 - 存量下游需一次性手动 `git mv`(本次不做);未迁移的老下游跑新 update 会把协议 ADR 拷进 `gearbox-adr/`,`docs/adr/` 里的旧协议 ADR 残留需手动清。

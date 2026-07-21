@@ -127,7 +127,7 @@ let agents = agentsSrc;
 agents = mustReplace(agents, "# Gearbox\n", `# ${projectName}\n`, "标题");
 agents = mustReplace(
   agents,
-  "多 agent（Claude Code + Z Code 等）协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent 在同一个 repo 里轮流干活而不打架的人用。",
+  "多 agent 协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent（不限工具——Claude Code、Z Code、Cursor 等任意 agent coding tool 皆可）在同一个 repo 里轮流干活而不打架的人用。",
   "<一句话:这个项目是什么、做到什么程度算成、范围边界在哪。>",
   "简介段",
 );
