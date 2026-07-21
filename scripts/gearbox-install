@@ -12,7 +12,7 @@
 //                  Gate 命令填入、Where to find things 通用化
 //   2. CLAUDE.md   = `@AGENTS.md` 空壳契约
 //   3. CONTEXT.md  协议词条随拷(去 Dogfood 行、gate 行去 check-gearbox 硬编码)
-//   4. docs/adr/   全量拷贝上游 ADR,每个加溯源行 + hash 戳记(ADR-0021 契约)
+//   4. docs/gearbox-adr/   全量拷贝上游 ADR,每个加溯源行 + hash 戳记(ADR-0021 契约)
 //   5. ci.yml      生成,命令与 Gate 节字面一致(CI == Gate 契约)
 //   6. .gearbox-version  写入接入时的上游版本 tag(ADR-0023 戳记)
 //   7. .gearbox-upstream 写入上游 git URL(ADR-0027 远端寻址;供下游无本地
@@ -196,7 +196,8 @@ agents = mustReplace(
 agents = mustReplace(
   agents,
   `- \`CONTEXT.md\` — 领域词汇表
-- \`docs/adr/\` — 架构决策记录
+- \`docs/gearbox-adr/\` — 协议 ADR（拷自 Gearbox，工具管，手别改）
+- \`docs/adr/\` — 本项目自有架构决策（从 0001 起）
 - \`scripts/\` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写 / gearbox-prune 分支卫生，ADR-0016/0017/0022/0030）
 - <其他模块文档目录，如 docs/modules/>`,
   `- \`CONTEXT.md\` — 领域词汇表
