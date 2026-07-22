@@ -266,16 +266,26 @@ function validateContext() {
   }
 
   // Clean-worktree check (ADR-0025: exempts this tool's own report file — it's disposable and
-  // overwritten every run)
+  // overwritten every run). Only tracked changes (modified/staged/deleted) block: this tool
+  // commits file-by-file (git add <path>, never add -A), so untracked files can't be clobbered
+  // or swept into a backfill commit — they're listed as an FYI and the run proceeds (#92).
   const statusLines = run("git status --porcelain")
     .split("\n")
     .filter(Boolean)
     .filter((l) => !/gearbox-update-report\.md$/.test(l));
-  if (statusLines.length > 0) {
+  const trackedDirty = statusLines.filter((l) => !l.startsWith("??"));
+  const untracked = statusLines.filter((l) => l.startsWith("??"));
+  if (trackedDirty.length > 0) {
     die(
       "Working tree isn't clean, there are uncommitted changes:",
       "commit or stash first, then run gearbox-update (this keeps the script from clobbering your changes):\n" +
-        statusLines.join("\n"),
+        trackedDirty.join("\n"),
+    );
+  }
+  if (untracked.length > 0) {
+    stdout.write(
+      C.dim(`  ${untracked.length} untracked file(s) present — ignored, backfill commits add files one by one:\n`) +
+        C.dim(untracked.map((l) => `  ${l}`).join("\n") + "\n"),
     );
   }
 
