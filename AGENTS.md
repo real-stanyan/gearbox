@@ -23,7 +23,7 @@ A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the si
 ### On starting a shift (the three start-of-shift steps)
 
 1. `git log --oneline -10` — see what happened recently
-2. Check GitHub Issues — **first look for an open handoff issue** (the previous shift's Memory is in there; reading it and closing it = taking over, see ADR-0005. If none found → check whether the most recently closed issue has a "no next shift" terminal declaration: if yes = a compliant terminal shift-end (ADR-0009), start work normally; if no = the previous shift ended out of compliance, open a Protocol gap issue to record it — either way, rebuild context from git log + open issues), then check other open tasks and notes
+2. Check GitHub Issues — **first look for an open handoff issue** (the previous shift's Memory is in there; reading it and closing it = taking over, see ADR-0005. If none found → check whether the most recently closed issue has a "no next shift" terminal declaration: if yes = a compliant terminal shift (ADR-0009), start work normally; if no = the previous shift ended out of compliance, open a Protocol gap issue to record it — either way, rebuild context from git log + open issues), then check other open tasks and notes
 3. Run the gate command (see below) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline
 
 ### While working
@@ -121,7 +121,7 @@ CI (`.github/workflows/ci.yml`) runs the same set of commands; if it's red, merg
 1. The gate is all-green
 2. commit + push
 3. Close finished Task issues as usual; for half-finished ones, write progress into that issue's comment
-4. **Open a handoff issue for the next shift** (Task type, kept open, ADR-0005): the body states the current state and suggestions for next steps, and this shift's Memory comment (five-part format, ADR-0004) goes here. **This is the only entry point the next shift is guaranteed to encounter** — Memory no longer gets buried in a casually closed Task issue. **The sole exception — a terminal shift-end** (ADR-0009): when archiving / confirming there's no next shift, you may skip opening one, but you must explicitly declare "no next shift" + the reason in a comment on the last closed issue. A silent terminal doesn't count as terminal
+4. **Open a handoff issue for the next shift** (Task type, kept open, ADR-0005): the body states the current state and suggestions for next steps, and this shift's Memory comment (five-part format, ADR-0004) goes here. **This is the only entry point the next shift is guaranteed to encounter** — Memory no longer gets buried in a casually closed Task issue. **The sole exception — a terminal shift** (ADR-0009): when archiving / confirming there's no next shift, you may skip opening one, but you must explicitly declare "no next shift" + the reason in a comment on the last closed issue. A silent terminal doesn't count as terminal
 
 ### Branch hygiene (optional)
 
