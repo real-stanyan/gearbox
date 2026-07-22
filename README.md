@@ -19,7 +19,7 @@ npx gearbox-agents update     # copy missing upstream ADRs into this repo, produ
 ```
 
 > npx path: the package ships its own upstream snapshot; `version`/`update` diff against that packaged snapshot (ADR-0028).
-> `version` needs bash in the environment (native on mac/linux; use Git Bash / WSL on Windows); `install`/`update` are node, cross-platform.
+> All commands are node, cross-platform (`version` was bash until ADR-0035 rewrote it in node).
 
 **Maintainers / contributors** (working on Gearbox itself) use a local clone:
 
