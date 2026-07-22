@@ -1,37 +1,37 @@
-# ADR-0009: 终局收工可豁免交接 issue——但必须显式声明「无下一棒」
+# ADR-0009: Terminal shift ending can be exempted from the handoff issue — but must explicitly declare "no next shift"
 
 - Date: 2026-07-17
 - Status: accepted
-- 修订对象:ADR-0005(不推翻其主体,补边界条款)
+- Revises: ADR-0005 (does not overturn its body, adds a boundary clause)
 
 ## Context
 
-issue #8:本 repo 的 backfill 棒(PR #7)merge 了 ADR-0005(收工必须开下一棒交接 issue),自己收工却没开。下一棒开工时按 On starting 第 2 步找不到交接 issue,无法区分两种情况:
+issue #8: the backfill shift for this repo (PR #7) merged ADR-0005 (ending a shift must open a handoff issue for the next shift), but the shift itself ended without opening one. When the next shift started work, following step 2 of "On starting a shift" it could not find a handoff issue, and couldn't distinguish between two cases:
 
-- **(a) 违规收工**——规则生效了,上一棒没执行
-- **(b) 终局收工**——工作到头了,本来就不该有下一棒。date-cli 归档时就是这种:open issues 归零,最后 comment 声明「不再需要下一棒」,没开交接 issue
+- **(a) Non-compliant shift ending** — the rule was in effect, and the previous shift didn't follow it
+- **(b) Terminal shift ending** — the work had run its course, and there was never supposed to be a next shift. This is exactly what happened when date-cli was archived: open issues dropped to zero, and the final comment declared "no next shift needed" without opening a handoff issue
 
-ADR-0005 没写终局边界,两种解读都成立,协议分不出对错。
+ADR-0005 didn't define a terminal boundary, so both readings hold, and the protocol can't tell right from wrong.
 
 ## Decision
 
-**豁免 + 显式声明(issue #8 的方案 1):**
+**Exemption + explicit declaration (option 1 from issue #8):**
 
-1. **终局收工**(显式归档 / 判断无下一棒)**可以不开交接 issue**,但必须在最后关闭的 issue 里留 comment 显式声明「无下一棒」+ 理由。沉默的终局不算终局。
-2. **非终局收工一律不豁免**。找不到交接 issue 且最近关闭的 issue 里没有终局声明 = 违规收工,按 On starting 第 2 步处理(开 Protocol gap issue 记录 + 从 git log 重建)。
-3. **On starting 第 2 步补一个分支**:找不到交接 issue 时,先查最近关闭的 issue 有无终局声明——有 = 合规终局,正常从 git log + open issues 开工;无 = 违规,记录。
+1. **Terminal shift endings** (explicit archiving / a judgment call that there is no next shift) **may skip opening a handoff issue**, but must leave a comment on the last-closed issue explicitly declaring "no next shift" + a reason. A silent terminal ending doesn't count as terminal.
+2. **Non-terminal shift endings get no exemption, period.** If no handoff issue can be found and the most recently closed issue has no terminal declaration = non-compliant shift ending, handle per step 2 of "On starting a shift" (open a Protocol gap issue to record it + reconstruct from git log).
+3. **Step 2 of "On starting a shift" gets a branch added**: when no handoff issue is found, first check whether the most recently closed issue has a terminal declaration — if yes, it's a compliant terminal ending, start work normally from git log + open issues; if no, it's non-compliant, record it.
 
-### 对已发生案例的追认
+### Ratifying cases that already happened
 
-- **date-cli #17**:最后 comment 明确写了「路 A 验证完成,不再需要下一棒接手」+ 理由 → **事后追认为合规终局**。本条款就是把它的做法形式化。
-- **本 repo backfill 棒(PR #7)**:收工时 #3 还 open(工作没到头),不是终局;也没留终局声明 → **判定违规**,已由 #8 记录在案。不追罚——它是暴露本缺口的实验数据,缺口关闭即是处置。
+- **date-cli #17**: the final comment explicitly stated "path A verified, no next shift needed to take over" + a reason → **retroactively ratified as a compliant terminal ending**. This clause simply formalizes that practice.
+- **This repo's backfill shift (PR #7)**: at shift end, #3 was still open (the work hadn't run its course), so it wasn't terminal; and no terminal declaration was left → **ruled non-compliant**, already recorded in #8. No retroactive penalty — it's the experimental data that exposed this gap, and closing the gap is the resolution.
 
-### 为什么不选方案 2(一律不豁免)
+### Why option 2 (no exemption, ever) wasn't chosen
 
-终局时刻强制开一个「注定没人接」的 open issue,要么永远挂着(污染 On starting 的扫描),要么开了马上自己关(仪式化)。规则的目的(下一棒有保证入口)在「没有下一棒」时不成立,强制执行只剩形式。
+Forcing a "definitely orphaned" open issue at the terminal moment either leaves it hanging forever (polluting the "On starting" scan) or gets opened and immediately self-closed (ritualistic). The rule's purpose (guaranteeing the next shift an entry point) doesn't hold when there is no next shift, so enforcing it anyway is form without substance.
 
 ## Consequences
 
-- 「终局」由收工的 agent 判断,可能误判(以为没下一棒,结果有)。缓解:误判成本低——下一棒撞见终局声明,照样从 git log + open issues 重建,和 On starting 的违规恢复路径同构;且声明里必须写理由,误判可被审计。
-- 终局声明成为新的协议动作,依赖 agent 自觉。缓解:门禁无法断言 GitHub issue 状态,本来就靠协议文本 + 下一棒监督,与 ADR-0005 主体的执行机制一致。
-- ADR-0005 主体不变:常态收工仍必须开交接 issue。
+- Whether something counts as "terminal" is judged by the agent ending the shift, and can be misjudged (thinking there's no next shift when there is). Mitigation: the cost of misjudgment is low — the next shift, on encountering the terminal declaration, reconstructs from git log + open issues exactly the same way as the non-compliant-recovery path under "On starting a shift"; and the declaration must state a reason, so misjudgment can be audited.
+- The terminal declaration becomes a new protocol action that depends on the agent's self-discipline. Mitigation: the gate can't assert GitHub issue state anyway — this already relies on the protocol text + oversight by the next shift, consistent with the enforcement mechanism of ADR-0005's main body.
+- ADR-0005's main body is unchanged: under normal circumstances, ending a shift still requires opening a handoff issue.

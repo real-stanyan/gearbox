@@ -1,39 +1,39 @@
-# ADR-0010: 门禁脚本断言分层——收紧 L2,放松/删除/改写 L1
+# ADR-0010: Layering gate-script assertions — tightening is L2, loosening/removing/rewriting existing ones is L1
 
 - Date: 2026-07-17
-- Status: accepted, 测试型门禁的映射见 ADR-0020(本 ADR 判据只覆盖结构自检型)
-- 修订对象:ADR-0006(细化其 L1 表中「Gate 命令」的边界,不推翻分级本身)
+- Status: accepted, the mapping for test-type gates is in ADR-0020 (this ADR's criterion only covers structural self-check gates)
+- Revises: ADR-0006 (refines the boundary of "Gate command" in its L1 table, does not overturn the tiering itself)
 
 ## Context
 
-issue #9:ADR-0006 的 L1 严格层列了「Gate 命令」,指 Gate 一节的命令行(`node scripts/check-scaffold.js`)。但门禁的实质在脚本**内容**里——处理 #3 时要给 `check-scaffold.js` 加锚点断言,命令行不变、脚本变了,这算 L1 还是随 PR 走?repo 回答不了。
+issue #9: ADR-0006's L1 strict tier lists "Gate command", referring to the command line in the Gate section (`node scripts/check-scaffold.js`). But the substance of the gate lives in the script's **content** — when handling #3, we needed to add an anchor assertion to `check-scaffold.js`; the command line stays the same but the script changes — does that count as L1, or does it ride along with its PR? The repo can't answer that.
 
-已有两次先例都按「随 PR 走」处理(PR #7 加锚点断言、PR #11 加锚点断言),但都是未经裁决的临时判断。
+Two prior instances were both handled as "rides along with the PR" (PR #7 added an anchor assertion, PR #11 added an anchor assertion), but both were undecided, ad hoc judgment calls.
 
 ## Decision
 
-**不对称分层(issue #9 的建议方案):**
+**Asymmetric tiering (the proposed approach from issue #9):**
 
-| 门禁脚本改动 | 层级 | 理由 |
+| Gate script change | Tier | Rationale |
 |---|---|---|
-| **新增断言(收紧)** | **L2**,随所属 PR 走 | agent 给自己上锁,风险低;强制 L1 会让每个加锚点的 PR 都阻塞等维护者 |
-| **放松、删除、改写现有断言** | **L1**,需维护者明确同意 | agent 自己拆门禁 = 自己定义「什么算完成」——正是 ADR-0006 把 Gate 划进 L1 的原因 |
-| **改 Gate 一节的命令行本身** | **L1**(不变) | ADR-0006 原义 |
+| **Adding an assertion (tightening)** | **L2**, rides along with its PR | the agent is locking itself down; risk is low; forcing L1 would block every PR that adds an anchor, waiting on the maintainer |
+| **Loosening, removing, or rewriting an existing assertion** | **L1**, needs the maintainer's explicit agreement | an agent dismantling its own gate = the agent defining for itself "what counts as done" — exactly why ADR-0006 put the Gate under L1 |
+| **Changing the command line in the Gate section itself** | **L1** (unchanged) | ADR-0006's original intent |
 
-「改写」按保守解读:凡是让某个现存断言在此前会失败的输入上不再失败的改动,都算放松。纯重构(行为完全不变,如改报错文案、抽函数)算收紧侧 L2——但举证责任在改的 agent,commit message 里说清为什么行为不变。
+"Rewriting" is read conservatively: any change that makes an existing assertion no longer fail on an input it previously would have failed on counts as loosening. Pure refactoring (behavior completely unchanged, e.g. rewording an error message, extracting a function) counts as tightening-side L2 — but the burden of proof is on the agent making the change; the commit message must explain clearly why the behavior is unchanged.
 
-### 追认
+### Ratification
 
-PR #7 与 PR #11 的锚点新增,按本 ADR 事后追认为合规 L2。
+The anchor additions in PR #7 and PR #11 are retroactively ratified as compliant L2 under this ADR.
 
-### 为什么不对称而不是一刀切
+### Why asymmetric instead of uniform
 
-- **全 L1**:每个 PR 想顺手加个锚点都要等维护者,惩罚的恰好是让门禁更强的行为。
-- **全 L2**:agent 可以删掉挡自己路的断言再 merge,门禁变橡皮图章,ADR-0006 的核心担忧原样复活。
-- 不对称规则把「维护者注意力」花在唯一危险的方向上。
+- **All-L1**: every PR that wants to casually add an anchor has to wait for the maintainer, punishing exactly the behavior that makes the gate stronger.
+- **All-L2**: an agent could delete an assertion that's in its way and merge, turning the gate into a rubber stamp, and reviving ADR-0006's core concern unchanged.
+- The asymmetric rule spends the maintainer's attention on the only direction that's actually dangerous.
 
 ## Consequences
 
-- 收紧断言零摩擦,门禁只会单调变强,除非维护者同意放松。
-- 「纯重构算 L2」依赖 agent 自证,有被滥用空间。缓解:PR diff 里断言改动一目了然,维护者事后否决权(revert + 重开 issue)覆盖;若实践中出现滥用,届时收紧本条款(那将是 L1 改动)。
-- 本 ADR 细化了「协议自身的变更」一节的 L1 边界,属 ADR-0006 定义的 L1 自指改动,merge 需维护者明确同意(b-弱形态)。
+- Tightening assertions is friction-free; the gate can only monotonically strengthen, unless the maintainer agrees to loosen it.
+- "Pure refactoring counts as L2" relies on the agent's self-attestation, which leaves room for abuse. Mitigation: assertion changes are plainly visible in the PR diff; the maintainer's after-the-fact veto power (revert + reopen the issue) covers this; if abuse shows up in practice, this clause gets tightened then (which would itself be an L1 change).
+- This ADR refines the L1 boundary of the "Changing the protocol itself" section, and is itself an L1 self-referential change as defined by ADR-0006 — merging requires the maintainer's explicit agreement (weak-b form).
