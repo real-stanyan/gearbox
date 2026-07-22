@@ -1,29 +1,29 @@
 # Domain context — Gearbox
 
-领域词汇表。所有 agent 对业务词的理解以此为准；代码命名与这里的术语保持一致。
+Domain glossary. All agents' understanding of domain terms is grounded here; code naming stays consistent with the terms defined here.
 
 ## Terms
 
-| 术语 | 定义 | 备注 |
+| Term | Definition | Notes |
 |---|---|---|
-| 单一事实源 | 规则只写一份（`AGENTS.md`），其他 agent 配置（如 `CLAUDE.md`）只 `@` 引用它，不复制 | 防止规则在多处漂移 |
-| 空壳契约 | `CLAUDE.md` 内容恰好是 `@AGENTS.md` 一行——物理保证 Claude Code 和 Z Code 读同一份规则 | 自检脚本断言这一条 |
-| 交接（handoff） | 一个 agent 把任务交给另一个 agent，**只发生在 issue 关闭 / PR 合并那一刻**，不在任务中途 | 不是"讲清楚了"就交接，是 issue 关了才交接 |
-| 协议缺口（protocol gap） | repo 的持久产物（AGENTS.md / ADR / CONTEXT.md）回答不了的问题 | 撞上必须开 issue，不许 silent 判断 |
-| Issue 三角色 | Issue/PR 在本协议中的三种用法，不重叠：**Task**（任务）/ **Memory**（交接记忆）/ **Protocol gap**（协议缺口） | 每个 issue 都该能归入其中一类，见 AGENTS.md |
-| 门禁（gate） | 收工前必须全绿的命令。本 repo 是 `node scripts/check-gearbox.js` | CI 跑同一套，红了不许 merge |
-| Dogfood | 本 repo 用自己规定的协议开发自己 | 是验证手段，不是目的 |
-| L1/L2 分级 | 协议变更的两级授权：**L1 严格层**（Hard rules / Gate / Tech stack / 「协议自身的变更」节自身）需维护者明确同意才能 merge；**L2 自治层**（Working agreement 其余部分 / 索引）agent 可自主 merge | ADR-0006；边界判据见 ADR-0012 |
-| 机制引用（判据） | 新增内容只要引用 L1/L2 / Hard rules / Working agreement 等协议机制（关键词或语义依赖），一律按 L1 处理 | ADR-0012「机制引用优先」；防「可选+纯新增」当 L2 通道扩权 |
-| Memory 五项格式 | 交接 comment 的最小合格格式：① 做到哪 ② 卡在哪 ③ 下一步 ④ 完成则关 issue ⑤ 判断依据/权衡（无决策写「无」） | ADR-0004；少一项不算合格交接 |
-| 终局收工 | 归档 / 确认无下一棒时的收工形态：可不开交接 issue，但必须在最后关闭的 issue 里显式声明「无下一棒」+ 理由 | ADR-0009；沉默的终局不算终局 |
-| 下游（downstream） | 拷走本 Gearbox 协议后独立演进的项目；`DOWNSTREAM.md`「已接入项目」是维护者的可选舰队仪表盘（非权威、非门禁，ADR-0026） | 入清单三条件见 DOWNSTREAM.md |
-| 回流（backfill） | 下游把 Gearbox 协议改进拉取到本地；**pull 触发**——下游开工跑 `gearbox-version` 自查、落后就 `gearbox-update`，不依赖上游推送；是对齐不是强制，下游可拒 | ADR-0013 → ADR-0026（push 触发降级为 pull） |
-| 协议版本号 | semver 变体 tag：**major** = 跨工具/跨 repo 契约变更；**minor** = 新增机制；**patch** = 已有文件修订。每个协议 PR 声明 `Version bump`，merge 后作者打 tag；下游本地版本记在 `.gearbox-version` 戳记（工具写工具读） | ADR-0023；基线 v0.0.0 |
+| single source of truth | Rules are written in exactly one place (`AGENTS.md`); other agent configs (e.g. `CLAUDE.md`) only `@`-reference it, never copy it | Prevents rules from drifting across multiple locations |
+| empty-shell contract | `CLAUDE.md`'s content is exactly one line, `@AGENTS.md` — a physical guarantee that Claude Code and Z Code read the same rules | The structural self-check script asserts this |
+| handoff | One agent passes a task to another agent — **this only happens the moment an issue closes / a PR merges**, never mid-task | It isn't a handoff just because things were "explained clearly" — it's a handoff only when the issue closes |
+| protocol gap | A question the repo's persistent artifacts (AGENTS.md / ADR / CONTEXT.md) can't answer | Hitting one requires opening an issue — silent judgment calls are not allowed |
+| The three issue roles | The three non-overlapping uses of issues/PRs in this protocol: **Task** / **Memory** (handoff memory) / **Protocol gap** | Every issue should fall into exactly one of these — see AGENTS.md |
+| gate | The command that must be all-green before ending a shift. In this repo: `node scripts/check-gearbox.js` | CI runs the same command — red means no merge |
+| Dogfood | This repo develops itself using the protocol it defines | It's a verification method, not the goal itself |
+| L1/L2 tiers | Two authorization tiers for protocol changes: **L1 strict tier** (Hard rules / Gate / Tech stack / the "Changing the protocol itself" section itself) requires explicit maintainer agreement before merging; **L2 autonomous tier** (the rest of Working agreement / indexes) the agent can merge on its own | ADR-0006; boundary criteria in ADR-0012 |
+| Mechanism reference (criterion) | Any new content that references L1/L2, Hard rules, Working agreement, or other protocol mechanisms (by keyword or semantic dependency) is treated as L1 | ADR-0012, "mechanism reference takes priority"; guards against using "optional + pure addition" as an L2 loophole to expand the protocol |
+| Memory five-part format | The minimum valid format for a handoff comment: ① what's done ② what's blocked ③ what's next ④ close the issue if the task is complete ⑤ rationale/trade-offs (write "none" if no decision was made) | ADR-0004; missing any item makes the handoff invalid |
+| terminal shift | The form a shift ends in when archiving / confirming there's no next shift: a handoff issue may be skipped, but the last closed issue must explicitly declare "no next shift" + a reason | ADR-0009; a silent ending doesn't count as terminal |
+| downstream | A project that copies this Gearbox protocol and then evolves independently; `DOWNSTREAM.md`'s "Onboarded projects" is the maintainer's optional fleet dashboard (non-authoritative, not a gate, ADR-0026) | See DOWNSTREAM.md for the three listing criteria |
+| backfill | Downstream pulls Gearbox protocol improvements into its local copy; **pull-triggered** — downstream runs `gearbox-version` at the start of a shift to self-check, and `gearbox-update` if it's behind, with no dependency on upstream pushing; it's alignment, not enforcement — downstream can decline | ADR-0013 → ADR-0026 (push-triggered was downgraded to pull-triggered) |
+| protocol version number | A semver-variant tag: **major** = cross-tool/cross-repo contract change; **minor** = a new mechanism added; **patch** = revision of an existing file. Every protocol PR declares a `Version bump`; the author tags after merge; the downstream local version is recorded in the `.gearbox-version` stamp (written and read by tooling) | ADR-0023; baseline v0.0.0 |
 
 ## Key invariants
 
-- `AGENTS.md` 永远是唯一规则源；`CLAUDE.md` 永远只是 `@AGENTS.md` 空壳
-- 不建 `HANDOFF.md`——交接走 issue comment（append-only、带时间戳）
-- 门禁命令在 AGENTS.md 和 ci.yml 里必须字面一致（CI == Gate 契约）
-- 一个任务一个 agent 做完，交接只在任务边界发生
+- `AGENTS.md` is always the single source of rules; `CLAUDE.md` is always just the `@AGENTS.md` empty shell
+- No `HANDOFF.md` is created — handoffs happen via issue comments (append-only, timestamped)
+- The gate command must be byte-identical in AGENTS.md and ci.yml (CI == Gate contract)
+- One agent completes a task from start to finish; handoffs only happen at task boundaries
