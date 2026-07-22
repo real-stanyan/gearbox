@@ -320,12 +320,15 @@ function validateContext() {
     }
   }
 
-  // Pre-check: does today's branch name already exist? Errors by default (the branch may hold
-  // manual L1 edits — auto-deleting could destroy that work); --force-redo explicitly deletes
-  // and rebuilds it (ADR-0025).
+  // Pre-check: does today's branch name already exist? Auto-resolve instead of erroring (#96):
+  // merged into base = stale leftover, its work is already in the base → safe-delete and run
+  // fresh; unmerged = an earlier run today → switch back onto it and continue (backfills are
+  // idempotent, new commits stack on top, manual edits survive). --force-redo still deletes
+  // and rebuilds unconditionally (ADR-0025).
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
   const branchExists = tryRun(`git rev-parse --verify ${plannedBranch} 2>/dev/null`);
+  let resume = false;
   if (branchExists) {
     if (forceRedo) {
       run(`git branch -D ${plannedBranch}`);
@@ -333,18 +336,28 @@ function validateContext() {
         C.yellow(`⚠️  --force-redo: deleted local branch ${plannedBranch}, rebuilding\n`) +
           C.dim("  push will use --force-with-lease to overwrite the remote (if it exists)\n"),
       );
-    } else {
-      die(
-        `Today's branch already exists: ${plannedBranch}`,
-        `Already ran once today. Three options:\n` +
-          `  1) There are manual edits on that branch → go back to it and continue, don't rerun\n` +
-          `  2) Discard and redo → gearbox-update --force-redo (deletes and rebuilds the local branch, --force-with-lease overwrites the remote)\n` +
-          `  3) Manual: git branch -D ${plannedBranch}`,
+    } else if (branch === plannedBranch) {
+      // already sitting on today's branch (e.g. --allow-branch) → just continue on it
+      stdout.write(C.dim(`  already on ${plannedBranch}, resuming\n`));
+      resume = true;
+    } else if (
+      tryRun(`git merge-base --is-ancestor ${plannedBranch} HEAD && echo merged`)
+    ) {
+      run(`git branch -d ${plannedBranch}`);
+      stdout.write(
+        C.dim(`  cleaned up ${plannedBranch} (already merged into ${branch})\n`),
       );
+    } else {
+      run(`git checkout ${plannedBranch}`);
+      stdout.write(
+        C.yellow(`⚠️  Today's branch already exists — resuming on ${plannedBranch}\n`) +
+          C.dim("  existing commits (incl. manual edits) are kept, new backfills stack on top; full rebuild: gearbox-update --force-redo\n"),
+      );
+      resume = true;
     }
   }
 
-  return { downDir, downAdrDir, branch };
+  return { downDir, downAdrDir, branch, resume, plannedBranch };
 }
 
 // ============== matching algorithm ==============
@@ -654,9 +667,9 @@ function generateReport({
 
 // ============== git operations ==============
 
-function gitOps(downDir, assignments, refreshes, supersedeResult, branchName, upstreamVersion) {
-  // Create the branch
-  run(`git checkout -b ${branchName}`);
+function gitOps(downDir, assignments, refreshes, supersedeResult, branchName, upstreamVersion, resume) {
+  // Create the branch (resume mode is already on it, #96)
+  if (!resume) run(`git checkout -b ${branchName}`);
 
   // One commit per drift re-copy (ADR-0024)
   for (const a of refreshes) {
@@ -738,7 +751,7 @@ async function main() {
   stdout.write(C.dim("  aggressive downstream ADR sync tool\n\n"));
 
   resolveUpstream(); // upstream addressing (local/remote), overwrites GEARBOX_DIR (ADR-0027)
-  const { downDir, downAdrDir, branch } = validateContext();
+  const { downDir, downAdrDir, branch, resume, plannedBranch } = validateContext();
   // PR base uses the detected main branch; if running on some other branch, falls back to master
   const baseBranch = branch === "main" || branch === "master" ? branch : "master";
 
@@ -804,6 +817,11 @@ async function main() {
 
   if (toCopy.length === 0 && toRefresh.length === 0) {
     stdout.write(C.green("✅ No ADRs to backfill — downstream is already synced to the latest gearbox\n\n"));
+    if (resume) {
+      stdout.write(
+        C.dim(`  resumed ${plannedBranch}: nothing new to commit — if its PR isn't open yet: gh pr create --base ${baseBranch} --head ${plannedBranch}\n`),
+      );
+    }
     // Non-TTY (CI, pipes): full listing, unchanged. TTY: the scan bar already said it.
     if (!tui.isTTY) {
       stdout.write(C.dim("Already skipped (downstream already has these):\n"));
@@ -954,6 +972,7 @@ async function main() {
       supersedeResult,
       branchName,
       upstreamVersion,
+      resume,
     );
     for (const a of toRefresh) {
       stdout.write(
