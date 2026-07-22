@@ -783,11 +783,17 @@ async function main() {
 
   if (toCopy.length === 0 && toRefresh.length === 0) {
     stdout.write(C.green("✅ No ADRs to backfill — downstream is already synced to the latest gearbox\n\n"));
-    stdout.write(C.dim("Already skipped (downstream already has these):\n"));
-    for (const a of skipped) {
-      stdout.write(
-        `  ${C.dim("skip")} ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
-      );
+    // TTY: one summary line — the per-ADR skip wall adds nothing when everything is synced.
+    // Non-TTY (CI, pipes): full listing, unchanged.
+    if (tui.isTTY) {
+      stdout.write(C.dim(`Already skipped: ${skipped.length} ADRs the downstream already has\n`));
+    } else {
+      stdout.write(C.dim("Already skipped (downstream already has these):\n"));
+      for (const a of skipped) {
+        stdout.write(
+          `  ${C.dim("skip")} ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
+        );
+      }
     }
     if (driftedSkips.length > 0) {
       stdout.write(
@@ -816,11 +822,16 @@ async function main() {
       );
     }
   }
-  stdout.write(`\n${C.dim("Already skipped (downstream already has these):")}\n`);
-  for (const a of skipped) {
-    stdout.write(
-      `  ${C.dim("skip")} ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
-    );
+  // TTY: one summary line (see the no-backfill branch above); non-TTY: full listing.
+  if (tui.isTTY) {
+    stdout.write(`\n${C.dim(`Already skipped: ${skipped.length} ADRs the downstream already has`)}\n`);
+  } else {
+    stdout.write(`\n${C.dim("Already skipped (downstream already has these):")}\n`);
+    for (const a of skipped) {
+      stdout.write(
+        `  ${C.dim("skip")} ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
+      );
+    }
   }
   if (driftedSkips.length > 0 && !refreshDrift) {
     stdout.write(
