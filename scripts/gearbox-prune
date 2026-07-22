@@ -21,6 +21,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import { argv, exit, stdin, stdout } from "node:process";
+import * as tui from "./lib/tui.js";
 
 const C = {
   red: (s) => `\x1b[31m${s}\x1b[0m`,
@@ -32,8 +33,7 @@ const C = {
 };
 
 function die(msg, hint = "") {
-  console.error(C.red(`✗ ${msg}`));
-  if (hint) console.error(`  ${C.dim(hint)}`);
+  tui.fail(msg, hint);
   exit(1);
 }
 

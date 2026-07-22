@@ -97,8 +97,7 @@ const C = {
 // ============== helpers ==============
 
 function die(msg, hint = "") {
-  stderr.write(C.red(`✗ ${msg}`) + "\n");
-  if (hint) stderr.write(`  ${C.dim(hint)}\n`);
+  tui.fail(msg, hint);
   exit(1);
 }
 

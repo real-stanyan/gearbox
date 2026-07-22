@@ -69,8 +69,7 @@ const C = {
 };
 
 function die(msg, hint = "") {
-  console.error(C.red(`✗ ${msg}`));
-  if (hint) console.error(`  ${C.dim(hint)}`);
+  tui.fail(msg, hint);
   exit(1);
 }
 
