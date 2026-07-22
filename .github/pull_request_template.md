@@ -21,7 +21,7 @@ Backfill is pull-driven: downstream repos self-check with `gearbox-version` when
 and run `gearbox-update` if behind (ADR-0026). This field **no longer blocks merge** — marking `yes`
 does not require opening an issue against every downstream repo. It only helps assess the blast
 radius + helps the maintainer decide whether to **optionally** open a notification issue against
-projects registered in `DOWNSTREAM.md` (the private fleet).
+known downstream projects.
 
 If `no`: briefly explain why it doesn't affect downstream (e.g. "pure ADR template formatting tweak, doesn't change protocol content").
 -->

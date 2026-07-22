@@ -30,9 +30,9 @@ const requiredFiles = [
   "README.md",
   ".github/workflows/ci.yml",
   "docs/gearbox-adr/0001-adr-template.md",
-  // B-3 carriers (ADR-0013): the downstream-backfill hard rule runs through
-  // these two files — if either disappears, the mechanism dies silently.
-  "DOWNSTREAM.md",
+  // B-3 carrier (ADR-0013 → ADR-0026 pull model): the downstream-backfill
+  // declaration runs through the PR template — if it disappears, the
+  // mechanism dies silently. (DOWNSTREAM.md was retired in ADR-0033.)
   ".github/pull_request_template.md",
 ];
 for (const f of requiredFiles) {
@@ -135,10 +135,10 @@ if (existsSync(join(root, ".github/workflows/ci.yml"))) {
 
 // 7b. Downstream-backfill carriers (ADR-0013 → ADR-0026 pull model): the PR
 //     template must keep the 'Affects downstream' declaration field (now
-//     informational, no longer a merge gate), AGENTS.md must keep the
-//     downstream-backfill rule referencing it, and DOWNSTREAM.md must keep its
-//     project-list section (now an optional fleet dashboard, not a B-3 gate).
-//     These stay presence-checked so the carriers can't be silently deleted.
+//     informational, no longer a merge gate), and AGENTS.md must keep the
+//     downstream-backfill rule referencing it. These stay presence-checked so
+//     the carriers can't be silently deleted. (DOWNSTREAM.md itself was
+//     retired in ADR-0033 — the fleet dashboard is no longer protocol.)
 if (existsSync(join(root, ".github/pull_request_template.md"))) {
   check(
     ".github/pull_request_template.md must keep the 'Affects downstream' declaration field (ADR-0013, informational per ADR-0026)",
@@ -151,13 +151,6 @@ if (existsSync(join(root, "AGENTS.md"))) {
     readFile("AGENTS.md").includes("Affects downstream"),
   );
 }
-if (existsSync(join(root, "DOWNSTREAM.md"))) {
-  check(
-    "DOWNSTREAM.md must keep its '## Onboarded projects' section (optional fleet dashboard, ADR-0026)",
-    readFile("DOWNSTREAM.md").includes("## Onboarded projects"),
-  );
-}
-
 // 8. "No HANDOFF.md" is a filesystem contract, not just prose: asserting only
 //    that AGENTS.md never mentions it would miss someone adding the file itself.
 check(

@@ -29,8 +29,8 @@
 # Honesty boundary:
 # - A downstream project that "evaluated and rejected a backfill" (closed an issue declining
 #   it) is invisible to this script — it's still reported as "not synced".
-#   Authoritative status is upstream DOWNSTREAM.md's "currently synced to" column; this script
-#   is only a local quick-check.
+#   Authoritative status lives in the downstream repo's own issues/PRs; this script is only
+#   a local quick-check.
 # - Hash detection only reports "upstream changed" — it doesn't judge whether the change is
 #   worth backfilling; drift in legacy copies (no stamp) and provenance-reference-style syncs
 #   (not a copy) can't be detected.
@@ -201,8 +201,8 @@ else
   echo "${DIM}status:${RESET}    ${YELLOW}⚠️  ${missing_count} not synced, ${drift_count} revised upstream${RESET} ${DIM}(${synced_count} synced)${RESET}"
   echo ""
   echo "${DIM}note: \"not synced\" includes cases the downstream evaluated and declined to backfill${RESET}"
-  echo "${DIM}      (this script can't see the issue's conclusion). Authoritative status is upstream${RESET}"
-  echo "${DIM}      DOWNSTREAM.md. See Gearbox ADR-0013 (B-3) for the backfill flow.${RESET}"
+  echo "${DIM}      (this script can't see the issue's conclusion). Authoritative status is this${RESET}"
+  echo "${DIM}      repo's own issues/PRs. See Gearbox ADR-0026 for the pull-based backfill flow.${RESET}"
 fi
 if [[ "$legacy_count" -gt 0 ]]; then
   echo "${DIM}legacy:    ${legacy_count} copies have no hash stamp, drift can't be detected (ADR-0021; stamps appear naturally on future backfills)${RESET}"
