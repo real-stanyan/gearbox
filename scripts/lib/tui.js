@@ -9,6 +9,10 @@
 //     only adds a minimum display duration so steps are readable. Nothing here changes
 //     tool behavior, output semantics, or exit codes.
 //   - Palette is baked from the project logo (bone/steel/iron greys + amber bar).
+//   - Output budget (ADR-0041): on a TTY a command's post-logo output stays compact enough
+//     that the logo is still on screen when it finishes. Per-item walls collapse into one
+//     progress bar / summary line; only actionable lines (errors, drift, to-do items) get
+//     their own rows. Piped/CI output keeps the full listing.
 
 import { stdout, stderr } from "node:process";
 
