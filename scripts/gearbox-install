@@ -145,14 +145,25 @@ function detectGithubLogin() {
 
 // Public users endpoint, no auth needed. Only a 404 disproves the name; rate-limits and
 // other statuses pass, and network failure returns null → accept with a warning instead of
-// blocking install (offline-tolerant, same spirit as ADR-0027).
+// blocking install (offline-tolerant, same spirit as ADR-0027). On success, returns the
+// account's type + creation year so the confirmation line makes a mistyped-but-existing
+// name (e.g. a squatted short string) visually catchable.
 async function githubUserExists(name) {
   try {
     const res = await fetch(`https://api.github.com/users/${encodeURIComponent(name)}`, {
       signal: AbortSignal.timeout(4000),
       headers: { "user-agent": "gearbox-install" },
     });
-    return res.status === 404 ? false : true;
+    if (res.status === 404) return false;
+    let info = "";
+    try {
+      const body = await res.json();
+      if (body.type)
+        info = ` (${body.type}${body.created_at ? `, since ${body.created_at.slice(0, 4)}` : ""})`;
+    } catch {
+      /* non-JSON (rate limit page etc.) → verified with no detail */
+    }
+    return { info };
   } catch {
     return null;
   }
@@ -192,6 +203,10 @@ async function promptMaintainer() {
       if (exists === null)
         console.log(
           `  ${C.yellow("⚠")} couldn't reach api.github.com — accepting ${C.bold(name)} unverified (offline?)`,
+        );
+      else
+        console.log(
+          `  ${C.green("✓")} ${C.bold(name)} exists on GitHub${C.dim(exists.info || "")}`,
         );
       return name;
     }
