@@ -28,6 +28,7 @@ A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the si
 ### While working
 
 - Commit in small steps; the message should spell out the **why**, not just the what
+- **Protocol files stay committed — never add them to `.gitignore`**: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/gearbox-adr/`, `.gearbox-version`, `.github/workflows/ci.yml`. The repo is the only shared memory between shifts; an ignored protocol file exists locally but never reaches the next agent's clone (ADR-0037)
 - One agent sees a task through from start to finish; handoffs only happen at task boundaries (issue closed / PR merged), never mid-task
 - Non-trivial changes go through a branch + PR; typo-level tweaks can go straight into main
 - **Project-owned** architectural decisions go in `docs/adr/` (one decision per file, starting at 0001); protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
