@@ -1,31 +1,31 @@
-# ADR-0008: Division of labor 保持占位符——分工是项目属性，不是模板属性
+# ADR-0008: Division of labor stays a placeholder — division of labor is a project property, not a template property
 
 - Date: 2026-07-17
 - Status: accepted
 
 ## Context
 
-issue #3 第 3 点：AGENTS.md 的 Division of labor 一节还是 `<例：…>` 占位符，「哪类任务归哪个 agent、遇到边界怎么办，没有可执行的约定」。验收标准给了两条路：填实，或明确删掉并说明理由。
+Point 3 of issue #3: the Division of labor section of AGENTS.md is still an `<e.g.: ...>` placeholder — "which agent owns which kind of task, and what to do at the edges, has no actionable agreement." The acceptance criteria offered two paths: fill it in for real, or explicitly remove it with a stated reason.
 
-date-cli 路 A 四轮实验提供了数据点：该节在 date-cli 里也故意留白（「等实验跑出经验再填」），四轮跑完**没有产生分工经验**——因为轮班制下 agent 是接力不是并行，每棒做完整任务，任务类型从没按 agent 特长路由过。实验验证的是交接机制，不是分工机制。
+The four rounds of the date-cli Path A experiment provide a data point: this section was also deliberately left blank in date-cli ("fill it in once the experiment produces some experience"), and after four rounds, **no division-of-labor experience was produced** — because under the shift model, agents work in relay, not in parallel; each shift does a complete task, and task type was never routed by agent specialty. What the experiment validated was the handoff mechanism, not a division-of-labor mechanism.
 
 ## Decision
 
-**第三条路：占位符是正确答案，把「它是占位符」从含糊变成显式。**
+**Third path: the placeholder is the correct answer — make "it's a placeholder" explicit instead of ambiguous.**
 
-- 本节保持占位符，但占位文案改为可执行指引：拷走时按项目填；没填或撞到边界情况时的**默认规则 = Task issue 认领制**（谁认领谁从头做到尾，While working 已有）；单 agent 项目可整节删除（本节不是门禁锚点，删除不破 `check-scaffold.js`）。
-- 不基于 n=0 的分工经验发明规则。date-cli 的候选分工（机械批量改 → Z Code；设计/难 bug → Claude Code）保留在示例里，标注它是未验证的候选。
+- This section stays a placeholder, but the placeholder text becomes actionable guidance: fill it in per-project when copied; when it's not filled in, or an edge case is hit, the **default rule = Task issue claim-and-own** (whoever claims a task does it start to finish, already established in While working); solo-agent projects may delete the whole section (this section is not a gate anchor, so deleting it doesn't break `check-scaffold.js`).
+- No rule is invented from n=0 division-of-labor experience. date-cli's candidate split (mechanical bulk edits → Z Code; design / hard bugs → Claude Code) is kept as an example, labeled as an unvalidated candidate.
 
-### 为什么不填实
+### Why not fill it in
 
-分工取决于项目手上有哪些 agent、各自强项、任务构成——全是项目属性。模板里写死任何具体分工，拷走的人要么盲从要么删掉，两边都不如一个带指引的占位符。
+Division of labor depends on which agents a project has on hand, their respective strengths, and the composition of its tasks — all project properties. Hardcoding any specific split in the template would leave whoever copies it either blindly following it or deleting it — neither is as good as a placeholder with guidance attached.
 
-### 为什么不删除
+### Why not delete it
 
-「按 agent 特长路由任务」是多 agent 协作的真实需求（issue #3 是实际撞上才开的），删节 = 假装这个问题不存在。保留占位符 + 默认认领制，让没填的项目也有可执行的兜底。
+"Routing tasks by agent specialty" is a real need in multi-agent collaboration (issue #3 was opened because this was actually hit) — removing the section would mean pretending the problem doesn't exist. Keeping the placeholder plus the default claim-and-own rule gives even unfilled projects an actionable fallback.
 
 ## Consequences
 
-- 拷走 scaffold 的项目得到三个明确选项：填实 / 用默认认领制 / 删节。不再有「这占位符是忘了填还是故意的」的歧义。
-- **默认认领制成为无分工约定时的正式兜底**——这从「While working 的隐含推论」升级为显式规则。
-- 若未来某个使用本 scaffold 的项目跑出了可复用的分工模式，可回流成新 ADR + 示例，不改本决策的结构。
+- Projects that copy the scaffold get three clear options: fill it in / use the default claim-and-own rule / delete the section. There's no more ambiguity about "was this placeholder forgotten or intentional."
+- **The default claim-and-own rule becomes the formal fallback when there's no division-of-labor agreement** — upgraded from "an implicit corollary of While working" to an explicit rule.
+- If a project using this scaffold produces a reusable division-of-labor pattern in the future, it can be backfilled as a new ADR + example, without changing the structure of this decision.

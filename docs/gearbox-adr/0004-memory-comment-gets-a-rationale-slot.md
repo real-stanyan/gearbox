@@ -1,28 +1,28 @@
-# ADR-0004: Memory comment 从四项格式升级到五项(加"判断依据/权衡")
+# ADR-0004: Memory comment upgraded from a four-part format to five parts (adds "rationale / trade-offs")
 
 - Date: 2026-07-17
 - Status: accepted
-- 溯源:本决策源自 date-cli 路 A 实验(原 date-cli ADR-0006),在真实多 agent 协作中验证后回流到 scaffold
+- Provenance: this decision originated in the date-cli Path A experiment (originally date-cli ADR-0006), and backfilled into the scaffold after being validated in real multi-agent collaboration
 
 ## Context
 
-ADR-0003 立的 Memory comment 四项格式(做到哪 / 卡在哪 / 下一步 / 是否关 issue)在 date-cli 跑了 4 轮交接。撞上的问题:**当上一棒做了非既定决策(选了 a 不选 b、挑了某个实现路径),四项格式没有槽位装"为什么这么选"。**
+The four-part Memory comment format established by ADR-0003 (what's done / what's blocked / what's next / whether to close the issue) ran through 4 handoff rounds in date-cli. The problem it hit: **when the previous shift made a non-obvious call (chose a over b, picked a particular implementation path), the four-part format has no slot for "why this was chosen."**
 
-具体表现:交接时这些信息最容易腐烂——
-- 没地方写 → agent 要么塞进"做到哪"(糊掉结构),要么口头传(会话结束就丢)
-- 塞进 ADR?不行。ADR 装长期架构决策,排程级的取舍会淹没真正的架构决策
+Concretely, this is exactly the information most prone to rotting away at handoff time:
+- No place to write it down → the agent either crams it into "what's done" (blurring the structure) or passes it along verbally (lost once the session ends)
+- Put it in an ADR? No good — ADRs hold long-term architectural decisions; scheduling-level trade-offs would drown out the real architectural ones.
 
 ## Decision
 
-Memory comment 升级为**五项格式**,第 5 项是"判断依据 / 权衡":
+The Memory comment is upgraded to a **five-part format**, with part 5 being "rationale / trade-offs":
 
-① 做到哪 ② 卡在哪 ③ 下一步是什么 ④ 任务完成则关 issue ⑤ **判断依据 / 权衡**——本棒做了非既定决策时必填(选了什么、为什么、什么前提失效时该推翻);**没做决策就写「无」,不许省略**。
+① what's done ② what's blocked ③ what's next ④ close the issue if the task is done ⑤ **rationale / trade-offs** — mandatory whenever this shift made a non-obvious call (what was chosen, why, and what premise failing would mean it should be overturned); **if no such call was made, write "none" — never omit this part**.
 
-"没做决策写无"是关键:省略第 5 项会让下一棒分不清"没做决策"还是"做了但没记录"。
+"Write 'none' if no decision was made" is the key clause: omitting part 5 would leave the next shift unable to tell "no decision was made" apart from "a decision was made but not recorded."
 
 ## Consequences
 
-- **代价**:Memory comment 更长,写起来更重。
-- **换来的**:排程决策不再腐烂,且不污染 ADR(ADR 保持装"长期架构决策"的单一职责)。
-- **"什么前提失效时该推翻"这一项特别值钱**——它让下一棒知道"这个判断在什么条件下不该被继承",防止盲目沿用。
-- 何时再升级:如果实践中发现第 5 项总是写"无"(说明协议稳定,没什么排程决策),可考虑回退;但目前没这个信号。
+- **Cost**: Memory comments get longer and heavier to write.
+- **Payoff**: scheduling-level decisions no longer rot away, and ADRs stay uncontaminated (an ADR keeps its single responsibility of holding "long-term architectural decisions").
+- **The "what premise failing would mean it should be overturned" part is especially valuable** — it tells the next shift under what conditions this judgment call should *not* be inherited, preventing blind reuse.
+- When to upgrade again: if practice shows part 5 is always written as "none" (meaning the protocol is stable and there are no scheduling-level calls left to make), rolling this back could be considered — but there's no such signal yet.

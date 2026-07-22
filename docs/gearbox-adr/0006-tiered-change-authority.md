@@ -1,49 +1,49 @@
-# ADR-0006: 协议变更分级授权——L1(Hard rules/Gate/Tech stack)需人同意,L2 自治
+# ADR-0006: Tiered authority for protocol changes — L1 (Hard rules/Gate/Tech stack) needs human agreement, L2 is autonomous
 
 - Date: 2026-07-17
-- Status: partially superseded by ADR-0012(L1/L2 分层本身仍有效;但"新增协议级内容怎么归类"由 ADR-0012 补齐判据——机制引用优先)
-- 溯源:本决策源自 date-cli 路 A 实验(原 date-cli ADR-0009,经 Stan 拍板),在真实多 agent 协作中验证后回流到 scaffold
+- Status: partially superseded by ADR-0012 (the L1/L2 tiering itself still holds; but "how to classify new protocol-level content" is completed by ADR-0012's criterion — mechanism reference takes priority)
+- Provenance: this decision originated in the date-cli Path A experiment (originally date-cli ADR-0009, decided by Stan), and backfilled into the scaffold after being validated in real multi-agent collaboration
 
 ## Context
 
-路 A 中段,协议遇到死结:**协议自称"撞缺口开 issue,缺口补进 AGENTS.md 就关",但没说"谁有权改 AGENTS.md"。** 结果 4 个 protocol gap issue 全部卡住关不掉——不是没人干活,是"没有钥匙"。
+Midway through Path A, the protocol hit a deadlock: **it claimed "hit a gap, open an issue, close it once the gap is folded into AGENTS.md" — but never said who has the authority to edit AGENTS.md.** As a result, all 4 open Protocol gap issues got stuck and couldn't be closed — not for lack of work, but for lack of a key.
 
-date-cli 先用 ADR-0004(原)解了死结:"agent 可改 AGENTS.md,走 issue+ADR+PR,人保留事后 revert 否决权"。但实验到第四轮暴露:**这条授权对 Hard rules 和 Gate 命令过宽**——
+date-cli first broke the deadlock with the original ADR-0004: "an agent may edit AGENTS.md via issue+ADR+PR, and a human retains after-the-fact revert veto power." But by the fourth round, the experiment exposed a problem: **this authorization was too broad for Hard rules and Gate commands** —
 
-| 内容类型 | 性质 | 全自主的风险 |
+| Content type | Nature | Risk of full autonomy |
 |---|---|---|
-| Hard rules(例:UTC ms / 纯函数 / 不可变) | 底层一致性前提 = 物理定律 | agent 自主改 = 地基失效;事后 revert 时代码已按新规则改一大片 |
-| Gate 命令(测试/类型/lint) | 唯一不靠自觉的约束 | agent 自主改 = 自己定义"什么算完成",门禁变橡皮图章 |
-| Tech stack | 技术选型根基 | 同 Hard rules |
-| Working agreement(除 Gate) | 流程协调 | 风险低,试错成本低 |
-| 索引(Where to find things) | 文档维护 | 风险极低 |
+| Hard rules (e.g. UTC ms / pure functions / immutability) | Foundational consistency premise = physical law | An agent changing this autonomously = the foundation fails; by the time an after-the-fact revert happens, a lot of code has already been rewritten against the new rule |
+| Gate commands (tests / typecheck / lint) | The one constraint that doesn't rely on discipline | An agent changing this autonomously = it gets to define "what counts as done" itself, turning the gate into a rubber stamp |
+| Tech stack | The foundation of technology choices | Same risk as Hard rules |
+| Working agreement (excluding Gate) | Process coordination | Low risk, cheap to experiment with |
+| Index (Where to find things) | Documentation upkeep | Extremely low risk |
 
-事后 revert 的刹车对频繁小改够用,对结构性变更不够。
+The after-the-fact revert brake is adequate for frequent small changes, but not for structural ones.
 
 ## Decision
 
-**协议变更分级授权:**
+**Tiered authority for protocol changes:**
 
-| 层级 | 内容 | 流程 |
+| Tier | Content | Process |
 |---|---|---|
-| **L1 严格层** | Hard rules / Gate 命令 / Tech stack / "协议自身的变更"这一节自身 | issue + ADR + PR,**且必须<维护者>(scaffold 拷走后换成项目维护者名字)在会话或 PR comment 中明确同意后,agent 才能 merge** |
-| **L2 自治层** | Working agreement(除 Gate)/ 索引(Where to find things) | issue + ADR + PR,agent 可自主 merge |
+| **L1 strict tier** | Hard rules / Gate commands / Tech stack / the "Changing the protocol itself" section itself | issue + ADR + PR, **and the agent may only merge after `<maintainer>` (rename this after copying the scaffold to your own project maintainer's name) explicitly agrees, in-session or in a PR comment** |
+| **L2 autonomous tier** | Working agreement (excluding Gate) / index (Where to find things) | issue + ADR + PR, agent may self-merge |
 
-**b-弱形态**:"明确同意" = 维护者在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是维护者成为 L1 瓶颈,这个代价接受,换取 L2 继续验证 agent 自治。
+**Weak-b form**: "explicit agreement" means the maintainer says "agreed" in a session, or writes "agreed" in a PR comment — that's enough, and the agent clicks the merge button itself. **GitHub's approve button is not required.** The cost is that the maintainer becomes the L1 bottleneck — that cost is accepted, in exchange for L2 continuing to validate agent autonomy.
 
-> 拷走本 scaffold 的项目:**把本 ADR 和 AGENTS.md「协议自身的变更」一节里的 `<维护者>` 换成你的名字(或团队名)**。如果你是单人项目,你就是维护者;如果团队,明确谁是 L1 守门人。
+> Projects that copy this scaffold: **replace `<maintainer>` in this ADR and in AGENTS.md's "Changing the protocol itself" section with your own name (or team name)**. If it's a solo project, you are the maintainer; if it's a team, designate who the L1 gatekeeper is.
 
-### 为什么不选其他方案
+### Why not other options
 
-- **不沿用全部自主(原 date-cli ADR-0004)**:Hard rules / Gate 风险过高,见上表
-- **不选 b-强(GitHub approve 按钮强制)**:维护者上手操作负担重;b-弱的留痕(PR + ADR + comment)已足够
-- **不选"全部要同意"**:Working agreement / 索引不值得每条都过目,会让维护者疲于 review,且削弱 agent 自持价值
-- **不回到"agent 不能改协议"**:那是原始死结,协议无法自我修复
+- **Not sticking with full autonomy (original date-cli ADR-0004)**: Hard rules / Gate risk is too high, see table above.
+- **Not choosing strong-b (mandatory GitHub approve button)**: too much operational burden on the maintainer; weak-b's paper trail (PR + ADR + comment) is already enough.
+- **Not choosing "everything needs agreement"**: Working agreement / index changes aren't worth reviewing every time — it would wear the maintainer out and undercut the value of agent autonomy.
+- **Not going back to "agents can't change the protocol"**: that's the original deadlock; the protocol can't self-repair that way.
 
 ## Consequences
 
-- **维护者成为 L1 改动的瓶颈**——任何 Hard rules / Gate / Tech stack 变更必须等他同意。agent 撞上这类协议缺口时,能开 issue + 写 ADR + 开 PR,但不能 merge,**得在 Memory 里明确"卡在等维护者同意"**。
-- **L2 改动继续自持**——Working agreement / 索引 agent 可自主完成,不打扰维护者。
-- **自指边界**:L1 包含「协议自身的变更」这一节自身。修改分级规则 → 必须维护者同意。收紧到 L2 → 必须同意;放宽到 L1 → 必须同意。**这条自指是接受的代价,防 agent 自己给自己扩权。**
-- **风险**:b-弱的"会话里说同意"如果维护者隔很久才看到,agent 会一直阻塞。缓解——L1 改动实践中应该极少(物理定律不会经常变)。
-- **演进**:如果未来 L1 实践中证明风险可控,可再走 ADR 放宽;反之亦然。本 ADR 自身可被新 ADR 取代。
+- **The maintainer becomes the bottleneck for L1 changes** — any Hard rules / Gate / Tech stack change must wait on their agreement. When an agent hits a gap of this kind, it can open the issue, write the ADR, and open the PR, but cannot merge — **it must state in the Memory comment that it's "blocked waiting on maintainer agreement."**
+- **L2 changes remain self-sufficient** — Working agreement / index changes can be completed autonomously by an agent, without disturbing the maintainer.
+- **Self-referential boundary**: L1 includes the "Changing the protocol itself" section itself. Changing the tiering rule → requires maintainer agreement. Tightening something to L2 → requires agreement; loosening something to L1 → requires agreement. **This self-reference is an accepted cost, to prevent an agent from expanding its own authority.**
+- **Risk**: if the maintainer only sees weak-b's "agreed in a session" much later, the agent stays blocked in the meantime. Mitigation — L1 changes should be rare in practice (physical laws don't change often).
+- **Evolution**: if L1 practice proves the risk is manageable, it can be loosened via a further ADR; and vice versa. This ADR itself can be superseded by a new one.

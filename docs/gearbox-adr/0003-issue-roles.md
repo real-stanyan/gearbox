@@ -1,45 +1,45 @@
-# ADR-0003: Issue / PR 三角色（Task / Memory / Protocol gap），不用 HANDOFF.md
+# ADR-0003: The three issue roles (Task / Memory / Protocol gap), no HANDOFF.md
 
 - Date: 2026-07-17
 - Status: accepted
 
 ## Context
 
-本 repo 的协议核心是"会话之间唯一的共享记忆是 repo 本身"。issue #2 那轮交接验证了机制成立，但也暴露了：**协议从来没正式定义 issue 该怎么用**。
+The core of this repo's protocol is "the only shared memory between sessions is the repo itself." The handoff in issue #2 proved the mechanism works, but also exposed a gap: **the protocol never formally defined how issues should be used.**
 
-实际撞上的三个问题：
+Three concrete problems came up:
 
-1. issue #2 comment（Claude Code 留的验收报告）是好实践，但**没沉淀就会丢**——下个 agent 不会自动继承这种交接格式
-2. Claude Code 撞上"merge 策略无约定"时，是凭 issue #2 的**临时授权**开 issue #3 的，不是凭协议规则。换上下文可能就 silent 判断了
-3. "为什么不用 HANDOFF.md"只写在 README.md（给模板用户的），没写进 AGENTS.md（协议本身）
+1. The issue #2 comment (an acceptance report Claude Code left behind) was good practice, but **without codifying it, it would be lost** — the next agent wouldn't automatically inherit that handoff format.
+2. When Claude Code hit "no agreed merge strategy," it opened issue #3 on the strength of issue #2's **ad-hoc authorization**, not a protocol rule. A different context could easily have led to a silent judgment call instead.
+3. "Why we don't use HANDOFF.md" was only written in README.md (for template users), not in AGENTS.md (the protocol itself).
 
-候选方案：
+Candidate approaches:
 
-- **A. HANDOFF.md**：覆盖式写，一个文件。优点是单点；缺点是后写覆盖前写、旧上下文丢、无时间戳、无作者、无法关闭归档、无法被引用。
-- **B. Issue comment**：append-only、带时间戳、带作者、可 `#N` 引用、可关闭归档、关联到具体 task。缺点是分散在多个 issue 里（但这恰好是优点——上下文跟任务绑定，不漂）。
-- **C. 同时定义三类 issue 角色**（Task / Memory / Protocol gap）：在 B 的基础上形式化"什么时候开 issue、开哪种、什么时候关"。
+- **A. HANDOFF.md**: a single file, overwritten each time. Advantage: one place to look. Disadvantages: later writes overwrite earlier ones, old context is lost, no timestamps, no author, can't be closed/archived, can't be referenced.
+- **B. Issue comments**: append-only, timestamped, authored, referenceable via `#N`, closeable/archivable, tied to a specific task. Downside: scattered across multiple issues (but this is actually the point — context stays bound to its task instead of drifting).
+- **C. Formally define three issue roles** (Task / Memory / Protocol gap): builds on B by formalizing "when to open an issue, which kind, and when to close it."
 
 ## Decision
 
-采用 C：在 AGENTS.md 显式定义 issue 的**三个不重叠角色**——Task / Memory / Protocol gap，并把"撞上协议缺口必须开 issue、不许 silent 判断"立为硬规则。Memory 角色用 issue comment 承载，**不建 HANDOFF.md**。
+Adopt C: explicitly define **three non-overlapping issue roles** in AGENTS.md — Task / Memory / Protocol gap — and establish as a hard rule that "hitting a protocol gap requires opening an issue; silent judgment calls are not allowed." The Memory role is carried by issue comments; **no HANDOFF.md is created.**
 
-三角色边界：
+Boundaries of the three roles:
 
-| 角色 | 什么时候用 | 什么时候关 |
+| Role | When to use | When to close |
 |---|---|---|
-| Task | 要做一件可执行的事 | 任务做完且门禁绿 |
-| Memory | 收工时留 comment（做到哪/卡在哪/下一步） | 下一棒接手即完成 |
-| Protocol gap | 撞上 repo 回答不了的问题 | 缺口补进 AGENTS.md/ADR/CONTEXT.md |
+| Task | There's an actionable piece of work to do | The task is done and the gate is green |
+| Memory | Leave a comment at end of shift (what's done / what's blocked / what's next) | Done once the next shift picks it up |
+| Protocol gap | Hit a question the repo can't answer | Done once the gap is folded into AGENTS.md / an ADR / CONTEXT.md |
 
-Memory comment 的最小格式定为四项：做到哪 / 卡在哪 / 下一步 / 是否关 issue。少一项不算合格交接。
+The minimum format for a Memory comment is set at four parts: what's done / what's blocked / what's next / whether to close the issue. Missing any one part means the handoff doesn't count.
 
 ## Consequences
 
-- **代价**：协议变厚了。每开一个 issue，agent 得判断它属于哪类。形式化本身有维护成本。
-- **换来的**：
-  - 好实践被固化，不靠口口相传——满足"repo 是唯一共享记忆"的基石
-  - "撞缺口开 issue"从默契升级为硬规则，降低 silent 判断的风险
-  - 三角色分类给后来的 agent 一个判断框架，而不是每次重新发明
-- **风险**：n=1 经验立完整分类可能过早抽象。缓解——分类是**描述性**的（总结已发生的 issue #2/#3 行为），不是**规范性**的（没发明新流程）。
-- **边界**：PR 不是独立角色——PR 是 Task 的实施载体，merge 时关 Task issue。PR review 中发现的新问题另开 issue，不在 PR 评论里堆。
-- 如果未来某类 issue（比如 Protocol gap）频率极低或极高，届时另开 ADR 调整分类，不就地改本 ADR。
+- **Cost**: the protocol gets thicker. Every time an agent opens an issue, it has to judge which role applies. Formalization itself has a maintenance cost.
+- **Payoff**:
+  - Good practice gets codified instead of relying on word of mouth — this is the bedrock of "the repo is the only shared memory."
+  - "Hit a gap, open an issue" is upgraded from a tacit norm to a hard rule, lowering the risk of silent judgment calls.
+  - The three-role taxonomy gives later agents a ready-made framework instead of reinventing one each time.
+- **Risk**: building a full taxonomy from n=1 experience risks premature abstraction. Mitigation — the taxonomy is **descriptive** (summarizing what already happened in issues #2/#3), not **prescriptive** (no new process was invented).
+- **Boundary**: PRs are not a separate role — a PR is the implementation vehicle for a Task, and merging it closes the Task issue. New problems found during PR review get their own issue rather than piling up in PR comments.
+- If some issue type (e.g. Protocol gap) turns out to be extremely rare or extremely frequent in the future, adjust the taxonomy via a new ADR rather than editing this one in place.

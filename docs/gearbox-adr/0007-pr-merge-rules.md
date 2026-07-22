@@ -1,45 +1,45 @@
-# ADR-0007: PR 处置细则——merge commit 一律、作者自 merge、review 不强制
+# ADR-0007: PR disposition rules — merge commit always, author self-merges, review not mandatory
 
 - Date: 2026-07-17
 - Status: accepted
 
 ## Context
 
-issue #3（scaffold 最早的 protocol gap 之一，ADR-0003 的 Context 里就引用过它）：agent 在 review/merge PR #1 时，三个问题 repo 回答不了——
+Issue #3 (one of the scaffold's earliest Protocol gaps, already referenced in ADR-0003's Context): while an agent was reviewing/merging PR #1, three questions the repo couldn't answer came up —
 
-1. merge 策略：merge commit / squash / rebase？
-2. PR 作者之外的 agent 能不能 merge？要不要等人批？
-3. Division of labor 还是占位符（→ 拆给 ADR-0008）
+1. Merge strategy: merge commit / squash / rebase?
+2. Can an agent other than the PR author merge it? Does it need to wait for human approval?
+3. Division of labor is still a placeholder (→ split off into ADR-0008)
 
-当时靠 issue #2 的临时授权顶过去了。ADR-0003 形式化了 issue 角色，但 merge 细则本身一直没落地。之后 date-cli 路 A 四轮实验里，实践自发收敛出一套做法（全部 merge commit、作者 agent CI 绿后自 merge、无互审），本 ADR 把它写成规则。
+At the time, this was pushed through on issue #2's ad-hoc authorization. ADR-0003 formalized the issue roles, but the merge details themselves were never settled. Later, across the four rounds of the date-cli Path A experiment, practice spontaneously converged on one approach (always merge commit, author agent self-merges once CI is green, no peer review) — this ADR writes that down as a rule.
 
 ## Decision
 
-**AGENTS.md 新增「### PR 处置」一节，四条规则：**
+**AGENTS.md gains a new "### PR disposition" section with four rules:**
 
-1. **merge 方式一律 merge commit**，不 squash、不 rebase。
-2. **PR 作者 agent 在 CI 绿后自行 merge**；协议改动按 ADR-0006 分级（L1 等维护者同意，L2 自主）。
-3. **不强制第二 agent review**。质量兜底 = CI 门禁 + 维护者事后否决权（revert + 重开 issue）。
-4. **不接手别人的 open PR**——那是任务中途换手。例外：交接 issue 明确移交，或维护者指示。
+1. **Merge method is always merge commit** — no squash, no rebase.
+2. **The PR author agent self-merges once CI is green**; protocol changes are tiered per ADR-0006 (L1 waits on maintainer agreement, L2 is autonomous).
+3. **A second agent's review is not mandatory.** Quality backstop = CI gate + maintainer's after-the-fact veto power (revert + reopen the issue).
+4. **Don't take over someone else's open PR** — that's a mid-task handoff. Exception: the handoff issue explicitly transfers it, or the maintainer directs it.
 
-### 为什么 merge commit
+### Why merge commit
 
-- **小步 commit 的 why 是协议资产**。本协议的基石是「repo 是会话之间唯一的共享记忆」，While working 又要求 commit message 写清 why——squash 会把这些分步理由压成一条，等于删记忆。
-- **风格统一比风格本身重要**。issue #3 的原始担忧就是「下个 agent 可能选 squash，历史风格分叉」。定死一种，历史才可预测。
-- **先例**：date-cli 全部 7 个 PR 和本 repo 全部 3 个 PR 都是 merge commit，规则只是追认现状。
+- **The "why" behind small-step commits is protocol asset.** This protocol's foundation is "the repo is the only shared memory between sessions," and While working already requires commit messages to state the why — squashing would compress these step-by-step rationales into one, which is equivalent to deleting memory.
+- **Consistency of style matters more than the style itself.** Issue #3's original concern was exactly "the next agent might pick squash, and history style would fork." Locking in one style keeps history predictable.
+- **Precedent**: all 7 PRs in date-cli and all 3 PRs in this repo were already merge commits — the rule just ratifies existing practice.
 
-### 为什么 review 不强制
+### Why review is not mandatory
 
-轮班制（一个任务从头到尾一个 agent）下，常态时刻只有一棒在场——强制互审等于每个 PR 都要阻塞等下一棒上线，交接边界被打穿。CI 是不靠自觉的约束，维护者否决权是结构性刹车，二者已覆盖「错误 merge」的恢复路径。
+Under the shift model (one agent does a task start to finish), typically only one shift is present at any given time — mandatory peer review would mean every PR blocks waiting for the next shift to come online, puncturing the handoff boundary. CI is a constraint that doesn't rely on discipline, and maintainer veto power is a structural brake; together they already cover the recovery path for "a bad merge."
 
-### 为什么不接手别人的 open PR
+### Why not taking over someone else's open PR
 
-While working 已有「一个任务从头到尾一个 agent 做完；交接只发生在任务边界」。open PR = 任务未到边界。这条只是把既有规则在 PR 场景显式化，堵住「PR 挂着、另一个 agent 好心帮忙 merge」的缝。
+While working already states "one agent does a task start to finish; handoffs only happen at task boundaries." An open PR means the task hasn't reached its boundary yet. This rule just makes the existing rule explicit for the PR case, closing the gap of "a PR is sitting there, and another agent helpfully merges it."
 
 ## Consequences
 
-- **代价**：main 历史带 merge 泡（bubble），`git log --oneline` 略吵。用 `--first-parent` 可看纯主线。
-- **错误 PR merge 后的恢复**：revert merge commit（`git revert -m 1`）比 revert squash 略绕，可接受。
-- **单 agent / 单人项目**拷走 scaffold 后若嫌重，可自行改本节（Working agreement 属 L2）。
-- **风险**：作者自 merge + 无互审 = 单棒犯错直接进 main。缓解：CI 硬门禁挡结构性错误；协议改动另有 L1/L2 分级；维护者随时可 revert。
-- 若未来多 agent 同时在场成为常态（非轮班制），互审的死锁前提失效，届时另开 ADR 重估。
+- **Cost**: main's history carries merge bubbles, making `git log --oneline` a bit noisier. `--first-parent` gives a clean view of the mainline.
+- **Recovering from a bad PR merge**: reverting a merge commit (`git revert -m 1`) is a bit more involved than reverting a squash, which is acceptable.
+- **Solo agent / solo-person projects** that find this too heavy after copying the scaffold can edit this section themselves (Working agreement is L2).
+- **Risk**: author self-merge + no peer review means a single shift's mistake goes straight into main. Mitigation: the CI hard gate blocks structural errors; protocol changes have separate L1/L2 tiering; the maintainer can revert at any time.
+- If multiple agents being present simultaneously becomes the norm in the future (rather than the shift model), the deadlock premise behind mandatory peer review no longer holds, and this should be reassessed via a new ADR.
