@@ -25,7 +25,9 @@ Just need node — no clone, no PATH setup:
 # ADR provenance + hash stamps all automatic)
 npx gearbox-agents install --maintainer <your-github-username> --gate "npx tsc --noEmit"
 # All three args are optional: omit and a <placeholder> is left in place;
-# ci.yml ships a deliberately-failing placeholder command
+# ci.yml ships a deliberately-failing placeholder command. On an interactive
+# terminal, omitting --maintainer triggers a one-question binding prompt
+# (gh-detected default, Enter accepts, "-" skips, ADR-0036)
 
 # Later, check sync / backfill upstream protocol updates anytime (pull-triggered, ADR-0026)
 npx gearbox-agents version    # check which upstream version / which ADRs this repo is synced to
