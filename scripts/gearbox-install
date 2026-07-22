@@ -26,7 +26,9 @@
 //
 // What it doesn't do:
 //   - Doesn't copy pull_request_template.md (the downstream-backfill vehicle, Gearbox-specific), scripts/, README.md
-//   - Doesn't overwrite an existing AGENTS.md (onboarded projects use gearbox-update to backfill, not this tool)
+//   - Doesn't overwrite an existing AGENTS.md, whoever wrote it (ADR-0038): a Gearbox-made one
+//     means "use gearbox-update to backfill"; a hand-written one gets the back-up-and-merge path
+//     (the user's AGENTS.md stays the single entry point — Gearbox content merges into it)
 //   - Doesn't auto-commit (after install, review by hand + make the first commit)
 //
 // Every transform anchors to known text in the upstream AGENTS.md; if an anchor isn't found, it errors
@@ -106,11 +108,36 @@ if (!existsSync(GEARBOX_ADR_DIR))
     "set the GEARBOX_DIR env var to change the path, or make sure Gearbox is at ~/Github/gearbox/",
   );
 if (!existsSync(targetDir)) die(`Target directory does not exist: ${targetDir}`);
-if (existsSync(join(targetDir, "AGENTS.md")))
+if (existsSync(join(targetDir, "AGENTS.md"))) {
+  // Split on provenance (ADR-0038): AGENTS.md is an industry convention, so the
+  // existing file may be hand-written rather than Gearbox-made — and the two need
+  // opposite advice (update vs. back-up-and-merge). Fingerprint = the Working
+  // agreement anchor (present in every Gearbox-generated AGENTS.md, guarded by
+  // check-gearbox.js upstream) or the tool-written companions next to it.
+  const existing = readFileSync(join(targetDir, "AGENTS.md"), "utf8");
+  const gearboxMade =
+    existing.includes("## Working agreement (multi-agent)") ||
+    existsSync(join(targetDir, ".gearbox-version")) ||
+    existsSync(join(targetDir, "docs", "gearbox-adr"));
+  if (gearboxMade) {
+    die(
+      `Target already has a Gearbox AGENTS.md: ${targetDir}`,
+      "onboarded projects use gearbox-update to backfill ADRs — don't reinstall with this tool",
+    );
+  }
   die(
-    `Target already has an AGENTS.md: ${targetDir}`,
-    "onboarded projects use gearbox-update to backfill ADRs — don't reinstall with this tool",
+    `Target has its own AGENTS.md (not written by Gearbox): ${targetDir}`,
+    [
+      "this file is your project's asset — this tool will never touch it.",
+      "To adopt Gearbox alongside it:",
+      "  1. mv AGENTS.md AGENTS.md.bak",
+      "  2. re-run this install",
+      "  3. merge your rules from AGENTS.md.bak into the generated Hard rules /",
+      "     Tech stack sections (your AGENTS.md stays the single entry point —",
+      "     Gearbox content merges into it, never a parallel rule file)",
+    ].join("\n  "),
   );
+}
 
 const agentsSrc = readFileSync(join(GEARBOX_DIR, "AGENTS.md"), "utf8");
 const contextSrc = readFileSync(join(GEARBOX_DIR, "CONTEXT.md"), "utf8");
