@@ -41,6 +41,7 @@ import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { join, resolve, basename } from "node:path";
 import { env, argv, exit, cwd } from "node:process";
+import * as tui from "./lib/tui.js";
 
 // ============== Config ==============
 
@@ -141,8 +142,7 @@ agents = mustReplace(
 // Tech stack → placeholder
 agents = mustReplace(
   agents,
-  `- Node.js (structural self-check script + \`scripts/gearbox-update\` downstream backfill / \`scripts/gearbox-install\` scaffold install / \`scripts/gearbox-prune\` branch hygiene, no runtime dependencies, ADR-0017/0022/0030)
-- Bash (\`scripts/gearbox-version\` downstream sync quick-check, zero dependencies, read-only, ADR-0016)
+  `- Node.js (structural self-check script + the full tool family: \`scripts/gearbox-install\` scaffold / \`scripts/gearbox-version\` sync quick-check / \`scripts/gearbox-update\` downstream backfill / \`scripts/gearbox-prune\` branch hygiene, plus the shared TUI animation layer \`scripts/lib/tui.js\`, no runtime dependencies, ADR-0016/0017/0022/0030/0035)
 - Plain Markdown documentation (AGENTS.md / CONTEXT.md / ADRs)`,
   "<Project tech stack, one per line. Example: Next.js 15 / TypeScript / Postgres>",
   "Tech stack",
@@ -206,7 +206,7 @@ agents = mustReplace(
   `- \`CONTEXT.md\` — domain glossary
 - \`docs/gearbox-adr/\` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
 - \`docs/adr/\` — this project's own architectural decisions (starting at 0001)
-- \`scripts/\` — gate self-check (check-gearbox.js) + the downstream tool family (gearbox-install scaffold / gearbox-version read / gearbox-update write / gearbox-prune branch hygiene, ADR-0016/0017/0022/0030)
+- \`scripts/\` — gate self-check (check-gearbox.js) + the downstream tool family (gearbox-install scaffold / gearbox-version read / gearbox-update write / gearbox-prune branch hygiene, ADR-0016/0017/0022/0030) + the shared TUI animation layer (\`scripts/lib/tui.js\`, ADR-0035)
 - <other module documentation directories, e.g. docs/modules/>`,
   `- \`CONTEXT.md\` — domain glossary
 - \`docs/gearbox-adr/\` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
@@ -248,8 +248,9 @@ const adrFiles = readdirSync(GEARBOX_ADR_DIR)
   .sort();
 if (adrFiles.length === 0) die("Upstream docs/gearbox-adr/ is empty?");
 
-mkdirSync(join(targetDir, "docs/gearbox-adr"), { recursive: true });
+// Prepare transformed ADR contents here; the writes happen in the animated write phase below.
 let stamped = 0;
+const adrOutputs = [];
 for (const f of adrFiles) {
   let content = readFileSync(join(GEARBOX_ADR_DIR, f), "utf8");
   // Provenance line + hash stamp (ADR-0021 contract: first 12 chars of sha256). Skip files that
@@ -270,7 +271,7 @@ for (const f of adrFiles) {
     content = lines.join("\n");
     stamped++;
   }
-  writeFileSync(join(targetDir, "docs/gearbox-adr", f), content);
+  adrOutputs.push({ name: f, content });
 }
 
 // ============== 3. CONTEXT.md transform ==============
@@ -315,13 +316,7 @@ jobs:
       - run: ${gateCmd || "echo '<fill in the Gate command, byte-identical to the Gate section in AGENTS.md>' && exit 1"}
 `;
 
-// ============== Write to disk ==============
-
-writeFileSync(join(targetDir, "AGENTS.md"), agents);
-writeFileSync(join(targetDir, "CLAUDE.md"), claudeMd);
-writeFileSync(join(targetDir, "CONTEXT.md"), context);
-mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
-writeFileSync(join(targetDir, ".github/workflows/ci.yml"), ciYml);
+// ============== Resolve upstream version + URL (pure reads, before the write phase) ==============
 
 // .gearbox-version stamp (ADR-0023): records the upstream version at onboarding time;
 // gearbox-version reads and compares against it.
@@ -343,8 +338,6 @@ if (!upstreamVersion) {
     /* Upstream has no tag (baseline not tagged) → don't write the stamp, warn in the report */
   }
 }
-if (upstreamVersion)
-  writeFileSync(join(targetDir, ".gearbox-version"), upstreamVersion + "\n");
 
 // .gearbox-upstream config (ADR-0027): the upstream git URL, so downstream can do remote
 // addressing when there's no local GEARBOX_DIR (pulling from an unfamiliar fork). Prefer the
@@ -368,48 +361,90 @@ if (!upstreamUrl) {
     /* No package.json / no repository → skip, downstream falls back to GEARBOX_DIR */
   }
 }
+
+// ============== Write phase (animated report, ADR-0035; non-TTY prints plain lines) ==============
+
+await tui.logo();
+if (!tui.isTTY) {
+  console.log("");
+  console.log(C.bold("⟳ gearbox-install"));
+}
+console.log(`${C.dim("Project:")}    ${projectName}`);
+console.log(`${C.dim("Directory:")}  ${targetDir}`);
+console.log(`${C.dim("Upstream:")}   ${GEARBOX_DIR}`);
+console.log("");
+
+await tui.step(
+  "AGENTS.md",
+  `(maintainer: ${maintainer || "<maintainer> placeholder"}; Gate: ${gateCmd || "placeholder"})`,
+  { minMs: 380, work: () => writeFileSync(join(targetDir, "AGENTS.md"), agents) },
+);
+await tui.step("CLAUDE.md", "(@AGENTS.md empty-shell contract)", {
+  minMs: 180,
+  work: () => writeFileSync(join(targetDir, "CLAUDE.md"), claudeMd),
+});
+await tui.step("CONTEXT.md", "(protocol entries copied along)", {
+  minMs: 200,
+  work: () => writeFileSync(join(targetDir, "CONTEXT.md"), context),
+});
+mkdirSync(join(targetDir, "docs/gearbox-adr"), { recursive: true });
+await tui.progress(
+  "docs/gearbox-adr/",
+  adrOutputs.map((o) => o.name),
+  (name, i) => writeFileSync(join(targetDir, "docs/gearbox-adr", name), adrOutputs[i].content),
+  { doneNote: `(${adrFiles.length} upstream protocol ADRs, ${stamped} stamped with a hash, ADR-0021)` },
+);
+await tui.step(
+  "ci.yml",
+  gateCmd
+    ? "(same command as the Gate section)"
+    : "(placeholder command, deliberately red — CI shouldn't be green before Gate is filled in)",
+  {
+    minMs: 200,
+    work: () => {
+      mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
+      writeFileSync(join(targetDir, ".github/workflows/ci.yml"), ciYml);
+    },
+  },
+);
+if (upstreamVersion)
+  await tui.step(".gearbox-version", `(${upstreamVersion}, ADR-0023 version stamp)`, {
+    minMs: 180,
+    work: () => writeFileSync(join(targetDir, ".gearbox-version"), upstreamVersion + "\n"),
+  });
+else
+  console.log(
+    `  ${C.yellow("⚠")} .gearbox-version ${C.dim("not written — upstream has no tag (baseline v0.0.0 not tagged?)")}`,
+  );
 if (upstreamUrl)
-  writeFileSync(join(targetDir, ".gearbox-upstream"), upstreamUrl + "\n");
+  await tui.step(".gearbox-upstream", `(${upstreamUrl}, ADR-0027 remote addressing)`, {
+    minMs: 180,
+    work: () => writeFileSync(join(targetDir, ".gearbox-upstream"), upstreamUrl + "\n"),
+  });
 
 // git init (when there's no .git)
-let gitInited = false;
 if (!existsSync(join(targetDir, ".git"))) {
+  let gitInited = false;
   try {
     execSync("git init -q", { cwd: targetDir });
     gitInited = true;
   } catch {
     /* Don't block install even if git isn't installed */
   }
+  if (gitInited) await tui.step("git init", "", { minMs: 150 });
 }
 
-// ============== Report ==============
+// ============== Next steps ==============
 
 console.log("");
-console.log(C.bold("⟳ gearbox-install"));
-console.log(`${C.dim("Project:")}    ${projectName}`);
-console.log(`${C.dim("Directory:")}  ${targetDir}`);
-console.log(`${C.dim("Upstream:")}   ${GEARBOX_DIR}`);
-console.log("");
-console.log(`  ${C.green("✓")} AGENTS.md   ${C.dim(`(maintainer: ${maintainer || "<maintainer> placeholder"}; Gate: ${gateCmd || "placeholder"})`)}`);
-console.log(`  ${C.green("✓")} CLAUDE.md   ${C.dim("(@AGENTS.md empty-shell contract)")}`);
-console.log(`  ${C.green("✓")} CONTEXT.md  ${C.dim("(protocol entries copied along)")}`);
-console.log(`  ${C.green("✓")} docs/gearbox-adr/ ${C.dim(`(${adrFiles.length} upstream protocol ADRs, ${stamped} stamped with a hash, ADR-0021)`)}`);
-console.log(`  ${C.green("✓")} ci.yml      ${C.dim(gateCmd ? "(same command as the Gate section)" : "(placeholder command, deliberately red — CI shouldn't be green before Gate is filled in)")}`);
-if (upstreamVersion)
-  console.log(`  ${C.green("✓")} .gearbox-version ${C.dim(`(${upstreamVersion}, ADR-0023 version stamp)`)}`);
-else
-  console.log(`  ${C.yellow("⚠")} .gearbox-version ${C.dim("not written — upstream has no tag (baseline v0.0.0 not tagged?)")}`);
-if (upstreamUrl)
-  console.log(`  ${C.green("✓")} .gearbox-upstream ${C.dim(`(${upstreamUrl}, ADR-0027 remote addressing)`)}`);
-if (gitInited) console.log(`  ${C.green("✓")} git init`);
-console.log("");
-console.log(C.bold("Next steps:"));
+console.log(tui.isTTY ? tui.rule("Next steps") : C.bold("Next steps:"));
 let step = 1;
 const placeholderHint =
   "(intro / Hard rules / Tech stack" +
   (maintainer ? "" : " / <maintainer>") +
   (gateCmd ? ")" : " / Gate command, sync ci.yml)");
-console.log(`  ${step++}. Fill in placeholders: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
-console.log(`  ${step++}. Write your first own decision to ${C.cyan(`docs/adr/0001-*.md`)} ${C.dim("(project ADRs number independently; protocol ADRs live in docs/gearbox-adr/, format in 0001-adr-template.md)")}`);
-console.log(`  ${step++}. First commit + push, then step 4 of the three start-of-shift steps runs ${C.cyan("gearbox-version")} to self-check the protocol version (pull-triggered, ADR-0026)`);
+await tui.typeLine(`  ${step++}. Fill in placeholders: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
+await tui.typeLine(`  ${step++}. Write your first own decision to ${C.cyan(`docs/adr/0001-*.md`)} ${C.dim("(project ADRs number independently; protocol ADRs live in docs/gearbox-adr/, format in 0001-adr-template.md)")}`);
+await tui.typeLine(`  ${step++}. First commit + push, then step 4 of the three start-of-shift steps runs ${C.cyan("gearbox-version")} to self-check the protocol version (pull-triggered, ADR-0026)`);
 console.log("");
+if (tui.isTTY) console.log("  " + tui.grad("⚙ gearbox ready") + "\n");
