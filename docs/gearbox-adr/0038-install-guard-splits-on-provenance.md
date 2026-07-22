@@ -1,7 +1,7 @@
 # ADR-0038: install's existing-AGENTS.md guard splits on provenance
 
 - Date: 2026-07-22
-- Status: accepted
+- Status: accepted (hand-written branch superseded by ADR-0039 — install now auto-backs-up and proceeds instead of refusing; the provenance split itself stands)
 - Related: ADR-0022 (gearbox-install), ADR-0026 (pull-triggered backfill — the "onboarded → update" path), ADR-0031 (dual ADR directories — one of the fingerprint companions)
 
 ## Context
