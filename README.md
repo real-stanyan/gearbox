@@ -1,4 +1,18 @@
-# Gearbox — a scaffold for multi-agent collaboration projects
+<p align="center">
+  <img src="docs/assets/gearbox-logo.png" width="140" alt="Gearbox — pixel gear-G logo">
+</p>
+
+<h1 align="center">Gearbox</h1>
+
+<p align="center">
+  A scaffold for multi-agent collaboration projects —<br>
+  <code>AGENTS.md</code> as the single source of truth + ADRs + a CI hard gate.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/gearbox-agents"><img src="https://img.shields.io/npm/v/gearbox-agents?color=ef9f27&label=npm" alt="npm version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-dbd7cb" alt="MIT license"></a>
+</p>
 
 > Formerly named `agents-md-scaffold`, renamed **Gearbox** on 2026-07-19 (ADR-0015). The old GitHub URL redirects automatically.
 
@@ -20,6 +34,23 @@ npx gearbox-agents update     # copy missing upstream ADRs into this repo, produ
 
 > npx path: the package ships its own upstream snapshot; `version`/`update` diff against that packaged snapshot (ADR-0028).
 > All commands are node, cross-platform (`version` was bash until ADR-0035 rewrote it in node).
+
+## 🤖 For AI agents (installing on a user's behalf)
+
+If a user pointed you at this repo and asked you to "install Gearbox" into their project, do this:
+
+1. **Check the target first**: if the project root already has an `AGENTS.md`, do **not** install — the project is already onboarded; run `npx gearbox-agents update` instead to backfill protocol updates.
+2. **Run the install** from the project root:
+
+   ```bash
+   npx gearbox-agents install --maintainer <the-users-github-username> --gate "<the-projects-check-command>"
+   ```
+
+   - `--maintainer` = the user's **GitHub username** (asynchronous L1 approval is verified against that account, ADR-0034). Ask the user if you don't know it.
+   - `--gate` = a command that automatically asserts "nothing's broken" (e.g. `npx tsc --noEmit && npx vitest run`). Derive it from the project's tooling, or ask.
+   - Both flags are optional — omitting them leaves `<placeholder>`s to fill in later (the generated `ci.yml` then ships a deliberately-failing placeholder so CI can't be green before the gate is real).
+3. **After install**: fill in the remaining placeholders (`grep -n '<' AGENTS.md` lists them: project intro, Hard rules, Tech stack), then make the first commit.
+4. **Read the generated `AGENTS.md` top to bottom** — it is your working agreement in that repo from now on (shift steps, issue/PR roles, protocol-change tiers, gate discipline).
 
 **Maintainers / contributors** (working on Gearbox itself) use a local clone:
 
