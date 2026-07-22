@@ -26,11 +26,12 @@
 //
 // What it doesn't do:
 //   - Doesn't copy pull_request_template.md (the downstream-backfill vehicle, Gearbox-specific), scripts/, README.md
-//   - Doesn't overwrite or delete an existing AGENTS.md (ADR-0038/0039): a Gearbox-made one
-//     means "use gearbox-update to backfill" (refusal); a hand-written one is preserved as
-//     AGENTS-backup.md and the install proceeds, ending with a merge-it-back reminder
-//     (the user's AGENTS.md stays the single entry point — Gearbox content merges into it);
-//     an existing AGENTS-backup.md is never overwritten (refusal — unfinished adoption)
+//   - Doesn't overwrite or delete any hand-written file (ADR-0038/0039/0040): a Gearbox-made
+//     AGENTS.md means "use gearbox-update to backfill" (refusal); hand-written AGENTS.md /
+//     CLAUDE.md / CONTEXT.md / ci.yml are preserved as backups and the install proceeds,
+//     with a merge notice at the top of the generated AGENTS.md (the user's AGENTS.md stays
+//     the single entry point — Gearbox content merges into it); an existing backup file is
+//     never overwritten (refusal — unfinished adoption)
 //   - Doesn't auto-commit (after install, review by hand + make the first commit)
 //
 // Every transform anchors to known text in the upstream AGENTS.md; if an anchor isn't found, it errors
@@ -111,15 +112,13 @@ if (!existsSync(GEARBOX_ADR_DIR))
     "set the GEARBOX_DIR env var to change the path, or make sure Gearbox is at ~/Github/gearbox/",
   );
 if (!existsSync(targetDir)) die(`Target directory does not exist: ${targetDir}`);
-let backupAgents = false; // hand-written AGENTS.md found — rename it in the write phase (ADR-0039)
 if (existsSync(join(targetDir, "AGENTS.md"))) {
   // Split on provenance (ADR-0038): AGENTS.md is an industry convention, so the
   // existing file may be hand-written rather than Gearbox-made. Fingerprint = the
   // Working agreement anchor (present in every Gearbox-generated AGENTS.md, guarded
   // by check-gearbox.js upstream) or the tool-written companions next to it.
   // Gearbox-made → refuse (that's an update, not an install). Hand-written → back it
-  // up as AGENTS-backup.md and proceed (ADR-0039): the rename is non-destructive,
-  // and the merge reminder becomes the first Next step.
+  // up and proceed (ADR-0039, backup plan built below).
   const existing = readFileSync(join(targetDir, "AGENTS.md"), "utf8");
   const gearboxMade =
     existing.includes("## Working agreement (multi-agent)") ||
@@ -131,14 +130,32 @@ if (existsSync(join(targetDir, "AGENTS.md"))) {
       "onboarded projects use gearbox-update to backfill ADRs — don't reinstall with this tool",
     );
   }
-  if (existsSync(join(targetDir, "AGENTS-backup.md"))) {
-    die(
-      `Target already has an AGENTS-backup.md: ${targetDir}`,
-      "a previous adoption is unfinished — merge its rules into AGENTS.md (then delete the\n  backup) or remove it first; this tool never overwrites a backup (ADR-0039)",
-    );
-  }
-  backupAgents = true;
 }
+
+// Backup plan (ADR-0039/0040): every hand-written file the install would overwrite is
+// renamed to a backup in the write phase — the tool never clobbers a user asset and
+// never deletes anything. A CLAUDE.md that is already the @AGENTS.md shell is
+// overwritten without backup (byte-equivalent, nothing to lose). ci.yml's backup keeps
+// a .bak extension so GitHub Actions ignores it (any *.yml in workflows/ would run).
+// An existing backup file is a preflight refusal: a previous adoption is unfinished,
+// and a backup must never be overwritten — that would be the tool's only path to
+// destroying the original file.
+const backupPlan = [
+  { src: "AGENTS.md", bak: "AGENTS-backup.md", merge: "its rules go into the Hard rules / Tech stack sections" },
+  { src: "CLAUDE.md", bak: "CLAUDE-backup.md", merge: "its content belongs in AGENTS.md (CLAUDE.md stays the @AGENTS.md shell)" },
+  { src: "CONTEXT.md", bak: "CONTEXT-backup.md", merge: "its glossary entries go below the protocol entries in the new CONTEXT.md" },
+  { src: ".github/workflows/ci.yml", bak: ".github/workflows/ci.yml.bak", merge: "re-add its jobs alongside the gate job in the new ci.yml" },
+].filter(({ src }) => {
+  if (!existsSync(join(targetDir, src))) return false;
+  if (src === "CLAUDE.md" && readFileSync(join(targetDir, src), "utf8").trim() === "@AGENTS.md") return false;
+  return true;
+});
+for (const { bak } of backupPlan)
+  if (existsSync(join(targetDir, bak)))
+    die(
+      `Target already has a ${bak}: ${targetDir}`,
+      "a previous adoption is unfinished — merge the backup's content back (then delete it)\n  or remove it first; this tool never overwrites a backup (ADR-0039/0040)",
+    );
 
 const agentsSrc = readFileSync(join(GEARBOX_DIR, "AGENTS.md"), "utf8");
 const contextSrc = readFileSync(join(GEARBOX_DIR, "CONTEXT.md"), "utf8");
@@ -509,22 +526,24 @@ console.log(`${C.dim("Directory:")}  ${targetDir}`);
 console.log(`${C.dim("Upstream:")}   ${GEARBOX_DIR}`);
 console.log("");
 
-if (backupAgents) {
-  await tui.step("AGENTS-backup.md", "(your hand-written AGENTS.md, preserved — merge it back, ADR-0039)", {
-    minMs: 250,
-    work: () => renameSync(join(targetDir, "AGENTS.md"), join(targetDir, "AGENTS-backup.md")),
-  });
+if (backupPlan.length > 0) {
+  for (const { src, bak } of backupPlan)
+    await tui.step(bak, `(your hand-written ${src}, preserved — merge it back, ADR-0039/0040)`, {
+      minMs: 250,
+      work: () => renameSync(join(targetDir, src), join(targetDir, bak)),
+    });
   // In-file merge notice (ADR-0039): the terminal Next-steps output is ephemeral, but
   // AGENTS.md is auto-loaded by every agent tool — so the merge task rides at the top of
   // the file itself. The install is defined as complete when the merge is done and this
-  // notice (plus the backup) is deleted.
+  // notice (plus every backup) is deleted.
   agents =
     [
-      "> ⚠️ **Unfinished adoption — merge required (ADR-0039).** This project's original",
-      "> rules were preserved in `AGENTS-backup.md` when Gearbox was installed over them.",
-      "> Whoever works here next (human or agent): merge those rules into the Hard rules /",
-      "> Tech stack sections below, delete `AGENTS-backup.md`, then delete this notice.",
-      "> The Gearbox install is not complete until this notice is gone.",
+      "> ⚠️ **Unfinished adoption — merge required (ADR-0039/0040).** This project's original",
+      "> files were preserved as backups when Gearbox was installed over them. Whoever works",
+      "> here next (human or agent): merge each one back, delete the backups, then delete",
+      "> this notice. The Gearbox install is not complete until this notice is gone.",
+      ">",
+      ...backupPlan.map(({ bak, merge }) => `> - \`${bak}\` — ${merge}`),
       "",
       "",
     ].join("\n") + agents;
@@ -594,9 +613,9 @@ if (!existsSync(join(targetDir, ".git"))) {
 console.log("");
 console.log(tui.isTTY ? tui.rule("Next steps") : C.bold("Next steps:"));
 let step = 1;
-if (backupAgents)
+if (backupPlan.length > 0)
   await tui.typeLine(
-    `  ${step++}. ${C.yellow("Merge your rules")} from ${C.cyan("AGENTS-backup.md")} into the generated Hard rules / Tech stack sections, then delete the backup and the ⚠️ notice at the top of AGENTS.md ${C.dim("(the notice repeats this task in-file so the next agent can't miss it; install is complete when it's gone, ADR-0039)")}`,
+    `  ${step++}. ${C.yellow("Merge your files back")} from ${C.cyan(backupPlan.map(({ bak }) => bak).join(", "))}, then delete the backups and the ⚠️ notice at the top of AGENTS.md ${C.dim("(the notice repeats this task in-file so the next agent can't miss it; install is complete when it's gone, ADR-0039/0040)")}`,
   );
 const placeholderHint =
   "(intro / Hard rules / Tech stack" +
