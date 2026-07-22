@@ -1,41 +1,41 @@
-# Subagent System（可选模板）
+# Subagent System (optional template)
 
-> **身份**：可选模板。下游项目拷不拷自愿。不像 `AGENTS.md` 是硬规则，本文件是"如果你想在项目里用 subagent 体系，可以这么干"的参考。
+> **Status**: optional template. Whether downstream projects copy it is up to them. Unlike `AGENTS.md`, which is a hard rule, this file is a reference for "if you want to run a subagent system in your project, here's how."
 >
-> 决策记录见 `docs/adr/0011-subagent-system.md`。
+> See the decision record at `docs/adr/0011-subagent-system.md`.
 
-## §1 为什么需要 subagent system
+## §1 Why a subagent system is needed
 
-**核心承诺**：主对话（controller）只做协调，把重活丢给独立 context 的 subagent。
+**Core promise**: the main conversation (the controller) only coordinates — it hands off the heavy lifting to subagents that run in their own independent context.
 
-**解决的痛点**：主对话 token 是**平方级累积**的——每一步往上下文塞一点东西（工具结果、文件 dump、bash 输出），后续每轮都要把整个上下文重新发给模型一次。假设上下文从 10k 涨到 50k 走了 10 步，总消耗不是 `10k × 10` 而是 `10+15+...+50 ≈ 300k`。
+**The pain point it solves**: the main conversation's token cost accumulates **quadratically** — every step stuffs a bit more into the context (tool results, file dumps, bash output), and every subsequent round has to resend the entire context to the model again. Suppose the context grows from 10k to 50k over 10 steps; the total cost isn't `10k × 10`, it's `10+15+...+50 ≈ 300k`.
 
-Subagent 的独立 context **不回流到主对话**——派出去的 agent 自己 grep 10 次、读一堆文件，主对话只收它的结论报告。主对话不膨胀。
+A subagent's independent context **does not flow back into the main conversation** — the dispatched agent greps 10 times, reads a pile of files, all on its own, and the main conversation only receives its final report. The main conversation never bloats.
 
-**诚实的代价**（必须说清楚）：
-- **派 subagent 不是免费**。它跑那次本身要烧 token（一个 Explore subagent 一次调用常见 1万-5万 token）
-- **省的是后续轮次**——主对话不脏，后续协调工作便宜；不是"这次调用更便宜"
-- **短任务、单次探索**不一定划算。判断标准：主对话后续还要做多少轮协调？多 → 派 subagent 值；少 → 主对话直接做
+**An honest cost** (has to be said plainly):
+- **Dispatching a subagent isn't free**. The run itself burns tokens (a single Explore subagent call commonly runs 10k-50k tokens)
+- **What you save is future rounds** — the main conversation stays clean, so later coordination is cheap. It's not "this call is cheaper," it's the *next* ones
+- **Short tasks, one-off exploration** don't always pay off. The judgment call: how many more rounds of coordination will the main conversation need afterward? Many → dispatching a subagent is worth it; few → the main conversation should just do it directly
 
-## §2 5 个 Subagent 规格
+## §2 The 5 subagent specs
 
-| Subagent | Model 档位 | 角色 | 何时派 |
+| Subagent | Model tier | Role | When to dispatch |
 |---|---|---|---|
-| **Explore** | `<便宜档模型>` | 只读搜索/定位/审计 | 任何"找/查/数/审计"——机械任务 |
-| **Implementer** | `<旗舰档模型>` | SDD 实现 task | 有清晰 spec 的编码任务 |
-| **Reviewer** | `<旗舰档模型>` | spec + 质量审查 | 每个 Implementer 完成后 |
-| **Debugger** | `<旗舰档模型>` | 系统性调试 | 主 agent 撞墙、跨多文件查根因 |
-| **Doc-Walker** | `<便宜档模型>` | 代码 → ADR/CONTEXT.md | 有架构决策或术语要落盘 |
+| **Explore** | `<cheap tier model>` | read-only search / locate / audit | anything "find / look up / count / audit" — mechanical tasks |
+| **Implementer** | `<flagship tier model>` | SDD implementation task | coding tasks with a clear spec |
+| **Reviewer** | `<flagship tier model>` | spec + quality review | after every Implementer finishes |
+| **Debugger** | `<flagship tier model>` | systematic debugging | main agent is stuck, or needs a cross-file root-cause investigation |
+| **Doc-Walker** | `<cheap tier model>` | code → ADR/CONTEXT.md | an architectural decision or new term needs to be recorded |
 
-**模型档位占位符**：把 `<便宜档模型>` / `<旗舰档模型>` 替换成你的 provider 实际模型 id。例如 z.ai Coding Plan 用户：便宜档 = `GLM-5-Turbo`，旗舰档 = `GLM-5.2`。
+**Model tier placeholders**: replace `<cheap tier model>` / `<flagship tier model>` with your provider's actual model id. For example, a z.ai Coding Plan user: cheap tier = `GLM-5-Turbo`, flagship tier = `GLM-5.2`.
 
-**为什么没有 Final-Reviewer**：SDD skill 推荐的 final whole-branch review 直接复用 Reviewer subagent（让它跑 branch-wide 而非 task-scoped 就行），不重复造轮子。
+**Why there's no Final-Reviewer**: the whole-branch final review recommended by the SDD skill just reuses the Reviewer subagent directly (have it run branch-wide instead of task-scoped) — no need to build a separate wheel.
 
-### 2.1 Explore（只读搜索）
+### 2.1 Explore (read-only search)
 
-- **Model**：`<便宜档模型>`
-- **Description（UI 里填这个，触发匹配用）**：`Read-only search agent for finding files, symbols, and patterns. Returns structured conclusions without code dumps. Use for code exploration, audits, and mechanical search tasks.`
-- **System Prompt**：
+- **Model**: `<cheap tier model>`
+- **Description (fill this in the UI, used for trigger matching)**: `Read-only search agent for finding files, symbols, and patterns. Returns structured conclusions without code dumps. Use for code exploration, audits, and mechanical search tasks.`
+- **System Prompt**:
 
 ```
 You are a read-only search and exploration agent. Your job is to locate code, symbols, patterns, or facts in a codebase and return structured conclusions. You are NOT an implementer.
@@ -66,33 +66,33 @@ Given a search/audit question:
 Your final message IS the report. No preamble, no process narration. Lead with findings, end with the summary. If the controller needs to verify a claim, cite the exact file:line you saw it at.
 ```
 
-### 2.2 Implementer（SDD 实现）
+### 2.2 Implementer (SDD implementation)
 
-- **Model**：`<旗舰档模型>`
-- **Description**：`Implementer agent for the Subagent-Driven Development workflow. Takes a task brief, implements it with TDD, commits, self-reviews, and reports back.`
-- **System Prompt**：**直接引用 superpowers skill 的模板**，不要复制——保持单一事实源。
+- **Model**: `<flagship tier model>`
+- **Description**: `Implementer agent for the Subagent-Driven Development workflow. Takes a task brief, implements it with TDD, commits, self-reviews, and reports back.`
+- **System Prompt**: **quote the superpowers skill template directly** — don't copy it, to keep a single source of truth.
 
-  路径：`~/.agents/skills/subagent-driven-development/implementer-prompt.md`
+  Path: `~/.agents/skills/subagent-driven-development/implementer-prompt.md`
 
-  使用方法：打开该文件，把模板里的占位符（`[BRIEF_FILE]` / `[REPORT_FILE]` / `[MODEL]` / `[directory]` 等）替换为本任务的实际值，作为 dispatch 时的 prompt。
+  How to use it: open that file, replace the template's placeholders (`[BRIEF_FILE]` / `[REPORT_FILE]` / `[MODEL]` / `[directory]`, etc.) with the actual values for this task, and use the result as the dispatch prompt.
 
-  **前提**：装了 superpowers plugin。没装的话，把模板内容内联进 ZCode UI 的 System Prompt 字段作为 fallback（模板本身约 100 行）。
+  **Prerequisite**: the superpowers plugin must be installed. If it isn't, inline the template content into the ZCode UI's System Prompt field as a fallback (the template itself is about 100 lines).
 
-### 2.3 Reviewer（SDD 审查）
+### 2.3 Reviewer (SDD review)
 
-- **Model**：`<旗舰档模型>`
-- **Description**：`Code reviewer for Subagent-Driven Development. Returns two verdicts per task: spec compliance and code quality. Read-only on the working tree.`
-- **System Prompt**：**直接引用 superpowers skill 的模板**。
+- **Model**: `<flagship tier model>`
+- **Description**: `Code reviewer for Subagent-Driven Development. Returns two verdicts per task: spec compliance and code quality. Read-only on the working tree.`
+- **System Prompt**: **quote the superpowers skill template directly**.
 
-  路径：`~/.agents/skills/subagent-driven-development/task-reviewer-prompt.md`
+  Path: `~/.agents/skills/subagent-driven-development/task-reviewer-prompt.md`
 
-  使用方法同 Implementer——替换占位符后作为 dispatch prompt。没装 superpowers 的话内联模板（约 130 行）。
+  Used the same way as Implementer — replace the placeholders and use the result as the dispatch prompt. If superpowers isn't installed, inline the template (about 130 lines).
 
-### 2.4 Debugger（系统性调试）
+### 2.4 Debugger (systematic debugging)
 
-- **Model**：`<旗舰档模型>`
-- **Description**：`Systematic debugger for hard bugs and regressions. Forms hypotheses, verifies, and only then fixes. Use when something is throwing, failing, or slow.`
-- **System Prompt**：
+- **Model**: `<flagship tier model>`
+- **Description**: `Systematic debugger for hard bugs and regressions. Forms hypotheses, verifies, and only then fixes. Use when something is throwing, failing, or slow.`
+- **System Prompt**:
 
 ```
 You are a systematic debugger. Your job is to find the root cause of a bug or regression BEFORE proposing a fix. "It doesn't work" is not a diagnosis.
@@ -131,11 +131,11 @@ Your final message leads with:
 - **Out-of-scope findings**: unrelated issues you noticed but did NOT fix (separate issues for these).
 ```
 
-### 2.5 Doc-Walker（代码 → 文档）
+### 2.5 Doc-Walker (code → docs)
 
-- **Model**：`<便宜档模型>`
-- **Description**：`Read-only-on-code agent that turns architectural decisions into ADRs and new terms into CONTEXT.md entries. Use when decisions need to be captured before context is lost.`
-- **System Prompt**：
+- **Model**: `<cheap tier model>`
+- **Description**: `Read-only-on-code agent that turns architectural decisions into ADRs and new terms into CONTEXT.md entries. Use when decisions need to be captured before context is lost.`
+- **System Prompt**:
 
 ```
 You are a documentation agent. Your job is to capture architectural decisions and domain terms from a code change into the repo's documentation, so future agents don't reverse intentional designs or misread domain vocabulary.
@@ -175,155 +175,155 @@ Your final message lists:
 - Proposed (NOT made) edits to AGENTS.md or README.md: exact location + proposed text, for the controller to apply.
 ```
 
-## §3 任务路由决策树
+## §3 Task-routing decision tree
 
-主 agent（controller）读这一节决定派谁：
+The main agent (controller) reads this section to decide who to dispatch:
 
 ```
-收到一个任务 → 先判断规模和类型
+A task comes in → first judge its size and type
 
-按规模：
-  Trivial（typo / 几行小改 / 清理）       → 主 agent 直接做，不派 subagent
-  Small（单文件、清晰边界）              → 主 agent 自己做（Read + Edit + gate）
-  Medium（多文件、有 plan）              → SDD: 每个 task 一个 Implementer + Reviewer 循环
-  Large（新功能、跨系统）                → brainstorm skill → writing-plans → SDD 多 task
+By size:
+  Trivial (typo / a few-line tweak / cleanup)         → main agent does it directly, no subagent
+  Small (single file, clear boundary)                 → main agent does it itself (Read + Edit + gate)
+  Medium (multiple files, has a plan)                 → SDD: one Implementer + Reviewer loop per task
+  Large (new feature, cross-system)                   → brainstorm skill → writing-plans → SDD multi-task
 
-按类型（与规模正交，优先级高）：
-  任何探索性搜索（"找/查/数/审计"，无论规模）
-                                         → Explore subagent（便宜档）
-  撞墙的 bug / 跨多文件排查
-                                         → Debugger subagent（旗舰档）
-  架构决策要落盘 / 新术语要记录
-                                         → Doc-Walker subagent（便宜档）
-  代码审查（task-scoped 或 branch-wide）
-                                         → Reviewer subagent（旗舰档）
+By type (orthogonal to size, higher priority):
+  Any exploratory search ("find / look up / count / audit", regardless of size)
+                                                        → Explore subagent (cheap tier)
+  A bug you're stuck on / a cross-file root-cause investigation
+                                                        → Debugger subagent (flagship tier)
+  An architectural decision to record / a new term to document
+                                                        → Doc-Walker subagent (cheap tier)
+  Code review (task-scoped or branch-wide)
+                                                        → Reviewer subagent (flagship tier)
 ```
 
-**判断顺序**：先看类型（探索/调试/文档/审查这种维度词），再看规模。类型维度优先，因为一个"大型探索任务"也该走 Explore 而不是主 agent 自己 grep。
+**Order of judgment**: check type first (exploration/debugging/docs/review — these dimensional words), then size. Type takes priority, because even a "large exploration task" should go to Explore rather than have the main agent grep it itself.
 
-## §4 SDD 按任务大小分流
+## §4 SDD split by task size
 
-对应"按任务大小分流"的偏好——**不无脑 SDD，也不无脑省**：
+Corresponds to the "split by task size" preference — **neither blind SDD, nor blind corner-cutting**:
 
-| 任务规模 | SDD 流程 |
+| Task size | SDD process |
 |---|---|
-| Trivial | 主 agent 直接做，不派 subagent。走 SDD 是杀鸡用牛刀 |
-| Small | 主 agent 自己 Read + Edit + 跑 gate。可选：派 Reviewer 做一次 lightweight review |
-| Medium | **强制 SDD**：每个 task 一个 Implementer → Reviewer 循环，直到 clean |
-| Large | brainstorm → writing-plans → 把 plan 拆成 tasks → 走完整 SDD |
+| Trivial | Main agent does it directly, no subagent. Going through SDD would be overkill |
+| Small | Main agent does Read + Edit + runs the gate itself. Optional: dispatch a Reviewer for a lightweight review |
+| Medium | **SDD is mandatory**: one Implementer → Reviewer loop per task, until clean |
+| Large | brainstorm → writing-plans → break the plan into tasks → run full SDD |
 
-**Final whole-branch review**（所有 task 完成后）：
-- 复用 Reviewer subagent，让它跑 branch-wide（base = merge-base main HEAD）而非 task-scoped
-- 不单独配 Final-Reviewer subagent——避免重复
-- 详见 superpowers skill 的 `requesting-code-review/code-reviewer.md`
+**Final whole-branch review** (after all tasks are done):
+- Reuse the Reviewer subagent, having it run branch-wide (base = merge-base main HEAD) instead of task-scoped
+- No separate Final-Reviewer subagent is configured — avoids duplication
+- See the superpowers skill's `requesting-code-review/code-reviewer.md` for details
 
-## §5 项目级路由（"专属调优"如何落地）
+## §5 Project-level routing (how "project-specific tuning" gets implemented)
 
-**诚实声明**：ZCode（截至撰写时）的 subagent 配置是**全局**的——存在 `~/.zcode/v2/agents-state.json`，作用于所有 workspace，**没有 workspace scope**。所以"项目专属调优"不是配置层 override，而是靠**每个项目的 AGENTS.md 写路由规则**让主 agent 读到后自己分流。
+**Honest disclosure**: ZCode's (as of this writing) subagent configuration is **global** — it lives in `~/.zcode/v2/agents-state.json` and applies to every workspace, with **no workspace scope**. So "project-specific tuning" isn't a config-layer override — it depends on **each project's AGENTS.md writing its own routing rules** for the main agent to read and route by.
 
-下面是 3 个可加到项目 AGENTS.md 的章节模板（拷你需要的）：
+Below are 3 section templates you can add to a project's AGENTS.md (copy whichever you need):
 
-### 5.1 严格 multi-agent 协议项目（如 dryrun）
-
-```markdown
-## Subagent routing（本项目专属）
-
-本项目走严格 multi-agent 协议（L1/L2 分级），subagent 派发时：
-
-- **SDD 触发阈值**：多文件改动、或任何协议层（AGENTS.md / Gate / ADR）改动
-- **L1 改动**（Hard rules / Gate / Tech stack / 协议章节）：dispatch Implementer 时，system prompt 必须包含"严格遵守 L1，Tech stack 改动需维护者同意才 merge"
-- **L2 改动**（Working agreement / 索引）：按本文件 Working agreement 自主 merge
-- **防编造校验、API token 透传等 Hard rule**：Implementer 的 brief 里必须逐字引用对应规则，让 subagent 不能"好心"绕过
-```
-
-### 5.2 框架规则优先项目（如 mandys-* 系列）
+### 5.1 Strict multi-agent protocol projects (e.g. dryrun)
 
 ```markdown
-## Subagent routing（本项目专属）
+## Subagent routing (project-specific)
 
-本项目顶部有 `<!-- BEGIN:nextjs-agent-rules -->` 块，是 Next.js 框架的硬规则。Subagent 派发时：
+This project runs a strict multi-agent protocol (L1/L2 tiering). When dispatching subagents:
 
-- **Implementer 的 brief 必须引用**该块的完整内容，让 subagent 不能违反
-- **SDD 触发阈值**：多文件改动，或触及 `<!-- BEGIN:nextjs-agent-rules -->` 块本身的改动
-- 单文件小改主 agent 直接做
+- **SDD trigger threshold**: any multi-file change, or any protocol-layer change (AGENTS.md / Gate / ADR)
+- **L1 changes** (Hard rules / Gate / Tech stack / protocol sections): when dispatching an Implementer, the system prompt must state "strictly follow L1 — Tech stack changes require maintainer sign-off before merge"
+- **L2 changes** (Working agreement / index): self-merge autonomously per this file's Working agreement
+- **Anti-fabrication checks, API token pass-through, and other Hard rules**: the Implementer's brief must quote the corresponding rule verbatim, so the subagent can't "helpfully" work around it
 ```
 
-### 5.3 工具/基础设施项目（如 agents-md-scaffold 本身）
+### 5.2 Framework-rules-first projects (e.g. the mandys-* series)
 
 ```markdown
-## Subagent routing（本项目专属）
+## Subagent routing (project-specific)
 
-本项目是 scaffold，改动会影响所有下游 repo。Subagent 派发时：
+This project has a `<!-- BEGIN:nextjs-agent-rules -->` block at the top, which is the Next.js framework's hard rules. When dispatching subagents:
 
-- **任何非 trivial 改动都走 SDD**（Implementer + Reviewer）——下游影响大，宁可慢
-- **改 AGENTS.md / Gate / check-scaffold.js**：Implementer 的 brief 必须说明"这是协议改动，需 ADR + Stan 同意（L1）或自主 merge（L2）"
-- **新增模板文档**（如 docs/subagent-system.md）：按 L2 自主 merge
+- **The Implementer's brief must quote** the full content of that block, so the subagent can't violate it
+- **SDD trigger threshold**: multi-file changes, or any change touching the `<!-- BEGIN:nextjs-agent-rules -->` block itself
+- Single-file small changes: main agent does it directly
 ```
 
-## §6 落地步骤（ZCode UI 配置指南）
+### 5.3 Tooling/infrastructure projects (e.g. agents-md-scaffold itself)
 
-给 `<维护者>` 的操作步骤：
+```markdown
+## Subagent routing (project-specific)
 
-### 6.1 修改内置 Explore 的 Model
+This project is a scaffold, so its changes affect every downstream repo. When dispatching subagents:
 
-1. 打开 ZCode → **Settings → Subagents**
-2. 找到内置 `Explore` 条目，点右边的 Model 下拉
-3. 选**便宜档**（z.ai 用户：`GLM-5-Turbo`）
-4. 保存
-5. **重启 ZCode 客户端**（UI 改完不重启不生效——这是个已知坑）
+- **Any non-trivial change goes through SDD** (Implementer + Reviewer) — downstream impact is large, better slow than sorry
+- **Changes to AGENTS.md / Gate / check-scaffold.js**: the Implementer's brief must state "this is a protocol change, requires ADR + Stan's sign-off (L1) or self-merge (L2)"
+- **New template docs** (e.g. docs/subagent-system.md): self-merge under L2
+```
 
-### 6.2 新建 4 个自定义 subagent
+## §6 Rollout steps (ZCode UI configuration guide)
 
-对 Implementer / Reviewer / Debugger / Doc-Walker 各做一次：
+Operating steps for `<maintainer>`:
 
-1. Settings → Subagents → **新建子智能体**
-2. 填字段：
-   - **名称**：`Implementer` / `Reviewer` / `Debugger` / `Doc-Walker`
-   - **颜色**：随意（视觉区分用）
-   - **模型**：旗舰档（Implementer/Reviewer/Debugger）或便宜档（Doc-Walker）
-   - **描述**：从 §2 各小节复制 Description 字段（这决定主 agent 何时派它）
-   - **系统提示词**：从 §2 各小节复制 System Prompt（Explore/Debugger/Doc-Walker 是完整模板；Implementer/Reviewer 是从 superpowers skill 模板替换占位符后的版本）
-3. 保存
-4. **重启 ZCode 客户端**
+### 6.1 Change the built-in Explore's model
 
-### 6.3 验证生效
+1. Open ZCode → **Settings → Subagents**
+2. Find the built-in `Explore` entry, click its Model dropdown
+3. Select the **cheap tier** (z.ai users: `GLM-5-Turbo`)
+4. Save
+5. **Restart the ZCode client** (UI changes don't take effect without a restart — a known gotcha)
 
-重启后派一个轻量 Explore 任务（例如"统计 src/ 下有多少 .ts 文件"），跑完看 transcript：
+### 6.2 Create 4 custom subagents
+
+Do this once each for Implementer / Reviewer / Debugger / Doc-Walker:
+
+1. Settings → Subagents → **New subagent**
+2. Fill in the fields:
+   - **Name**: `Implementer` / `Reviewer` / `Debugger` / `Doc-Walker`
+   - **Color**: whatever (just for visual distinction)
+   - **Model**: flagship tier (Implementer/Reviewer/Debugger) or cheap tier (Doc-Walker)
+   - **Description**: copy the Description field from the corresponding subsection of §2 (this determines when the main agent dispatches it)
+   - **System prompt**: copy the System Prompt from the corresponding subsection of §2 (Explore/Debugger/Doc-Walker are the full templates; Implementer/Reviewer are the versions with placeholders filled in from the superpowers skill templates)
+3. Save
+4. **Restart the ZCode client**
+
+### 6.3 Verify it worked
+
+After restarting, dispatch a lightweight Explore task (e.g. "count how many .ts files are under src/"), and after it finishes, check the transcript:
 
 ```bash
 ls -t ~/.zcode/cli/agents/sess_*/agent_*/transcript.jsonl | head -1 | xargs grep -o '"model":"[^"]*"' | sort -u
 ```
 
-输出应包含 `<便宜档模型>` id（不是旗舰档），证明配置生效。
+The output should include the `<cheap tier model>` id (not the flagship tier), proving the configuration took effect.
 
-### 6.4 已知 UI 限制
+### 6.4 Known UI limitations
 
-- **工具不能逐个选**：可用工具下拉只有"默认所有权限"。无法让 Reviewer 只读+跑测试、Doc-Walker 不能改代码。**变通**：靠 system prompt 的 HARD CONSTRAINTS 软约束（每个 prompt 开头都有大写英文 DO NOT 规则）
-- **没有 workspace scope**：subagent 配置全局生效。项目级差异只能靠项目 AGENTS.md 的路由规则（见 §5）
-- **重启才生效**：UI 改完配置不立即生效，必须重启客户端
+- **Tools can't be picked individually**: the available-tools dropdown only offers "default all permissions." There's no way to restrict Reviewer to read-only + running tests, or to keep Doc-Walker from editing code. **Workaround**: rely on the system prompt's HARD CONSTRAINTS as a soft constraint (every prompt opens with uppercase English DO NOT rules)
+- **No workspace scope**: subagent configuration is global. Project-level differences can only be expressed through the project's AGENTS.md routing rules (see §5)
+- **Requires a restart**: UI configuration changes don't take effect immediately — the client must be restarted
 
-## §7 诚实声明（未验证的边界）
+## §7 Honest disclosure (unverified boundaries)
 
-本模板基于 n=1 用户（Stan）的设计推断，以下全部**未大规模实战验证**：
+This template is inferred from a single user's (Stan's) design; everything below is **not yet validated at scale**:
 
-1. **5 个 subagent 的分工**是设计推断，不是数据结论。Stan 当前实际跑过 Explore（Turbo）+ Implementer/Reviewer（GLM-5.2）的简单任务；Debugger 和 Doc-Walker 还没实战过
-2. **便宜档是否够用**取决于任务复杂度和模型能力。机械搜索 Turbo 够；跨多文件推理的探索可能要退回旗舰档——目前没有客观判断阈值
-3. **工具白名单靠 system prompt 约束**比真工具限制弱——subagent 如果不听话，可能改了不该改的文件。当前没观察到这种行为，但没大规模验证
-4. **ZCode UI 字段长度限制未知**——如果 system prompt 字段有字符上限，§2 的模板可能要压缩
-5. **Implementer/Reviewer 引用 superpowers skill**，要求用户装了该 plugin。没装的 fallback 是把模板内联进 UI
+1. **The division of labor across the 5 subagents** is a design inference, not a data-backed conclusion. Stan has so far only run simple tasks through Explore (Turbo) + Implementer/Reviewer (GLM-5.2); Debugger and Doc-Walker haven't been used in practice yet
+2. **Whether the cheap tier is good enough** depends on task complexity and model capability. Turbo is fine for mechanical search; exploration requiring cross-file reasoning may need to fall back to the flagship tier — there's currently no objective threshold for this judgment
+3. **The tool allowlist relies on system-prompt constraints**, which are weaker than real tool restrictions — if a subagent doesn't comply, it could edit files it shouldn't. No such behavior has been observed so far, but it hasn't been validated at scale
+4. **The ZCode UI field length limit is unknown** — if the system prompt field has a character cap, the templates in §2 may need to be compressed
+5. **Implementer/Reviewer quote the superpowers skill**, which requires the user to have that plugin installed. The fallback without it is to inline the template into the UI
 
-## §8 附录：Stan 当前的实际配置（参考值，非强制）
+## §8 Appendix: Stan's actual current configuration (a reference value, not a mandate)
 
-截至 2026-07-18，Stan 在 z.ai Coding Plan 上的实际配置：
+As of 2026-07-18, Stan's actual configuration on the z.ai Coding Plan:
 
-| Subagent | Model | 配置位置 |
+| Subagent | Model | Config location |
 |---|---|---|
-| Explore（内置，model override） | `GLM-5-Turbo` | `~/.zcode/v2/agents-state.json` → `builtInModelOverrides.Explore` |
-| general-purpose（内置，model override） | `GLM-5.2`（继承默认） | 同上 |
-| Implementer | 待新建 | UI: Settings → Subagents |
-| Reviewer | 待新建 | 同上 |
-| Debugger | 待新建 | 同上 |
-| Doc-Walker | 待新建 | 同上 |
+| Explore (built-in, model override) | `GLM-5-Turbo` | `~/.zcode/v2/agents-state.json` → `builtInModelOverrides.Explore` |
+| general-purpose (built-in, model override) | `GLM-5.2` (inherits default) | same as above |
+| Implementer | not yet created | UI: Settings → Subagents |
+| Reviewer | not yet created | same as above |
+| Debugger | not yet created | same as above |
+| Doc-Walker | not yet created | same as above |
 
-**已知工作**：Explore → Turbo 配置 + 重启后，transcript 确认 `"model":"builtin:zai-coding-plan/GLM-5-Turbo"` 生效。
-**未验证**：4 个自定义 subagent 还没在 UI 里建过——本模板设计完了，下一步是按 §6 实操并补充实战反馈到本节。
+**Confirmed working**: after configuring Explore → Turbo and restarting, the transcript confirms `"model":"builtin:zai-coding-plan/GLM-5-Turbo"` took effect.
+**Not yet validated**: the 4 custom subagents haven't been created in the UI yet — this template's design is done; the next step is to set them up per §6 and feed real-world feedback back into this section.
