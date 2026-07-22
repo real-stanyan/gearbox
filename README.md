@@ -9,7 +9,7 @@ Just need node — no clone, no PATH setup:
 ```bash
 # Lay down the Gearbox scaffold in a new project directory (placeholders, gate,
 # ADR provenance + hash stamps all automatic)
-npx gearbox-agents install --maintainer <your name> --gate "npx tsc --noEmit"
+npx gearbox-agents install --maintainer <your-github-username> --gate "npx tsc --noEmit"
 # All three args are optional: omit and a <placeholder> is left in place;
 # ci.yml ships a deliberately-failing placeholder command
 
@@ -24,7 +24,7 @@ npx gearbox-agents update     # copy missing upstream ADRs into this repo, produ
 **Maintainers / contributors** (working on Gearbox itself) use a local clone:
 
 ```bash
-node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <your name> --gate "npx tsc --noEmit"
+node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <your-github-username> --gate "npx tsc --noEmit"
 ```
 
 After installing:

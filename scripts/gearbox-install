@@ -3,7 +3,8 @@
 //
 // Usage: run `gearbox-install` from the target project's root, or `gearbox-install <target-dir>`
 //   --name <project-name>   AGENTS.md title (default: the target directory's name)
-//   --maintainer <name>     replace the <maintainer> placeholder in the protocol (default: keep the placeholder)
+//   --maintainer <github-username>  replace the <maintainer> placeholder in the protocol (default: keep the
+//                           placeholder). Use a GitHub username — async L1 approval is checked against it (ADR-0034)
 //   --gate "<command>"      the Gate command (default: leave a placeholder, generated in sync with CI)
 //
 // What it does (automates every manual-copy adjustment step from the README, ADR-0022):
@@ -82,7 +83,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--gate") gateCmd = args[++i];
   else if (a === "--help" || a === "-h") {
     console.log(
-      'gearbox-install [target-dir] [--name project-name] [--maintainer name] [--gate "command"]',
+      'gearbox-install [target-dir] [--name project-name] [--maintainer github-username] [--gate "command"]',
     );
     exit(0);
   } else if (a.startsWith("--")) die(`Unknown argument: ${a}`, "see --help for usage");
@@ -218,7 +219,7 @@ agents = mustReplace(
 // original note is noise downstream → delete
 agents = mustReplace(
   agents,
-  "\n> **When you copy this Gearbox: replace `<maintainer>` with your (or your team's) name.** See ADR-0006.\n",
+  "\n> **When you copy this Gearbox: replace `<maintainer>` with your GitHub username (a team = a GitHub team handle).** A display name anchors nothing an agent can verify; the GitHub account is what async approval is checked against (ADR-0034). See ADR-0006.\n",
   "\n",
   "maintainer note",
 );
