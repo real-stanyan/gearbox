@@ -1,29 +1,33 @@
 #!/usr/bin/env node
-// gearbox-install — 在新项目一条命令初始化 Gearbox 骨架
+// gearbox-install — one command to scaffold a new project with Gearbox
 //
-// 用法: 在目标项目根目录跑 `gearbox-install`,或 `gearbox-install <目标目录>`
-//   --name <项目名>       AGENTS.md 标题(默认: 目标目录名)
-//   --maintainer <名字>   替换协议里的 <维护者> 占位符(默认: 保留占位符)
-//   --gate "<命令>"       Gate 门禁命令(默认: 留占位符,CI 同步生成)
+// Usage: run `gearbox-install` from the target project's root, or `gearbox-install <target-dir>`
+//   --name <project-name>   AGENTS.md title (default: the target directory's name)
+//   --maintainer <name>     replace the <maintainer> placeholder in the protocol (default: keep the placeholder)
+//   --gate "<command>"      the Gate command (default: leave a placeholder, generated in sync with CI)
 //
-// 做什么(自动完成 README 手动拷贝的全部调整步骤,ADR-0022):
-//   1. AGENTS.md   模板拷入 + 变换: 标题/简介占位、Tech stack 占位、删 dogfood 注
-//                  (保留 ADR-0018 标注定级注)、<维护者> 替换、B-3 节改接收端版、
-//                  Gate 命令填入、Where to find things 通用化
-//   2. CLAUDE.md   = `@AGENTS.md` 空壳契约
-//   3. CONTEXT.md  协议词条随拷(去 Dogfood 行、gate 行去 check-gearbox 硬编码)
-//   4. docs/gearbox-adr/   全量拷贝上游 ADR,每个加溯源行 + hash 戳记(ADR-0021 契约)
-//   5. ci.yml      生成,命令与 Gate 节字面一致(CI == Gate 契约)
-//   6. .gearbox-version  写入接入时的上游版本 tag(ADR-0023 戳记)
-//   7. .gearbox-upstream 写入上游 git URL(ADR-0027 远端寻址;供下游无本地
-//                        GEARBOX_DIR 时 gearbox-version/update 克隆缓存拉取)
+// What it does (automates every manual-copy adjustment step from the README, ADR-0022):
+//   1. AGENTS.md   copies in the template + transforms: title/intro placeholder, Tech stack placeholder,
+//                  removes the dogfood note (keeps the ADR-0018 tier-marking note), <maintainer>
+//                  substitution, receiving-end version of the downstream-backfill section, fills in
+//                  the Gate command, genericizes Where to find things
+//   2. CLAUDE.md   = the `@AGENTS.md` empty-shell contract
+//   3. CONTEXT.md  protocol entries copied along (drops the Dogfood row, drops the check-gearbox
+//                  hardcoding from the gate row)
+//   4. docs/gearbox-adr/   copies every upstream ADR in full, adds a provenance line + hash stamp
+//                  to each (ADR-0021 contract)
+//   5. ci.yml      generated, command byte-identical to the Gate section (CI == Gate contract)
+//   6. .gearbox-version  writes the upstream version tag at onboarding time (ADR-0023 stamp)
+//   7. .gearbox-upstream writes the upstream git URL (ADR-0027 remote addressing; lets downstream
+//                        gearbox-version/update clone-and-pull when there's no local GEARBOX_DIR)
 //
-// 不做什么:
-//   - 不拷 pull_request_template.md(B-3 回流载体,Gearbox 专属)、scripts/、README.md
-//   - 不覆盖已存在的 AGENTS.md(已接入的项目用 gearbox-update 回流,不用本工具)
-//   - 不自动 commit(装完人工 review + 首 commit)
+// What it doesn't do:
+//   - Doesn't copy pull_request_template.md (the downstream-backfill vehicle, Gearbox-specific), scripts/, README.md
+//   - Doesn't overwrite an existing AGENTS.md (onboarded projects use gearbox-update to backfill, not this tool)
+//   - Doesn't auto-commit (after install, review by hand + make the first commit)
 //
-// 变换全部锚定上游 AGENTS.md 的已知文本;锚点找不到就报错退出,不静默出残缺骨架。
+// Every transform anchors to known text in the upstream AGENTS.md; if an anchor isn't found, it errors
+// out instead of silently scaffolding something broken.
 
 import {
   readFileSync,
@@ -37,7 +41,7 @@ import { execSync } from "node:child_process";
 import { join, resolve, basename } from "node:path";
 import { env, argv, exit, cwd } from "node:process";
 
-// ============== 配置 ==============
+// ============== Config ==============
 
 const GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
 const GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
@@ -63,7 +67,7 @@ function pad4(n) {
   return String(n).padStart(4, "0");
 }
 
-// ============== 参数 ==============
+// ============== Args ==============
 
 const args = argv.slice(2);
 let targetDir = null;
@@ -78,176 +82,181 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--gate") gateCmd = args[++i];
   else if (a === "--help" || a === "-h") {
     console.log(
-      'gearbox-install [目标目录] [--name 项目名] [--maintainer 名字] [--gate "命令"]',
+      'gearbox-install [target-dir] [--name project-name] [--maintainer name] [--gate "command"]',
     );
     exit(0);
-  } else if (a.startsWith("--")) die(`未知参数: ${a}`, "--help 看用法");
-  else if (targetDir) die(`多余的位置参数: ${a}`);
+  } else if (a.startsWith("--")) die(`Unknown argument: ${a}`, "see --help for usage");
+  else if (targetDir) die(`Extra positional argument: ${a}`);
   else targetDir = a;
 }
 
 targetDir = resolve(targetDir || cwd());
 projectName = projectName || basename(targetDir);
 
-// ============== 预检 ==============
+// ============== Preflight ==============
 
 if (!existsSync(GEARBOX_ADR_DIR))
   die(
-    `找不到 Gearbox: ${GEARBOX_DIR}`,
-    "设 GEARBOX_DIR 环境变量改路径, 或确认 Gearbox 在 ~/Github/gearbox/",
+    `Gearbox not found: ${GEARBOX_DIR}`,
+    "set the GEARBOX_DIR env var to change the path, or make sure Gearbox is at ~/Github/gearbox/",
   );
-if (!existsSync(targetDir)) die(`目标目录不存在: ${targetDir}`);
+if (!existsSync(targetDir)) die(`Target directory does not exist: ${targetDir}`);
 if (existsSync(join(targetDir, "AGENTS.md")))
   die(
-    `目标已有 AGENTS.md: ${targetDir}`,
-    "已接入的项目用 gearbox-update 回流 ADR,不用本工具重装",
+    `Target already has an AGENTS.md: ${targetDir}`,
+    "onboarded projects use gearbox-update to backfill ADRs — don't reinstall with this tool",
   );
 
 const agentsSrc = readFileSync(join(GEARBOX_DIR, "AGENTS.md"), "utf8");
 const contextSrc = readFileSync(join(GEARBOX_DIR, "CONTEXT.md"), "utf8");
 
-// 锚定变换: old 必须在文本中恰好出现一次,否则上游模板变了、本工具没跟上 → 报错
+// Anchor-based transform: the anchor must appear exactly once in the text, otherwise the
+// upstream template changed and this tool hasn't caught up → error out.
 function mustReplace(content, anchor, replacement, what) {
   const idx = content.indexOf(anchor);
   if (idx === -1)
     die(
-      `AGENTS.md 模板锚点丢失: ${what}`,
-      "上游 AGENTS.md 结构变了——先更新 gearbox-install 的变换再装(锚点契约,ADR-0022)",
+      `AGENTS.md template anchor missing: ${what}`,
+      "upstream AGENTS.md structure changed — update gearbox-install's transforms before installing (anchor contract, ADR-0022)",
     );
   if (content.indexOf(anchor, idx + 1) !== -1)
-    die(`AGENTS.md 模板锚点不唯一: ${what}`);
+    die(`AGENTS.md template anchor not unique: ${what}`);
   return content.replace(anchor, replacement);
 }
 
-// ============== 1. AGENTS.md 变换 ==============
+// ============== 1. AGENTS.md transform ==============
 
 let agents = agentsSrc;
 
-// 标题 + 简介
-agents = mustReplace(agents, "# Gearbox\n", `# ${projectName}\n`, "标题");
+// Title + intro
+agents = mustReplace(agents, "# Gearbox\n", `# ${projectName}\n`, "title");
 agents = mustReplace(
   agents,
-  "多 agent 协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent（不限工具——Claude Code、Z Code、Cursor 等任意 agent coding tool 皆可）在同一个 repo 里轮流干活而不打架的人用。",
-  "<一句话:这个项目是什么、做到什么程度算成、范围边界在哪。>",
-  "简介段",
+  "A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the single source of truth + ADRs + a CI hard gate. For anyone who wants multiple AI coding agents (tool-agnostic — Claude Code, Z Code, Cursor, or any agent coding tool) to take turns working in the same repo without stepping on each other.",
+  "<One sentence: what this project is, what counts as done, what the scope boundaries are.>",
+  "intro paragraph",
 );
 
-// Tech stack → 占位
+// Tech stack → placeholder
 agents = mustReplace(
   agents,
-  `- Node.js（结构自检脚本 + \`scripts/gearbox-update\` 下游回流 / \`scripts/gearbox-install\` 开局安装 / \`scripts/gearbox-prune\` 分支卫生，无运行时依赖，ADR-0017/0022/0030）
-- Bash（\`scripts/gearbox-version\` 下游同步速查，零依赖、只读，ADR-0016）
-- 纯 Markdown 文档（AGENTS.md / CONTEXT.md / ADR）`,
-  "<项目技术栈,每条一行。例:Next.js 15 / TypeScript / Postgres>",
+  `- Node.js (structural self-check script + \`scripts/gearbox-update\` downstream backfill / \`scripts/gearbox-install\` scaffold install / \`scripts/gearbox-prune\` branch hygiene, no runtime dependencies, ADR-0017/0022/0030)
+- Bash (\`scripts/gearbox-version\` downstream sync quick-check, zero dependencies, read-only, ADR-0016)
+- Plain Markdown documentation (AGENTS.md / CONTEXT.md / ADRs)`,
+  "<Project tech stack, one per line. Example: Next.js 15 / TypeScript / Postgres>",
   "Tech stack",
 );
 
-// Hard rules: 删 dogfood 注,保留 ADR-0018 标注定级语义(接收端措辞)
+// Hard rules: remove the dogfood note, keep the ADR-0018 tier-marking semantics (receiving-end wording)
 agents = mustReplace(
   agents,
-  `> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(\`scripts/check-gearbox.js\` 是可执行的事实源)。协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节「必须开 issue,不许 silent 判断」硬规则,ADR-0003)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
-> 拷走本 Gearbox 时:删掉本注,把占位符换成你项目的硬规则。`,
-  `> 协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节的硬规则)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。`,
-  "Hard rules 注",
+  `> **Gearbox's own (dogfood) hard rules are not repeated in this section** — the gate assertions are the source of truth (\`scripts/check-gearbox.js\` is the executable source of truth). Any clause in the protocol body marked **Hard rule** (e.g., the "must open an issue, no silent judgment" hard rule in the "Roles of issues & PRs" section, ADR-0003) **counts as part of this section and is protected under L1**: the criterion anchors to the marking itself, not to which section the clause physically lives in (ADR-0018).
+> When you copy this Gearbox: delete this note and replace the placeholder with your project's hard rules.`,
+  `> Any clause in the protocol body marked **Hard rule** (e.g., the hard rule in the "Roles of issues & PRs" section) **counts as part of this section and is protected under L1**: the criterion anchors to the marking itself, not to which section the clause physically lives in (ADR-0018).`,
+  "Hard rules note",
 );
 
-// B-3 下游回流节 → 接收端版(pull 模型, ADR-0026)
+// Downstream backfill section → receiving-end version (pull model, ADR-0026)
 agents = mustReplace(
   agents,
-  "**下游回流**(ADR-0013,pull 触发见 ADR-0026):回流以 **pull 为主**——下游开工时跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update`(触发不依赖上游认识下游,适配公共 fork)。上游侧:每个协议改动 PR 仍在 PR body 声明 `Affects downstream`(`yes`/`no` + 一句理由),但**降为信息性——帮判断影响面,不再逐下游开 issue、不再阻塞 merge**(「无链接=不能 merge」已随 ADR-0026 退役)。维护者若维护私有舰队,可**可选地**对 `DOWNSTREAM.md` 已登记项目开告知 issue,非强制。",
-  "> 本 repo 是 Gearbox 下游。回流按 pull 模型(ADR-0026):开工三件事第 4 步跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update` 回流——不依赖上游推送,主动向上游对齐。",
-  "B-3 节",
+  "**Downstream backfill** (ADR-0013, pull trigger see ADR-0026): backfill is **pull-primary** — when a downstream project starts a shift, it runs `gearbox-version` to self-check the protocol version, and runs `gearbox-update` if it's behind (the trigger doesn't depend on upstream knowing about downstream, which fits public forks). On the upstream side: every protocol-change PR still declares `Affects downstream` in the PR body (`yes`/`no` + one reason), but this is now **downgraded to informational — it helps gauge blast radius, and no longer opens an issue per downstream project or blocks merge** (\"no link = can't merge\" was retired along with ADR-0026). A maintainer running a private fleet may **optionally** open notification issues against projects registered in `DOWNSTREAM.md`; this is not mandatory.",
+  "> This repo is downstream of Gearbox. Backfill follows the pull model (ADR-0026): step 4 of the three start-of-shift steps runs `gearbox-version` to self-check the protocol version, and `gearbox-update` to backfill if it's behind — it doesn't depend on upstream pushing, it proactively aligns with upstream.",
+  "downstream backfill section",
 );
 
-// 开工三件事注入自查第 4 步(pull 触发, ADR-0026)——仅下游有,上游 Gearbox 自身无上游可查
+// Inject a 4th self-check step into the three start-of-shift steps (pull-triggered, ADR-0026) —
+// downstream only; upstream Gearbox itself has no upstream to check
 agents = mustReplace(
   agents,
-  "3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工",
-  `3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
-4. 跑 \`npx gearbox-agents version\` 自查协议版本 — 落后就 \`npx gearbox-agents update\` 回流（pull 触发，ADR-0026/0028；本步是接收端向上游对齐，非上游推送。装了本地 Gearbox 亦可直接跑 \`gearbox-version\`/\`gearbox-update\`）`,
-  "开工三件事自查步",
+  "3. Run the gate command (see below) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline",
+  `3. Run the gate command (see below) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline
+4. Run \`npx gearbox-agents version\` to self-check the protocol version — if behind, run \`npx gearbox-agents update\` to backfill (pull-triggered, ADR-0026/0028; this step is the receiving end aligning with upstream, not upstream pushing. If a local Gearbox checkout is installed, you can also run \`gearbox-version\`/\`gearbox-update\` directly)`,
+  "start-of-shift self-check step",
 );
 
-// 协议版本号节 → 接收端版(下游不发布协议版本,只持有戳记)
+// Protocol version number section → receiving-end version (downstream doesn't publish protocol
+// versions, it only holds the stamp)
 agents = mustReplace(
   agents,
-  "**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程(ADR-0029 补全至 npm 上线)——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);**同一 PR 里作者把 `package.json` 的 `version` 改成本次目标版本(= 最新 tag + 段位,与 git tag 恒等号,ADR-0028)**;merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push;**然后维护者跑 `npm publish` 发布 npx 包(ADR-0028/0029;发外部 registry、需凭据,agent 不代跑)**。`none` 段位不触发 tag/publish、不动 `package.json` version。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。",
-  "> 本 repo 不发布协议版本;根目录 `.gearbox-version` 记录接入时的 Gearbox 上游版本,由 gearbox-install / gearbox-update 维护,`gearbox-version` 读取对比(上游 ADR-0023)。",
-  "协议版本号节",
+  "**Protocol version number** (ADR-0023): a semver variant, baseline `v0.0.0`. Segment criterion — **major** = a cross-tool/cross-repo contract change (hash stamp format, install-anchor structure, file layout, renames) that needs manual intervention for downstream backfill; **minor** = a new mechanism (new ADR / new tool / new protocol clause); **patch** = a revision to an existing file (wording, a status line, a typo). Process (ADR-0029 completes it through npm launch) — the PR body must declare `Version bump: major|minor|patch|none` (`none` needs one reason, enforced via the PR template); **in the same PR, the author sets `package.json`'s `version` to this change's target version (= latest tag + segment, held equal to the git tag, ADR-0028)**; after merge, **the author agent** tags an annotated tag based on the latest tag at merge time and pushes it; **then the maintainer runs `npm publish` to release the npx package (ADR-0028/0029; this hits an external registry and needs credentials, so agents don't run it on the maintainer's behalf)**. A `none` segment triggers no tag/publish and doesn't touch `package.json`'s version. No CHANGELOG is maintained — the tag message + the ADR serve as the change record. Downstream local versions are recorded in the `.gearbox-version` stamp file, written and read by tooling (install writes it at scaffold time / update refreshes it during backfill / version reads it to compare) — humans don't maintain it.",
+  "> This repo doesn't publish protocol versions; the root `.gearbox-version` records the upstream Gearbox version at onboarding time, maintained by gearbox-install / gearbox-update, and read/compared by `gearbox-version` (upstream ADR-0023).",
+  "protocol version number section",
 );
 
-// Gate 命令 + 说明
-const gatePlaceholder = "<门禁命令,如: npx tsc --noEmit && npx vitest run>";
+// Gate command + explanation
+const gatePlaceholder = "<gate command, e.g.: npx tsc --noEmit && npx vitest run>";
 const effectiveGate = gateCmd || gatePlaceholder;
 agents = mustReplace(
   agents,
   "```bash\nnode scripts/check-gearbox.js\n```",
   "```bash\n" + effectiveGate + "\n```",
-  "Gate 命令",
+  "Gate command",
 );
 agents = mustReplace(
   agents,
-  `> 本 repo 是文档型模板(Gearbox 本体)，门禁不跑 vitest/tsc/lint，而是跑一个**结构自检脚本**：验证必需文件存在、\`CLAUDE.md\` 仍是 \`@AGENTS.md\` 空壳、关键章节锚点没被改名、不出现 \`HANDOFF\`、本 Gate 一节确实跑这个脚本（防止"CI 和 AGENTS.md 各跑各的"的契约漂移）。`,
-  `> 门禁按项目实际填,能自动化断言"没坏"即可(理由见 ADR-0002)。测试型门禁(vitest/tsc/lint)的 L1/L2 分层映射见 ADR-0020。命令必须与 \`.github/workflows/ci.yml\` 字面一致(CI == Gate 契约)。`,
-  "Gate 说明",
+  `> This repo is a documentation-only template (the Gearbox core itself), so the gate doesn't run vitest/tsc/lint — it runs a **structural self-check script**: it verifies required files exist, \`CLAUDE.md\` is still the \`@AGENTS.md\` empty shell, the key section anchors haven't been renamed, \`HANDOFF\` never appears, and this Gate section actually runs this script (guarding against "CI and AGENTS.md running different things" contract drift).`,
+  `> Fill in the gate to match your actual project — any command that can automatically assert "nothing's broken" works (rationale: ADR-0002). See ADR-0020 for how test-type gates (vitest/tsc/lint) map onto the L1/L2 tiers. The command must be byte-identical to \`.github/workflows/ci.yml\` (CI == Gate contract).`,
+  "Gate explanation",
 );
 
-// Where to find things → 通用化
+// Where to find things → genericize
 agents = mustReplace(
   agents,
-  `- \`CONTEXT.md\` — 领域词汇表
-- \`docs/gearbox-adr/\` — 协议 ADR（拷自 Gearbox，工具管，手别改）
-- \`docs/adr/\` — 本项目自有架构决策（从 0001 起）
-- \`scripts/\` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写 / gearbox-prune 分支卫生，ADR-0016/0017/0022/0030）
-- <其他模块文档目录，如 docs/modules/>`,
-  `- \`CONTEXT.md\` — 领域词汇表
-- \`docs/gearbox-adr/\` — 协议 ADR（拷自 Gearbox,工具管,手别改）
-- \`docs/adr/\` — 本项目自有架构决策（从 0001 起,人写）
-- <其他模块文档目录，如 docs/modules/>`,
+  `- \`CONTEXT.md\` — domain glossary
+- \`docs/gearbox-adr/\` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
+- \`docs/adr/\` — this project's own architectural decisions (starting at 0001)
+- \`scripts/\` — gate self-check (check-gearbox.js) + the downstream tool family (gearbox-install scaffold / gearbox-version read / gearbox-update write / gearbox-prune branch hygiene, ADR-0016/0017/0022/0030)
+- <other module documentation directories, e.g. docs/modules/>`,
+  `- \`CONTEXT.md\` — domain glossary
+- \`docs/gearbox-adr/\` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
+- \`docs/adr/\` — this project's own architectural decisions (starting at 0001, human-authored)
+- <other module documentation directories, e.g. docs/modules/>`,
   "Where to find things",
 );
 
-// 维护者替换注: 工具已代劳(或留占位符),原注在下游是废话 → 删
+// Maintainer-replacement note: the tool already handles this (or leaves the placeholder), so the
+// original note is noise downstream → delete
 agents = mustReplace(
   agents,
-  "\n> **拷走本 Gearbox 时:把 `<维护者>` 换成你(或你的团队)的名字。** 见 ADR-0006。\n",
+  "\n> **When you copy this Gearbox: replace `<maintainer>` with your (or your team's) name.** See ADR-0006.\n",
   "\n",
-  "维护者注",
+  "maintainer note",
 );
 
-// Division of labor: 去 Gearbox 专属措辞
+// Division of labor: strip Gearbox-specific wording
 agents = mustReplace(
   agents,
-  "分工是项目属性，模板不预设（ADR-0008）。拷走时三选一：",
-  "分工是项目属性，模板不预设（ADR-0008）。三选一：",
-  "Division 导语",
+  "Division of labor is a project-level property; the template doesn't presume one (ADR-0008). When you copy this, pick one of three:",
+  "Division of labor is a project-level property; the template doesn't presume one (ADR-0008). Pick one of three:",
+  "Division of labor intro",
 );
 agents = mustReplace(
   agents,
-  "3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-gearbox.js`）。",
-  "3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破门禁）。",
-  "Division 第 3 项",
+  "3. **Single-agent project**: delete this whole section (it's not a gate anchor, so deleting it won't break `check-gearbox.js`).",
+  "3. **Single-agent project**: delete this whole section (it's not a gate anchor, so deleting it won't break the gate).",
+  "Division of labor item 3",
 );
 
-// <维护者> 替换(可选)
-if (maintainer) agents = agents.replaceAll("<维护者>", maintainer);
+// <maintainer> substitution (optional)
+if (maintainer) agents = agents.replaceAll("<maintainer>", maintainer);
 
-// ============== 2. docs/gearbox-adr/ 全量拷贝 + hash 戳记 ==============
+// ============== 2. docs/gearbox-adr/ full copy + hash stamp ==============
 
 const adrFiles = readdirSync(GEARBOX_ADR_DIR)
   .filter((f) => /^\d{4}-.+\.md$/.test(f))
   .sort();
-if (adrFiles.length === 0) die("上游 docs/gearbox-adr/ 为空?");
+if (adrFiles.length === 0) die("Upstream docs/gearbox-adr/ is empty?");
 
 mkdirSync(join(targetDir, "docs/gearbox-adr"), { recursive: true });
 let stamped = 0;
 for (const f of adrFiles) {
   let content = readFileSync(join(GEARBOX_ADR_DIR, f), "utf8");
-  // 溯源行 + hash 戳记(ADR-0021 契约: sha256 前 12 位)。已带溯源字段的不重复加。
-  if (!/- 溯源:/.test(content.split("\n").slice(0, 15).join("\n"))) {
+  // Provenance line + hash stamp (ADR-0021 contract: first 12 chars of sha256). Skip files that
+  // already have a provenance field.
+  if (!/- Provenance:/.test(content.split("\n").slice(0, 15).join("\n"))) {
     const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
     const num = f.slice(0, 4);
-    const provenanceLine = `- 溯源: 拷自 [gearbox ADR-${num}](${GEARBOX_GITHUB_BASE}/${f})（gearbox-install 初始化,上游 sha256:${hash}）`;
+    const provenanceLine = `- Provenance: copied from [gearbox ADR-${num}](${GEARBOX_GITHUB_BASE}/${f}) (gearbox-install init, upstream sha256:${hash})`;
     const lines = content.split("\n");
     let insertAt = 1;
     for (let i = 0; i < Math.min(lines.length, 8); i++) {
@@ -263,22 +272,22 @@ for (const f of adrFiles) {
   writeFileSync(join(targetDir, "docs/gearbox-adr", f), content);
 }
 
-// ============== 3. CONTEXT.md 变换 ==============
+// ============== 3. CONTEXT.md transform ==============
 
 let context = contextSrc;
 context = context.replace(
   "# Domain context — Gearbox",
   `# Domain context — ${projectName}`,
 );
-// 去 Dogfood 行(Gearbox 专属)
+// Remove the Dogfood row (Gearbox-specific)
 context = context
   .split("\n")
   .filter((l) => !/^\| Dogfood \|/.test(l))
   .join("\n");
-// gate 行去 check-gearbox 硬编码
+// Strip the check-gearbox hardcoding from the gate row
 context = context.replace(
-  "收工前必须全绿的命令。本 repo 是 `node scripts/check-gearbox.js`",
-  "收工前必须全绿的命令。本 repo 的命令见 AGENTS.md Gate 节",
+  "The command that must be all-green before ending a shift. In this repo: `node scripts/check-gearbox.js`",
+  "The command that must be all-green before ending a shift. See the Gate section in AGENTS.md for this repo's command",
 );
 
 // ============== 4. CLAUDE.md + ci.yml ==============
@@ -302,10 +311,10 @@ jobs:
           node-version: 24
       # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
       # That sameness is the contract that lets CI enforce what agents promise.
-      - run: ${gateCmd || "echo '<填 Gate 命令,与 AGENTS.md Gate 节字面一致>' && exit 1"}
+      - run: ${gateCmd || "echo '<fill in the Gate command, byte-identical to the Gate section in AGENTS.md>' && exit 1"}
 `;
 
-// ============== 落盘 ==============
+// ============== Write to disk ==============
 
 writeFileSync(join(targetDir, "AGENTS.md"), agents);
 writeFileSync(join(targetDir, "CLAUDE.md"), claudeMd);
@@ -313,12 +322,14 @@ writeFileSync(join(targetDir, "CONTEXT.md"), context);
 mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
 writeFileSync(join(targetDir, ".github/workflows/ci.yml"), ciYml);
 
-// .gearbox-version 戳记(ADR-0023): 记录接入时的上游版本,gearbox-version 读取对比
-// 优先级: env override(npx 包传 package.json 版本, ADR-0028) > 本地 git tag。
+// .gearbox-version stamp (ADR-0023): records the upstream version at onboarding time;
+// gearbox-version reads and compares against it.
+// Priority: env override (npx package passes the package.json version, ADR-0028) > local git tag.
 let upstreamVersion = env.GEARBOX_UPSTREAM_VERSION || null;
 if (!upstreamVersion) {
   try {
-    // 取最大版本 tag(semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
+    // Take the highest version tag (semver-sorted; more stable than describe — unaffected by
+    // multiple tags on the same commit)
     upstreamVersion =
       execSync("git tag -l 'v*' --sort=-v:refname", {
         cwd: GEARBOX_DIR,
@@ -328,15 +339,16 @@ if (!upstreamVersion) {
         .trim()
         .split("\n")[0] || null;
   } catch {
-    /* 上游无 tag(基线未打)→ 不写戳记,汇报里警告 */
+    /* Upstream has no tag (baseline not tagged) → don't write the stamp, warn in the report */
   }
 }
 if (upstreamVersion)
   writeFileSync(join(targetDir, ".gearbox-version"), upstreamVersion + "\n");
 
-// .gearbox-upstream config(ADR-0027): 上游 git URL,供下游在无本地 GEARBOX_DIR 时
-// 远端寻址(陌生 fork 的 pull)。优先取上游 clone 的 origin URL;npx 场景(包非 git
-// repo)回退读 package.json 的 repository.url;都取不到则跳过。
+// .gearbox-upstream config (ADR-0027): the upstream git URL, so downstream can do remote
+// addressing when there's no local GEARBOX_DIR (pulling from an unfamiliar fork). Prefer the
+// origin URL of the upstream clone; in the npx scenario (the package isn't a git repo), fall
+// back to reading repository.url from package.json; skip if neither is available.
 let upstreamUrl = null;
 try {
   upstreamUrl = execSync("git remote get-url origin", {
@@ -345,59 +357,59 @@ try {
     stdio: ["pipe", "pipe", "pipe"],
   }).trim() || null;
 } catch {
-  /* 上游 clone 无 origin remote(如 npx 包)→ 试 package.json */
+  /* Upstream clone has no origin remote (e.g. an npx package) → try package.json */
 }
 if (!upstreamUrl) {
   try {
     const pkg = JSON.parse(readFileSync(join(GEARBOX_DIR, "package.json"), "utf8"));
     upstreamUrl = (pkg.repository && pkg.repository.url) || null;
   } catch {
-    /* 无 package.json / 无 repository → 跳过,下游靠 GEARBOX_DIR */
+    /* No package.json / no repository → skip, downstream falls back to GEARBOX_DIR */
   }
 }
 if (upstreamUrl)
   writeFileSync(join(targetDir, ".gearbox-upstream"), upstreamUrl + "\n");
 
-// git init(无 .git 时)
+// git init (when there's no .git)
 let gitInited = false;
 if (!existsSync(join(targetDir, ".git"))) {
   try {
     execSync("git init -q", { cwd: targetDir });
     gitInited = true;
   } catch {
-    /* 没装 git 也不拦安装 */
+    /* Don't block install even if git isn't installed */
   }
 }
 
-// ============== 汇报 ==============
+// ============== Report ==============
 
 console.log("");
 console.log(C.bold("⟳ gearbox-install"));
-console.log(`${C.dim("项目:")}    ${projectName}`);
-console.log(`${C.dim("目录:")}    ${targetDir}`);
-console.log(`${C.dim("上游:")}    ${GEARBOX_DIR}`);
+console.log(`${C.dim("Project:")}    ${projectName}`);
+console.log(`${C.dim("Directory:")}  ${targetDir}`);
+console.log(`${C.dim("Upstream:")}   ${GEARBOX_DIR}`);
 console.log("");
-console.log(`  ${C.green("✓")} AGENTS.md   ${C.dim(`(维护者: ${maintainer || "<维护者> 占位"}; Gate: ${gateCmd || "占位"})`)}`);
-console.log(`  ${C.green("✓")} CLAUDE.md   ${C.dim("(@AGENTS.md 空壳契约)")}`);
-console.log(`  ${C.green("✓")} CONTEXT.md  ${C.dim("(协议词条随拷)")}`);
-console.log(`  ${C.green("✓")} docs/gearbox-adr/ ${C.dim(`(${adrFiles.length} 个上游协议 ADR, ${stamped} 个已加 hash 戳记 ADR-0021)`)}`);
-console.log(`  ${C.green("✓")} ci.yml      ${C.dim(gateCmd ? "(与 Gate 节同命令)" : "(占位命令, 故意红——填 Gate 前 CI 不该绿)")}`);
+console.log(`  ${C.green("✓")} AGENTS.md   ${C.dim(`(maintainer: ${maintainer || "<maintainer> placeholder"}; Gate: ${gateCmd || "placeholder"})`)}`);
+console.log(`  ${C.green("✓")} CLAUDE.md   ${C.dim("(@AGENTS.md empty-shell contract)")}`);
+console.log(`  ${C.green("✓")} CONTEXT.md  ${C.dim("(protocol entries copied along)")}`);
+console.log(`  ${C.green("✓")} docs/gearbox-adr/ ${C.dim(`(${adrFiles.length} upstream protocol ADRs, ${stamped} stamped with a hash, ADR-0021)`)}`);
+console.log(`  ${C.green("✓")} ci.yml      ${C.dim(gateCmd ? "(same command as the Gate section)" : "(placeholder command, deliberately red — CI shouldn't be green before Gate is filled in)")}`);
 if (upstreamVersion)
-  console.log(`  ${C.green("✓")} .gearbox-version ${C.dim(`(${upstreamVersion}, ADR-0023 版本戳记)`)}`);
+  console.log(`  ${C.green("✓")} .gearbox-version ${C.dim(`(${upstreamVersion}, ADR-0023 version stamp)`)}`);
 else
-  console.log(`  ${C.yellow("⚠")} .gearbox-version ${C.dim("未写——上游无 tag(基线 v0.0.0 未打?)")}`);
+  console.log(`  ${C.yellow("⚠")} .gearbox-version ${C.dim("not written — upstream has no tag (baseline v0.0.0 not tagged?)")}`);
 if (upstreamUrl)
-  console.log(`  ${C.green("✓")} .gearbox-upstream ${C.dim(`(${upstreamUrl}, ADR-0027 远端寻址)`)}`);
+  console.log(`  ${C.green("✓")} .gearbox-upstream ${C.dim(`(${upstreamUrl}, ADR-0027 remote addressing)`)}`);
 if (gitInited) console.log(`  ${C.green("✓")} git init`);
 console.log("");
-console.log(C.bold("下一步:"));
+console.log(C.bold("Next steps:"));
 let step = 1;
 const placeholderHint =
-  "(简介 / Hard rules / Tech stack" +
-  (maintainer ? "" : " / <维护者>") +
-  (gateCmd ? ")" : " / Gate 命令,ci.yml 同步)");
-console.log(`  ${step++}. 填占位符: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
-console.log(`  ${step++}. 首个自有决策写 ${C.cyan(`docs/adr/0001-*.md`)} ${C.dim("(项目 ADR 独立编号;协议 ADR 在 docs/gearbox-adr/,格式见 0001-adr-template.md)")}`);
-console.log(`  ${step++}. 首 commit + push, 之后开工三件事第 4 步跑 ${C.cyan("gearbox-version")} 自查协议版本(pull 触发, ADR-0026)`);
-console.log(`  ${C.dim(`  (可选) 维护者可把本项目加进 ~/Github/gearbox/DOWNSTREAM.md 舰队仪表盘——非必需,回流靠下游自查不靠清单`)}`);
+  "(intro / Hard rules / Tech stack" +
+  (maintainer ? "" : " / <maintainer>") +
+  (gateCmd ? ")" : " / Gate command, sync ci.yml)");
+console.log(`  ${step++}. Fill in placeholders: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
+console.log(`  ${step++}. Write your first own decision to ${C.cyan(`docs/adr/0001-*.md`)} ${C.dim("(project ADRs number independently; protocol ADRs live in docs/gearbox-adr/, format in 0001-adr-template.md)")}`);
+console.log(`  ${step++}. First commit + push, then step 4 of the three start-of-shift steps runs ${C.cyan("gearbox-version")} to self-check the protocol version (pull-triggered, ADR-0026)`);
+console.log(`  ${C.dim(`  (optional) the maintainer can add this project to ~/Github/gearbox/DOWNSTREAM.md's fleet dashboard — not required, backfill relies on downstream self-check, not the list`)}`);
 console.log("");
