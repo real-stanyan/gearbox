@@ -80,9 +80,9 @@ if (existsSync(join(root, "AGENTS.md"))) {
     "## Working agreement (multi-agent)",
     "### On starting a shift",
     "### While working",
-    "### Issue & PR 的角色",
-    "### PR 处置",
-    "### 协议自身的变更",
+    "### Roles of issues & PRs",
+    "### PR disposition",
+    "### Changing the protocol itself",
     "### Gate",
     "### On ending a shift",
     "## Where to find things",
@@ -109,8 +109,8 @@ if (existsSync(join(root, "AGENTS.md"))) {
   //     "Hard rule" markings L1-protected must survive — removing it silently
   //     shrinks the L1 perimeter back to section-based fencing.
   check(
-    "AGENTS.md must keep the hard-rule-by-designation annotation ('视同本节内容') in the Hard rules section (ADR-0018)",
-    agents.includes("视同本节内容"),
+    "AGENTS.md must keep the hard-rule-by-designation annotation ('counts as part of this section') in the Hard rules section (ADR-0018)",
+    agents.includes("counts as part of this section"),
   );
 
   // 6b. The "open an issue on protocol gap, no silent judgment" rule is a
@@ -119,7 +119,7 @@ if (existsSync(join(root, "AGENTS.md"))) {
   //     rule's key phrase is present verbatim.
   check(
     "AGENTS.md must keep the 'protocol gap -> open issue, no silent judgment' rule (ADR-0003); removing it breaks the self-repair loop",
-    agents.includes("不许 silent 判断") && agents.includes("Protocol gap"),
+    agents.includes("silent judgment calls are not allowed") && agents.includes("Protocol gap"),
   );
 }
 
