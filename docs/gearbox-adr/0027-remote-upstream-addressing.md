@@ -1,60 +1,60 @@
-# ADR-0027: 上游远端寻址——工具支持从 remote 拉取,pull 服务陌生 fork
+# ADR-0027: Upstream remote addressing — tools support pulling from a remote, pull serves stranger forks
 
 - Date: 2026-07-20
 - Status: accepted
-- 关联: ADR-0016(gearbox-version)、ADR-0017(gearbox-update)、ADR-0022(gearbox-install)、ADR-0023(版本号/.gearbox-version 戳记)、ADR-0026(pull 触发,本 ADR 是其 follow-on)
+- Related: ADR-0016 (gearbox-version), ADR-0017 (gearbox-update), ADR-0022 (gearbox-install), ADR-0023 (version scheme / `.gearbox-version` stamp), ADR-0026 (pull trigger, this ADR is its follow-on)
 
 ## Context
 
-ADR-0026 把回流改为 pull(下游开工自查 → gearbox-update 拉取),但三个工具都只会从**本地**找上游：
+ADR-0026 changed backfill to pull (downstream self-checks at start of shift → gearbox-update pulls), but all three tools only look for upstream **locally**:
 
 ```
-GEARBOX_DIR = env.GEARBOX_DIR || ~/Github/gearbox   # version/update/install 一致
+GEARBOX_DIR = env.GEARBOX_DIR || ~/Github/gearbox   # consistent across version/update/install
 ```
 
-对维护者自己的舰队够用——下游与上游同机,共享一份 `~/Github/gearbox`。但陌生人 fork 一旦发生就断：`alice/myapp` 用了协议,她机器上没有 `~/Github/gearbox`,`gearbox-version` 直接 `✗ 找不到 Gearbox ADR 目录`。pull 承诺「下游自己去上游找」,工具却不知道**去哪个远端找**。
+That's fine for the maintainer's own fleet — downstream and upstream share a machine, sharing one copy of `~/Github/gearbox`. But it breaks the moment a stranger forks: `alice/myapp` adopts the protocol, her machine has no `~/Github/gearbox`, and `gearbox-version` just says `✗ Gearbox ADR directory not found`. Pull promises "downstream goes and finds it at upstream itself," but the tool doesn't know **which remote to look at**.
 
-这是 ADR-0026 明确拆出的 follow-on：pull 服务陌生 fork 的**必要条件**。本 ADR 决策 + 实现一并落地(公用版)。
+This is the follow-on ADR-0026 explicitly split off: the **necessary condition** for pull to serve stranger forks. This ADR decides and implements it together (the shared version).
 
 ## Decision
 
-给工具家族加**远端上游寻址**,四个子决策：
+Add **remote upstream addressing** to the tool family, four sub-decisions:
 
-### 1. 上游地址存哪 → 新文件 `.gearbox-upstream`(config,非 stamp)
+### 1. Where the upstream address lives → a new file `.gearbox-upstream` (config, not a stamp)
 
-新增根目录文件 `.gearbox-upstream`,一行 = 上游 repo 的 git URL(如 `https://github.com/real-stanyan/gearbox.git`)。
+Add a new root-level file `.gearbox-upstream`, one line = the upstream repo's git URL (e.g. `https://github.com/real-stanyan/gearbox.git`).
 
-- **与 `.gearbox-version` 分工**:`.gearbox-version` 是 **stamp**(工具写、记「我在哪个版本」);`.gearbox-upstream` 是 **config**(记「我的上游在哪」,install 写、人可改)。语义不同,不塞进同一文件——避免改 `.gearbox-version` 格式(那是跨工具契约,会触发 major)。
-- **install 自动写**:`gearbox-install` 从它运行时的 `GEARBOX_DIR` 取 `git remote get-url origin`,写进下游 `.gearbox-upstream`(取不到 origin 则跳过,警告)。维护者装机 → 指向 `real-stanyan/gearbox`;陌生人从自己 fork 装 → 指向其 fork。人可事后编辑追不同上游。
-- **committed config**:`.gearbox-upstream` 随下游 repo 提交(它是配置,不是产物);缓存不进 repo(见 3)。
+- **Division of labor with `.gearbox-version`**: `.gearbox-version` is a **stamp** (the tool writes it, records "which version I'm at"); `.gearbox-upstream` is **config** (records "where my upstream is," install writes it, humans can edit it). Different semantics, so don't stuff them into the same file — that would avoid changing `.gearbox-version`'s format (that's a cross-tool contract; changing it would trigger a major bump).
+- **install writes it automatically**: `gearbox-install` reads `git remote get-url origin` from the `GEARBOX_DIR` it's running from, and writes it into the downstream's `.gearbox-upstream` (if origin can't be found, it skips this with a warning). When the maintainer sets up a machine → points at `real-stanyan/gearbox`; when a stranger installs from their own fork → points at their fork. Humans can edit it afterward to chase a different upstream.
+- **committed config**: `.gearbox-upstream` is committed with the downstream repo (it's configuration, not a build artifact); the cache is not committed (see 3).
 
-### 2. 怎么取远端 ADR/tag → 浅克隆缓存(git,非 gh api)
+### 2. How to fetch remote ADRs/tags → shallow-clone cache (git, not the gh API)
 
-远端上游**浅克隆到本地缓存目录**(`~/.cache/gearbox/<sha12(url)>`,`git clone --depth 1` 首次、`git fetch` 后续),然后**复用现有全部本地读取逻辑**(把解析出的上游目录指向缓存即可)。tag 用 `git ls-remote --tags <url>` 单独取(浅克隆不保证带全历史 tag),ADR 文件内容用缓存工作树。
+The remote upstream is **shallow-cloned into a local cache directory** (`~/.cache/gearbox/<sha12(url)>`, `git clone --depth 1` the first time, `git fetch` afterward), and then **all the existing local read logic is reused** (just point the resolved upstream directory at the cache). Tags are fetched separately with `git ls-remote --tags <url>` (a shallow clone doesn't guarantee the full tag history); ADR file contents come from the cached working tree.
 
-- 选 git 而非 `gh api`：① 最大复用——缓存落地后 version/update 的本地文件系统读写机制**零改动**;② 不依赖 gh CLI/GitHub,GitLab/自建 git 同样能用;③ tag 语义原生。
-- 代价:缓存磁盘 + 首次 clone 耗时(`--depth 1` + 后续 fetch 缓解)。
+- Chose git over `gh api`: ① maximum reuse — once the cache is in place, version/update's local filesystem read/write logic needs **zero changes**; ② doesn't depend on the gh CLI/GitHub, works the same on GitLab/self-hosted git; ③ native tag semantics.
+- Cost: cache disk usage + first-clone latency (mitigated by `--depth 1` + subsequent fetches).
 
-### 3. 缓存位置 → `~/.cache/gearbox/`,永不进 repo
+### 3. Cache location → `~/.cache/gearbox/`, never committed to the repo
 
-缓存在 `$XDG_CACHE_HOME/gearbox/`(缺省 `~/.cache/gearbox/`),每个上游 URL 一个 `sha12(url)` 子目录。缓存**在下游 repo 之外**,天然不进 git;无需 `.gitignore` 兜底(除非有人把缓存指进 repo,不支持这种用法)。
+The cache lives at `$XDG_CACHE_HOME/gearbox/` (defaulting to `~/.cache/gearbox/`), one `sha12(url)` subdirectory per upstream URL. The cache is **outside the downstream repo**, so it's naturally excluded from git; no `.gitignore` backstop needed (unless someone deliberately points the cache into the repo, which is not a supported usage).
 
-### 4. 寻址优先级 + 离线降级
+### 4. Addressing priority + offline degradation
 
-**优先级(高→低)**:① `GEARBOX_DIR` env(逃生阀,永远最高)→ ② 本地默认 `~/Github/gearbox`(存在就用,维护者舰队走这条,快且总最新)→ ③ `.gearbox-upstream` 远端缓存(本地都没有时,陌生 fork 走这条)。
+**Priority (high → low)**: ① `GEARBOX_DIR` env (escape hatch, always highest) → ② local default `~/Github/gearbox` (used if present — the maintainer's fleet takes this path, fast and always current) → ③ `.gearbox-upstream` remote cache (when neither local option exists — stranger forks take this path).
 
-> 维护者舰队**行为完全不变**(本地 `~/Github/gearbox` 命中,根本不碰远端)。远端只在本地上游缺席时启用——纯增量,向后兼容:存量下游没有 `.gearbox-upstream` 也不影响(有本地上游)。
+> The maintainer's fleet has **completely unchanged behavior** (local `~/Github/gearbox` hits, remote is never touched at all). Remote only activates when local upstream is absent — purely additive, backward compatible: existing downstreams without `.gearbox-upstream` are unaffected (they have a local upstream).
 
-**离线降级**:
-- `gearbox-version`(只读、建议性)：远端取不到(离线/无网)→ `⚠ 无法访问上游,跳过版本检查` + **exit 0**(不阻塞开工)。
-- `gearbox-update`(主动拉取)：取不到 → **硬报错 exit 1**(拉不到就是拉不到,不能假装成功)。
+**Offline degradation**:
+- `gearbox-version` (read-only, advisory): remote unreachable (offline/no network) → `⚠ Cannot reach upstream, skipping version check` + **exit 0** (doesn't block starting a shift).
+- `gearbox-update` (active pull): unreachable → **hard error, exit 1** (if you can't pull it, you can't pull it — no pretending it succeeded).
 
 ## Consequences
 
-- **陌生 fork 的 pull 闭环**:装机写 `.gearbox-upstream` → 开工 `gearbox-version` 缺本地上游则克隆缓存对比 → 落后 `gearbox-update` 从缓存拉取。ADR-0026 的公共承诺至此对陌生人也成立。
-- **维护者舰队零回归**:本地优先,远端路径对现有舰队根本不触发。沙盒验证含本地回归 + 远端(对 real github)双路径。
-- **跨语言重复成本(诚实记录)**:寻址+缓存逻辑在 **bash(version)** 和 **node(update)** 各写一份——工具家族本就跨语言(ADR-0016 Bash / 0017 Node),这里放大了重复。不为此引入共享库(会给零依赖工具加依赖);契约(`.gearbox-upstream` 格式 + 缓存路径约定)写死在本 ADR 作对齐锚。install 只**写** `.gearbox-upstream`,不做远端解析(它永远从本地上游运行),故不涉此重复。
-- **新增网络失败模式**:工具从「纯本地文件系统、零网络」变成「可能触网」。通过「本地优先 + 离线降级」把爆炸半径限制在「本地上游缺席」这一条路径。
-- **分级 / 版本**:纯工具能力,不动 AGENTS.md 协议正文(ADR-0017「个人工具非协议改动」先例)→ **L2**,三件套照走(issue + 本 ADR + PR),CI 绿自主 merge。新增 `.gearbox-upstream` 机制、向后兼容(无文件=本地回退)→ **minor**(新增机制,ADR-0023);未改 `.gearbox-version` 格式,故非 major → v1.0.0 之后为 v1.1.0。
-- **考虑过但未采纳**:扩 `.gearbox-version` 为两行(config+stamp 混一文件)——否决,改 stamp 格式 = major 且混淆「工具写 vs 人写」边界。`gh api` 取数——否决,绑 GitHub + gh CLI,弃 git 原生 tag 语义与本地读取复用。多上游/上游链——YAGNI。
-- **仍未闭合的缺口(诚实记录)**:本 ADR 解决上游**数据**寻址(去哪找 ADR/tag),不解决**脚本分发**——`gearbox-version`/`gearbox-update` 脚本本身仍住在上游 `scripts/`,不随 install 进下游。陌生 fork 要跑 pull,得先把脚本弄到自己 PATH 上(clone gearbox + symlink)。ADR-0026 注入下游开工第 4 步的命令目前硬编码 `~/Github/gearbox/scripts/`(维护者布局)。真·公共分发(npx / brew / 脚本随 install 落地)是下一个 follow-on,不在本 ADR。故本 ADR 使「陌生 fork 的 pull」从「不可能」变「可行但需手动配脚本」,非「零配置开箱即用」。
+- **The pull loop closes for stranger forks**: install writes `.gearbox-upstream` → at start of shift `gearbox-version` clones-and-caches to compare when no local upstream exists → if behind, `gearbox-update` pulls from the cache. ADR-0026's public promise now holds for strangers too.
+- **Zero regression for the maintainer's fleet**: local-first, the remote path never triggers at all for the existing fleet. Sandbox verification covers both local regression and the remote path (against real GitHub).
+- **Cross-language duplication cost (honest record)**: the addressing + caching logic is written once each in **bash (version)** and **node (update)** — the tool family was already cross-language (ADR-0016 Bash / 0017 Node), and this amplifies the duplication. No shared library is introduced for this (that would add a dependency to zero-dependency tools); the contract (`.gearbox-upstream` format + cache path convention) is nailed down in this ADR as the alignment anchor. install only **writes** `.gearbox-upstream` and does no remote resolution itself (it always runs from a local upstream), so it doesn't share in this duplication.
+- **A new network-failure mode**: the tools go from "pure local filesystem, zero network" to "may touch the network." "Local-first + offline degradation" confines the blast radius to the single path of "local upstream absent."
+- **Tier / version**: pure tool capability, doesn't touch the AGENTS.md protocol body (ADR-0017's "personal tool, not a protocol change" precedent) → **L2**, three-piece set as usual (issue + this ADR + PR), self-merge once CI is green. Adds the `.gearbox-upstream` mechanism, backward compatible (no file = local fallback) → **minor** (new mechanism, ADR-0023); doesn't change `.gearbox-version`'s format, so not major → after v1.0.0 this becomes v1.1.0.
+- **Considered but not adopted**: expanding `.gearbox-version` to two lines (mixing config+stamp in one file) — rejected, changing the stamp format = major and blurs the "tool-written vs. human-written" boundary. Fetching data via `gh api` — rejected, ties to GitHub + the gh CLI, giving up native git tag semantics and reuse of local-read logic. Multiple upstreams / upstream chains — YAGNI.
+- **A gap that's still not closed (honest record)**: this ADR solves upstream **data** addressing (where to find ADRs/tags), not **script distribution** — the `gearbox-version`/`gearbox-update` scripts themselves still live in upstream's `scripts/`, and install doesn't carry them into downstream. For a stranger's fork to run pull, they first have to get the scripts onto their own PATH (clone gearbox + symlink). The command ADR-0026 injects as the downstream's 4th start-of-shift step currently hardcodes `~/Github/gearbox/scripts/` (the maintainer's layout). True public distribution (npx / brew / scripts landing via install) is the next follow-on, not covered by this ADR. So this ADR moves "pull for stranger forks" from "impossible" to "feasible but requires manually configuring the scripts," not "zero-config, works out of the box."
