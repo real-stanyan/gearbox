@@ -763,12 +763,16 @@ async function main() {
     die("gearbox ADR directory is empty", `check ${GEARBOX_ADR_DIR}`);
   }
 
-  stdout.write(
-    `${C.dim("gearbox ADRs:")}    ${pad4(Math.max(...gearboxIndex.keys()))} (${gearboxIndex.size} total)\n`,
-  );
-  stdout.write(
-    `${C.dim("downstream ADRs:")} ${pad4(Math.max(...downIndex.keys()))} (${downIndex.size} total)\n\n`,
-  );
+  // Non-TTY keeps the count lines; on a TTY they fold into the scan bar's done-note
+  // (output budget, ADR-0041: the logo should still be on screen when the command ends).
+  if (!tui.isTTY) {
+    stdout.write(
+      `${C.dim("gearbox ADRs:")}    ${pad4(Math.max(...gearboxIndex.keys()))} (${gearboxIndex.size} total)\n`,
+    );
+    stdout.write(
+      `${C.dim("downstream ADRs:")} ${pad4(Math.max(...downIndex.keys()))} (${downIndex.size} total)\n\n`,
+    );
+  }
 
   // match
   const actions = matchAdrs(gearboxIndex, downIndex, refreshDrift);
@@ -781,13 +785,27 @@ async function main() {
   const toRefresh = actions.filter((a) => a.type === "refresh");
   const driftedSkips = skipped.filter((a) => a.drifted);
 
+  // TTY: the whole scan collapses into one presentational bar (results are already
+  // computed); the per-ADR skip wall is gone — only actionable lines follow (ADR-0041)
+  if (tui.isTTY) {
+    await tui.progress(
+      "ADR scan",
+      [...gearboxIndex.values()]
+        .sort((a, b) => a.num - b.num)
+        .map((a) => `${pad4(a.num)}-${a.slug}`),
+      () => {},
+      {
+        perItemMs: 16,
+        doneNote: `${gearboxIndex.size} upstream · ${skipped.length} skipped · ${toCopy.length} to backfill · ${toRefresh.length} drift re-copy`,
+      },
+    );
+    stdout.write("\n");
+  }
+
   if (toCopy.length === 0 && toRefresh.length === 0) {
     stdout.write(C.green("✅ No ADRs to backfill — downstream is already synced to the latest gearbox\n\n"));
-    // TTY: one summary line — the per-ADR skip wall adds nothing when everything is synced.
-    // Non-TTY (CI, pipes): full listing, unchanged.
-    if (tui.isTTY) {
-      stdout.write(C.dim(`Already skipped: ${skipped.length} ADRs the downstream already has\n`));
-    } else {
+    // Non-TTY (CI, pipes): full listing, unchanged. TTY: the scan bar already said it.
+    if (!tui.isTTY) {
       stdout.write(C.dim("Already skipped (downstream already has these):\n"));
       for (const a of skipped) {
         stdout.write(
@@ -822,10 +840,8 @@ async function main() {
       );
     }
   }
-  // TTY: one summary line (see the no-backfill branch above); non-TTY: full listing.
-  if (tui.isTTY) {
-    stdout.write(`\n${C.dim(`Already skipped: ${skipped.length} ADRs the downstream already has`)}\n`);
-  } else {
+  // Skip listing: non-TTY only — on a TTY the scan bar's done-note carries the count (ADR-0041)
+  if (!tui.isTTY) {
     stdout.write(`\n${C.dim("Already skipped (downstream already has these):")}\n`);
     for (const a of skipped) {
       stdout.write(
