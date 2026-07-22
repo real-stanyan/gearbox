@@ -7,8 +7,7 @@ A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the si
 
 ## Tech stack
 
-- Node.js (structural self-check script + `scripts/gearbox-update` downstream backfill / `scripts/gearbox-install` scaffold install / `scripts/gearbox-prune` branch hygiene, no runtime dependencies, ADR-0017/0022/0030)
-- Bash (`scripts/gearbox-version` downstream sync quick-check, zero dependencies, read-only, ADR-0016)
+- Node.js (structural self-check script + the full tool family: `scripts/gearbox-install` scaffold / `scripts/gearbox-version` sync quick-check / `scripts/gearbox-update` downstream backfill / `scripts/gearbox-prune` branch hygiene, plus the shared TUI animation layer `scripts/lib/tui.js`, no runtime dependencies, ADR-0016/0017/0022/0030/0035)
 - Plain Markdown documentation (AGENTS.md / CONTEXT.md / ADRs)
 
 ## Hard rules
@@ -146,5 +145,5 @@ Division of labor is a project-level property; the template doesn't presume one 
 - `CONTEXT.md` — domain glossary
 - `docs/gearbox-adr/` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
 - `docs/adr/` — this project's own architectural decisions (starting at 0001)
-- `scripts/` — gate self-check (check-gearbox.js) + the downstream tool family (gearbox-install scaffold / gearbox-version read / gearbox-update write / gearbox-prune branch hygiene, ADR-0016/0017/0022/0030)
+- `scripts/` — gate self-check (check-gearbox.js) + the downstream tool family (gearbox-install scaffold / gearbox-version read / gearbox-update write / gearbox-prune branch hygiene, ADR-0016/0017/0022/0030) + the shared TUI animation layer (`scripts/lib/tui.js`, ADR-0035)
 - <other module documentation directories, e.g. docs/modules/>

@@ -1,210 +1,290 @@
-#!/usr/bin/env bash
-# gearbox-version — check which Gearbox ADRs a downstream project has synced
-#
-# Usage: run `gearbox-version` from any downstream repo's root
-#       (recommended: symlink onto PATH: ln -sf ~/Github/gearbox/scripts/gearbox-version ~/.local/bin/)
-#
-# Algorithm (ADR-0016, provenance-first — replaces the old scaffold-version's plain
-# filename-number comparison):
-# An upstream ADR-NNNN counts as "synced" iff:
-#   a) the downstream has an ADR file with the **same slug** (scaffold-time copy, the
-#      number can differ), or
-#   b) any downstream ADR's text references that upstream number:
-#      - text reference: "scaffold ADR-NNNN" / "Gearbox ADR-NNNN" (case-insensitive)
-#      - URL reference: a link into the agents-md-scaffold or gearbox repo's adr/NNNN- path
-# This clears a known false positive from the old script: a downstream ADR that happens to
-# share the same number (e.g. dryrun's own 0011 = puppeteer ≠ upstream 0011 = subagent-system)
-# is no longer counted as "synced".
-#
-# Hash stamp (ADR-0021): gearbox-update records the upstream file's sha256 (first 12 chars)
-# in the provenance line when it copies a file. This script compares, for slug-matched
-# copies, "the recorded hash vs the upstream file's current hash":
-#   match → ✅; mismatch → ⚠️ upstream has been revised (drift); no stamp → ✅ as before,
-#   counted in the legacy summary.
-#
-# Version summary (ADR-0023): upstream's latest tag vs downstream's `.gearbox-version` stamp,
-# printed as one line — "upstream vX / local vY (behind by <segment>)". The summary isn't the
-# source of truth — the per-ADR detail (plus hashes) is.
-#
-# Honesty boundary:
-# - A downstream project that "evaluated and rejected a backfill" (closed an issue declining
-#   it) is invisible to this script — it's still reported as "not synced".
-#   Authoritative status lives in the downstream repo's own issues/PRs; this script is only
-#   a local quick-check.
-# - Hash detection only reports "upstream changed" — it doesn't judge whether the change is
-#   worth backfilling; drift in legacy copies (no stamp) and provenance-reference-style syncs
-#   (not a copy) can't be detected.
-#
-# Upstream addressing (ADR-0027): env GEARBOX_DIR > local ~/Github/gearbox > .gearbox-upstream
-# remote cache. A local path is read-only and never writes anything to downstream; a remote
-# path shallow-clones upstream into ~/.cache/gearbox/ (cached outside the repo, never touches
-# the downstream working tree). Offline while on the remote path → ⚠ skip the version check,
-# exit 0.
-#
-# No dependencies beyond: plain bash + grep + ls + git (for remote addressing). Never writes
-# any file in the downstream repo.
+#!/usr/bin/env node
+// gearbox-version — check which Gearbox ADRs a downstream project has synced
+//
+// Usage: run `gearbox-version` from any downstream repo's root
+//       (recommended: symlink onto PATH: ln -sf ~/Github/gearbox/scripts/gearbox-version ~/.local/bin/)
+//
+// Node port of the original bash script (ADR-0035): same algorithm, same output semantics,
+// same exit codes — rewritten to share the zero-dependency TUI animation layer
+// (scripts/lib/tui.js) with gearbox-install/gearbox-update. Animations are TTY-gated;
+// piped/CI output stays plain.
+//
+// Algorithm (ADR-0016, provenance-first — replaces the old scaffold-version's plain
+// filename-number comparison):
+// An upstream ADR-NNNN counts as "synced" iff:
+//   a) the downstream has an ADR file with the **same slug** (scaffold-time copy, the
+//      number can differ), or
+//   b) any downstream ADR's text references that upstream number:
+//      - text reference: "scaffold ADR-NNNN" / "Gearbox ADR-NNNN" (case-insensitive)
+//      - URL reference: a link into the agents-md-scaffold or gearbox repo's adr/NNNN- path
+// This clears a known false positive from the old script: a downstream ADR that happens to
+// share the same number (e.g. dryrun's own 0011 = puppeteer ≠ upstream 0011 = subagent-system)
+// is no longer counted as "synced".
+//
+// Hash stamp (ADR-0021): gearbox-update records the upstream file's sha256 (first 12 chars)
+// in the provenance line when it copies a file. This script compares, for slug-matched
+// copies, "the recorded hash vs the upstream file's current hash":
+//   match → ✅; mismatch → ⚠️ upstream has been revised (drift); no stamp → ✅ as before,
+//   counted in the legacy summary.
+//
+// Version summary (ADR-0023): upstream's latest tag vs downstream's `.gearbox-version` stamp,
+// printed as one line — "upstream vX / local vY (behind by <segment>)". The summary isn't the
+// source of truth — the per-ADR detail (plus hashes) is.
+//
+// Honesty boundary:
+// - A downstream project that "evaluated and rejected a backfill" (closed an issue declining
+//   it) is invisible to this script — it's still reported as "not synced".
+//   Authoritative status lives in the downstream repo's own issues/PRs; this script is only
+//   a local quick-check.
+// - Hash detection only reports "upstream changed" — it doesn't judge whether the change is
+//   worth backfilling; drift in legacy copies (no stamp) and provenance-reference-style syncs
+//   (not a copy) can't be detected.
+//
+// Upstream addressing (ADR-0027): env GEARBOX_DIR > local ~/Github/gearbox > .gearbox-upstream
+// remote cache. A local path is read-only and never writes anything to downstream; a remote
+// path shallow-clones upstream into ~/.cache/gearbox/ (cached outside the repo, never touches
+// the downstream working tree). Offline while on the remote path → ⚠ skip the version check,
+// exit 0.
+//
+// No dependencies beyond node + git (for remote addressing). Never writes any file in the
+// downstream repo.
 
-set -euo pipefail
+import { readFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
+import { join, basename } from "node:path";
+import { env, exit, cwd, stdout } from "node:process";
+import * as tui from "./lib/tui.js";
 
-RED=$'\033[31m'
-GREEN=$'\033[32m'
-YELLOW=$'\033[33m'
-DIM=$'\033[2m'
-RESET=$'\033[0m'
+const RED = "\x1b[31m";
+const GREEN = "\x1b[32m";
+const YELLOW = "\x1b[33m";
+const DIM = "\x1b[2m";
+const RESET = "\x1b[0m";
 
-# ── Upstream addressing (ADR-0027): env > local default > .gearbox-upstream remote cache ──
-DEFAULT_LOCAL="${GEARBOX_DIR:-$HOME/Github/gearbox}"
-UPSTREAM_URL=""
-[[ -f .gearbox-upstream ]] && UPSTREAM_URL=$(head -1 .gearbox-upstream | tr -d '[:space:]')
-UPSTREAM_IS_REMOTE=0
-
-if [[ -d "$DEFAULT_LOCAL/docs/gearbox-adr" ]]; then
-  GEARBOX_DIR="$DEFAULT_LOCAL"                       # local upstream hit (a maintainer's own fleet takes this path)
-elif [[ -n "$UPSTREAM_URL" ]]; then
-  UPSTREAM_IS_REMOTE=1                               # unfamiliar fork: shallow-clone cache
-  cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/gearbox"
-  url_hash=$(printf '%s' "$UPSTREAM_URL" | shasum -a 256 | cut -c1-12)
-  GEARBOX_DIR="$cache_root/$url_hash"
-  if [[ -d "$GEARBOX_DIR/.git" ]]; then
-    git -C "$GEARBOX_DIR" fetch -q --depth 1 origin 2>/dev/null \
-      && git -C "$GEARBOX_DIR" reset -q --hard FETCH_HEAD 2>/dev/null \
-      || { echo "${YELLOW}⚠ can't reach upstream ($UPSTREAM_URL), skipping the version check (offline? ADR-0027)${RESET}"; exit 0; }
-  else
-    mkdir -p "$cache_root"
-    git clone -q --depth 1 "$UPSTREAM_URL" "$GEARBOX_DIR" 2>/dev/null \
-      || { echo "${YELLOW}⚠ can't clone upstream ($UPSTREAM_URL), skipping the version check (offline? ADR-0027)${RESET}"; exit 0; }
-  fi
-else
-  echo "${RED}✗ Gearbox upstream not found${RESET}"
-  echo "  no local $DEFAULT_LOCAL/docs/gearbox-adr, and no .gearbox-upstream config at the repo root"
-  echo "  set the GEARBOX_DIR env var, or put the upstream git URL in .gearbox-upstream (ADR-0027)"
-  exit 1
-fi
-UPSTREAM_ADR_DIR="$GEARBOX_DIR/docs/gearbox-adr"
-
-if [[ ! -d "$UPSTREAM_ADR_DIR" ]]; then
-  echo "${RED}✗ Upstream ADR directory missing: $UPSTREAM_ADR_DIR${RESET}"
-  exit 1
-fi
-
-DOWNSTREAM_ADR_DIR="docs/gearbox-adr"
-if [[ ! -d "$DOWNSTREAM_ADR_DIR" ]]; then
-  echo "${RED}✗ Current directory has no docs/gearbox-adr/ — run this from a downstream repo's root${RESET}"
-  exit 1
-fi
-
-REPO_NAME=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]||; s|\.git$||' || basename "$PWD")
-[[ -z "$REPO_NAME" ]] && REPO_NAME=$(basename "$PWD")
-
-# Version summary (ADR-0023): upstream's latest tag vs the local `.gearbox-version` stamp
-semver_lag() {
-  # $1=local $2=upstream; prints which segment differs. Prints "?" on an invalid format.
-  local a=${1#v} b=${2#v}
-  if [[ ! "$a" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$b" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "?"
-    return
-  fi
-  local a1 a2 a3 b1 b2 b3
-  IFS=. read -r a1 a2 a3 <<< "$a"
-  IFS=. read -r b1 b2 b3 <<< "$b"
-  if [[ "$a1" -ne "$b1" ]]; then echo "major"
-  elif [[ "$a2" -ne "$b2" ]]; then echo "minor"
-  else echo "patch"; fi
+function run(cmd, opts = {}) {
+  return execSync(cmd, { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], ...opts }).trim();
+}
+function tryRun(cmd, opts = {}) {
+  try {
+    return run(cmd, opts);
+  } catch {
+    return null;
+  }
+}
+function sha12(s) {
+  return createHash("sha256").update(s).digest("hex").slice(0, 12);
 }
 
-# Take the highest version tag (sorted by v:refname — more stable than `describe`, unaffected
-# by multiple tags on the same commit). Priority: env override (the npx package passes
-# package.json's version, ADR-0028) > remote ls-remote (ADR-0027, a shallow clone isn't
-# guaranteed to carry every tag) > local git tag.
-if [[ -n "${GEARBOX_UPSTREAM_VERSION:-}" ]]; then
-  upstream_version="$GEARBOX_UPSTREAM_VERSION"
-elif [[ "$UPSTREAM_IS_REMOTE" -eq 1 ]]; then
-  upstream_version=$(git ls-remote --tags --sort=-v:refname "$UPSTREAM_URL" 2>/dev/null \
-    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
-else
-  upstream_version=$(git -C "$GEARBOX_DIR" tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1 || true)
-fi
-local_version=""
-[[ -f .gearbox-version ]] && local_version=$(head -1 .gearbox-version | tr -d '[:space:]')
+// ── Upstream addressing (ADR-0027): env > local default > .gearbox-upstream remote cache ──
+// Returns { gearboxDir, upstreamUrl, isRemote } or terminates the process (same exit codes as
+// the original bash: offline remote → ⚠ + exit 0; nothing found → ✗ + exit 1).
+function resolveUpstream() {
+  const defaultLocal = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
+  let upstreamUrl = "";
+  if (existsSync(".gearbox-upstream"))
+    upstreamUrl = (readFileSync(".gearbox-upstream", "utf8").split("\n")[0] || "").replace(/\s/g, "");
 
-echo ""
-echo "${DIM}repo:${RESET}      $REPO_NAME"
-if [[ "$UPSTREAM_IS_REMOTE" -eq 1 ]]; then
-  echo "${DIM}upstream:${RESET}  $UPSTREAM_URL ${DIM}(remote cache $GEARBOX_DIR, ADR-0027)${RESET}"
-else
-  echo "${DIM}upstream:${RESET}  $GEARBOX_DIR"
-fi
-if [[ -n "$upstream_version" ]]; then
-  if [[ -z "$local_version" ]]; then
-    echo "${DIM}version:${RESET}   upstream $upstream_version / local ${DIM}no stamp (the next gearbox-update backfill writes it automatically, ADR-0023)${RESET}"
-  elif [[ "$local_version" == "$upstream_version" ]]; then
-    echo "${DIM}version:${RESET}   ${GREEN}upstream $upstream_version / local $local_version (in sync)${RESET}"
-  else
-    lag=$(semver_lag "$local_version" "$upstream_version")
-    echo "${DIM}version:${RESET}   ${YELLOW}upstream $upstream_version / local $local_version (behind by $lag)${RESET}"
-  fi
-fi
-echo ""
+  if (existsSync(join(defaultLocal, "docs/gearbox-adr")))
+    // local upstream hit (a maintainer's own fleet takes this path)
+    return { gearboxDir: defaultLocal, upstreamUrl, isRemote: false };
 
-missing_count=0
-synced_count=0
-drift_count=0
-legacy_count=0
+  if (upstreamUrl) {
+    // unfamiliar fork: shallow-clone cache
+    const cacheRoot = join(env.XDG_CACHE_HOME || `${env.HOME}/.cache`, "gearbox");
+    const cacheDir = join(cacheRoot, sha12(upstreamUrl));
+    try {
+      if (existsSync(join(cacheDir, ".git"))) {
+        run(`git -C "${cacheDir}" fetch -q --depth 1 origin`);
+        run(`git -C "${cacheDir}" reset -q --hard FETCH_HEAD`);
+      } else {
+        mkdirSync(cacheRoot, { recursive: true });
+        run(`git clone -q --depth 1 "${upstreamUrl}" "${cacheDir}"`);
+      }
+    } catch {
+      console.log(
+        `${YELLOW}⚠ can't reach upstream (${upstreamUrl}), skipping the version check (offline? ADR-0027)${RESET}`,
+      );
+      exit(0);
+    }
+    return { gearboxDir: cacheDir, upstreamUrl, isRemote: true };
+  }
 
-for upstream_file in "$UPSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-*.md; do
-  base=$(basename "$upstream_file" .md)
-  num=${base:0:4}
-  slug=${base:5}
+  console.log(`${RED}✗ Gearbox upstream not found${RESET}`);
+  console.log(`  no local ${defaultLocal}/docs/gearbox-adr, and no .gearbox-upstream config at the repo root`);
+  console.log(`  set the GEARBOX_DIR env var, or put the upstream git URL in .gearbox-upstream (ADR-0027)`);
+  exit(1);
+}
 
-  # a) same-slug copy (downstream number can differ)
-  copy_match=$(ls "$DOWNSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-"$slug".md 2>/dev/null | head -1 || true)
+// $1=local $2=upstream; returns which segment differs. "?" on an invalid format.
+function semverLag(local, upstream) {
+  const a = local.replace(/^v/, "");
+  const b = upstream.replace(/^v/, "");
+  const re = /^\d+\.\d+\.\d+$/;
+  if (!re.test(a) || !re.test(b)) return "?";
+  const [a1, a2] = a.split(".").map(Number);
+  const [b1, b2] = b.split(".").map(Number);
+  if (a1 !== b1) return "major";
+  if (a2 !== b2) return "minor";
+  return "patch";
+}
 
-  # b) provenance reference: literal "scaffold|gearbox ADR-NNNN" text, or a repo URL's adr/NNNN-
-  # path. This also matches the English `- Provenance: copied/backfilled from [gearbox ADR-NNNN]`
-  # stamp line written by gearbox-install/gearbox-update — the stamp always embeds the literal
-  # "gearbox ADR-NNNN" token, so no separate "Provenance:" anchor is needed here; keeping the
-  # match broad also still catches a plain prose reference outside the provenance field.
-  ref_match=$(grep -lriE "((scaffold|gearbox)[[:space:]]+ADR-${num})|((agents-md-scaffold|gearbox)/blob/[^ )]*adr/${num}-)" \
-    "$DOWNSTREAM_ADR_DIR" 2>/dev/null | head -1 || true)
+// ============== main ==============
 
-  if [[ -n "$copy_match" ]]; then
-    # hash stamp comparison (ADR-0021): the upstream hash recorded in the copy vs the upstream
-    # file's current hash
-    recorded_hash=$(grep -oE 'sha256:[0-9a-f]{12}' "$copy_match" 2>/dev/null | head -1 | cut -d: -f2 || true)
-    if [[ -n "$recorded_hash" ]]; then
-      current_hash=$(shasum -a 256 "$upstream_file" | cut -c1-12)
-      if [[ "$recorded_hash" == "$current_hash" ]]; then
-        echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(copy: $(basename "$copy_match"))${RESET}"
-        synced_count=$((synced_count + 1))
-      else
-        echo "  ${YELLOW}⚠️  ADR-${num}${RESET} $slug ${YELLOW}upstream has been revised${RESET} ${DIM}(copy: $(basename "$copy_match"), manual diff or re-copy)${RESET}"
-        drift_count=$((drift_count + 1))
-      fi
-    else
-      echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(copy: $(basename "$copy_match"), no stamp)${RESET}"
-      synced_count=$((synced_count + 1))
-      legacy_count=$((legacy_count + 1))
-    fi
-  elif [[ -n "$ref_match" ]]; then
-    echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(backfilled: $(basename "$ref_match"))${RESET}"
-    synced_count=$((synced_count + 1))
-  else
-    echo "  ${YELLOW}✖ ADR-${num}${RESET} $slug"
-    missing_count=$((missing_count + 1))
-  fi
-done
+const DOWNSTREAM_ADR_DIR = "docs/gearbox-adr";
+if (!existsSync(DOWNSTREAM_ADR_DIR)) {
+  console.log(`${RED}✗ Current directory has no docs/gearbox-adr/ — run this from a downstream repo's root${RESET}`);
+  exit(1);
+}
 
-echo ""
-if [[ "$missing_count" -eq 0 && "$drift_count" -eq 0 ]]; then
-  echo "${DIM}status:${RESET}    ${GREEN}✅ fully synced (${synced_count})${RESET}"
-else
-  echo "${DIM}status:${RESET}    ${YELLOW}⚠️  ${missing_count} not synced, ${drift_count} revised upstream${RESET} ${DIM}(${synced_count} synced)${RESET}"
-  echo ""
-  echo "${DIM}note: \"not synced\" includes cases the downstream evaluated and declined to backfill${RESET}"
-  echo "${DIM}      (this script can't see the issue's conclusion). Authoritative status is this${RESET}"
-  echo "${DIM}      repo's own issues/PRs. See Gearbox ADR-0026 for the pull-based backfill flow.${RESET}"
-fi
-if [[ "$legacy_count" -gt 0 ]]; then
-  echo "${DIM}legacy:    ${legacy_count} copies have no hash stamp, drift can't be detected (ADR-0021; stamps appear naturally on future backfills)${RESET}"
-fi
-echo ""
+await tui.logo();
+
+// resolveUpstream may hit the network (remote fetch/clone) — wrap it in the step spinner
+let upstream;
+await tui.step("gearbox-version", "checking upstream…", {
+  minMs: 400,
+  work: () => {
+    upstream = resolveUpstream();
+  },
+});
+const { gearboxDir, upstreamUrl, isRemote } = upstream;
+const UPSTREAM_ADR_DIR = join(gearboxDir, "docs/gearbox-adr");
+
+if (!existsSync(UPSTREAM_ADR_DIR)) {
+  console.log(`${RED}✗ Upstream ADR directory missing: ${UPSTREAM_ADR_DIR}${RESET}`);
+  exit(1);
+}
+
+let repoName = (tryRun("git remote get-url origin") || "").replace(/.*[:/]/, "").replace(/\.git$/, "");
+if (!repoName) repoName = basename(cwd());
+
+// Version summary (ADR-0023): upstream's latest tag vs the local `.gearbox-version` stamp.
+// Take the highest version tag (sorted by v:refname — more stable than `describe`, unaffected
+// by multiple tags on the same commit). Priority: env override (the npx package passes
+// package.json's version, ADR-0028) > remote ls-remote (ADR-0027, a shallow clone isn't
+// guaranteed to carry every tag) > local git tag.
+let upstreamVersion = "";
+if (env.GEARBOX_UPSTREAM_VERSION) {
+  upstreamVersion = env.GEARBOX_UPSTREAM_VERSION;
+} else if (isRemote) {
+  const lsRemote = tryRun(`git ls-remote --tags --sort=-v:refname "${upstreamUrl}"`) || "";
+  upstreamVersion =
+    lsRemote
+      .split("\n")
+      .map((l) => (l.match(/v\d+\.\d+\.\d+$/) || [])[0])
+      .filter(Boolean)[0] || "";
+} else {
+  upstreamVersion = (tryRun(`git -C "${gearboxDir}" tag -l 'v*' --sort=-v:refname`) || "").split("\n")[0] || "";
+}
+let localVersion = "";
+if (existsSync(".gearbox-version"))
+  localVersion = (readFileSync(".gearbox-version", "utf8").split("\n")[0] || "").replace(/\s/g, "");
+
+console.log("");
+console.log(`${DIM}repo:${RESET}      ${repoName}`);
+if (isRemote) {
+  console.log(`${DIM}upstream:${RESET}  ${upstreamUrl} ${DIM}(remote cache ${gearboxDir}, ADR-0027)${RESET}`);
+} else {
+  console.log(`${DIM}upstream:${RESET}  ${gearboxDir}`);
+}
+if (upstreamVersion) {
+  if (!localVersion) {
+    console.log(
+      `${DIM}version:${RESET}   upstream ${upstreamVersion} / local ${DIM}no stamp (the next gearbox-update backfill writes it automatically, ADR-0023)${RESET}`,
+    );
+  } else if (localVersion === upstreamVersion) {
+    console.log(
+      `${DIM}version:${RESET}   ${GREEN}upstream ${upstreamVersion} / local ${localVersion} (in sync)${RESET}`,
+    );
+  } else {
+    const lag = semverLag(localVersion, upstreamVersion);
+    console.log(
+      `${DIM}version:${RESET}   ${YELLOW}upstream ${upstreamVersion} / local ${localVersion} (behind by ${lag})${RESET}`,
+    );
+  }
+}
+console.log("");
+
+// Pre-read downstream ADR files once (for slug matching + reference grep)
+const downFiles = readdirSync(DOWNSTREAM_ADR_DIR)
+  .filter((f) => /^\d{4}-.+\.md$/.test(f))
+  .sort()
+  .map((f) => ({ name: f, content: readFileSync(join(DOWNSTREAM_ADR_DIR, f), "utf8") }));
+
+let missingCount = 0;
+let syncedCount = 0;
+let driftCount = 0;
+let legacyCount = 0;
+
+const upstreamFiles = readdirSync(UPSTREAM_ADR_DIR)
+  .filter((f) => /^\d{4}-.+\.md$/.test(f))
+  .sort();
+
+for (const f of upstreamFiles) {
+  const base = f.replace(/\.md$/, "");
+  const num = base.slice(0, 4);
+  const slug = base.slice(5);
+
+  // a) same-slug copy (downstream number can differ)
+  const copyMatch = downFiles.find((d) => new RegExp(`^\\d{4}-${slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.md$`).test(d.name));
+
+  // b) provenance reference: literal "scaffold|gearbox ADR-NNNN" text, or a repo URL's adr/NNNN-
+  // path. This also matches the English `- Provenance: copied/backfilled from [gearbox ADR-NNNN]`
+  // stamp line written by gearbox-install/gearbox-update — the stamp always embeds the literal
+  // "gearbox ADR-NNNN" token, so no separate "Provenance:" anchor is needed here; keeping the
+  // match broad also still catches a plain prose reference outside the provenance field.
+  const refRe = new RegExp(
+    `((scaffold|gearbox)\\s+ADR-${num})|((agents-md-scaffold|gearbox)/blob/[^ )]*adr/${num}-)`,
+    "i",
+  );
+  const refMatch = downFiles.find((d) => refRe.test(d.content));
+
+  let line;
+  if (copyMatch) {
+    // hash stamp comparison (ADR-0021): the upstream hash recorded in the copy vs the upstream
+    // file's current hash
+    const recordedHash = (copyMatch.content.match(/sha256:([0-9a-f]{12})/) || [])[1];
+    if (recordedHash) {
+      const currentHash = sha12(readFileSync(join(UPSTREAM_ADR_DIR, f), "utf8"));
+      if (recordedHash === currentHash) {
+        line = `  ${GREEN}✅ ADR-${num}${RESET} ${slug} ${DIM}(copy: ${copyMatch.name})${RESET}`;
+        syncedCount++;
+      } else {
+        line = `  ${YELLOW}⚠️  ADR-${num}${RESET} ${slug} ${YELLOW}upstream has been revised${RESET} ${DIM}(copy: ${copyMatch.name}, manual diff or re-copy)${RESET}`;
+        driftCount++;
+      }
+    } else {
+      line = `  ${GREEN}✅ ADR-${num}${RESET} ${slug} ${DIM}(copy: ${copyMatch.name}, no stamp)${RESET}`;
+      syncedCount++;
+      legacyCount++;
+    }
+  } else if (refMatch) {
+    line = `  ${GREEN}✅ ADR-${num}${RESET} ${slug} ${DIM}(backfilled: ${refMatch.name})${RESET}`;
+    syncedCount++;
+  } else {
+    line = `  ${YELLOW}✖ ADR-${num}${RESET} ${slug}`;
+    missingCount++;
+  }
+  stdout.write(line + "\n");
+  if (tui.isTTY) await tui.sleep(12); // staggered reveal (ADR-0035); instant when piped
+}
+
+console.log("");
+if (missingCount === 0 && driftCount === 0) {
+  console.log(`${DIM}status:${RESET}    ${GREEN}✅ fully synced (${syncedCount})${RESET}`);
+  if (tui.isTTY) console.log("\n  " + tui.grad("⚙ downstream in sync"));
+} else {
+  console.log(
+    `${DIM}status:${RESET}    ${YELLOW}⚠️  ${missingCount} not synced, ${driftCount} revised upstream${RESET} ${DIM}(${syncedCount} synced)${RESET}`,
+  );
+  console.log("");
+  console.log(`${DIM}note: "not synced" includes cases the downstream evaluated and declined to backfill${RESET}`);
+  console.log(`${DIM}      (this script can't see the issue's conclusion). Authoritative status is this${RESET}`);
+  console.log(`${DIM}      repo's own issues/PRs. See Gearbox ADR-0026 for the pull-based backfill flow.${RESET}`);
+}
+if (legacyCount > 0) {
+  console.log(
+    `${DIM}legacy:    ${legacyCount} copies have no hash stamp, drift can't be detected (ADR-0021; stamps appear naturally on future backfills)${RESET}`,
+  );
+}
+console.log("");

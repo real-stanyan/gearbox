@@ -12,8 +12,8 @@
 // package.json via an env override, GEARBOX_UPSTREAM_VERSION, passed to the tools (tools prefer
 // it, falling back to the git tag otherwise).
 //
-// Subcommand routing: install/update = node scripts; version = bash script (ADR-0016 left
-// unchanged, see ADR-0028 for the decision). Args are passed through as-is. Exit codes are
+// Subcommand routing: all four subcommands are node scripts (version was bash until ADR-0035
+// rewrote it in node to share the TUI layer). Args are passed through as-is. Exit codes are
 // passed through.
 
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,7 @@ try {
 
 const ROUTES = {
   install: { cmd: "node", file: "scripts/gearbox-install" },
-  version: { cmd: "bash", file: "scripts/gearbox-version" },
+  version: { cmd: "node", file: "scripts/gearbox-version" }, // bash → node in ADR-0035 (shared TUI layer)
   update: { cmd: "node", file: "scripts/gearbox-update" },
   prune: { cmd: "node", file: "scripts/gearbox-prune" },
 };
