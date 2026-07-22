@@ -153,8 +153,8 @@ if (existsSync(join(root, "AGENTS.md"))) {
 }
 if (existsSync(join(root, "DOWNSTREAM.md"))) {
   check(
-    "DOWNSTREAM.md must keep its '## 已接入项目' section (optional fleet dashboard, ADR-0026)",
-    readFile("DOWNSTREAM.md").includes("## 已接入项目"),
+    "DOWNSTREAM.md must keep its '## Onboarded projects' section (optional fleet dashboard, ADR-0026)",
+    readFile("DOWNSTREAM.md").includes("## Onboarded projects"),
   );
 }
 

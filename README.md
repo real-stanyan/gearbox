@@ -1,80 +1,82 @@
-# Gearbox — 多 agent 协作项目骨架
+# Gearbox — a scaffold for multi-agent collaboration projects
 
-> 前身名 `agents-md-scaffold`,2026-07-19 改名 **Gearbox**(ADR-0015)。旧 GitHub URL 自动跳转。
+> Formerly named `agents-md-scaffold`, renamed **Gearbox** on 2026-07-19 (ADR-0015). The old GitHub URL redirects automatically.
 
-## 快速上手（零配置,ADR-0028）
+## Quick start (zero config, ADR-0028)
 
-有 node 即可,无需 clone / 配 PATH：
-
-```bash
-# 在新项目目录里铺 Gearbox 骨架(占位、门禁、ADR 溯源+hash 戳记全自动)
-npx gearbox-agents install --maintainer <你的名字> --gate "npx tsc --noEmit"
-# 三个参数都可省: 省了就留 <占位符>,ci.yml 放故意失败的占位命令
-
-# 之后随时查同步 / 回流上游协议更新(pull 触发,ADR-0026)
-npx gearbox-agents version    # 查当前 repo 同步到上游哪个版本 / 哪些 ADR
-npx gearbox-agents update     # 拷上游缺失 ADR 到当前 repo,产出待 review 分支
-```
-
-> npx 路径:包自带上游快照,`version`/`update` 拿包快照作上游对比(ADR-0028)。
-> `version` 需环境有 bash(mac/linux 天然;Windows 用 Git Bash / WSL);`install`/`update` 是 node,跨平台。
-
-**维护者 / 贡献者**(改 Gearbox 本身)用本地 clone：
+Just need node — no clone, no PATH setup:
 
 ```bash
-node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <你的名字> --gate "npx tsc --noEmit"
+# Lay down the Gearbox scaffold in a new project directory (placeholders, gate,
+# ADR provenance + hash stamps all automatic)
+npx gearbox-agents install --maintainer <your name> --gate "npx tsc --noEmit"
+# All three args are optional: omit and a <placeholder> is left in place;
+# ci.yml ships a deliberately-failing placeholder command
+
+# Later, check sync / backfill upstream protocol updates anytime (pull-triggered, ADR-0026)
+npx gearbox-agents version    # check which upstream version / which ADRs this repo is synced to
+npx gearbox-agents update     # copy missing upstream ADRs into this repo, producing a review-ready branch
 ```
 
-装完：
-1. 填 `AGENTS.md` 里剩余 `<占位符>`（`grep -n '<' AGENTS.md`）
-2. 首个自有架构决策写进 `docs/adr/`（项目 ADR 独立编号，从 0001 起）；协议 ADR 在 `docs/gearbox-adr/`（工具管，格式见其 0001-adr-template.md）
-3. 开工三件事第 4 步跑 `npx gearbox-agents version` 自查协议版本(pull 触发)
+> npx path: the package ships its own upstream snapshot; `version`/`update` diff against that packaged snapshot (ADR-0028).
+> `version` needs bash in the environment (native on mac/linux; use Git Bash / WSL on Windows); `install`/`update` are node, cross-platform.
 
-## 架构（为什么长这样）
+**Maintainers / contributors** (working on Gearbox itself) use a local clone:
 
-| 文件 | 角色 |
+```bash
+node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <your name> --gate "npx tsc --noEmit"
+```
+
+After installing:
+1. Fill in the remaining `<placeholder>`s in `AGENTS.md` (`grep -n '<' AGENTS.md`)
+2. Write your first project-specific architectural decision into `docs/adr/` (project ADRs get their own numbering, starting at 0001); protocol ADRs live in `docs/gearbox-adr/` (tool-managed; format shown in its `0001-adr-template.md`)
+3. Step 4 of the three start-of-shift steps runs `npx gearbox-agents version` to self-check the protocol version (pull-triggered)
+
+## Architecture (why it's shaped this way)
+
+| File | Role |
 |---|---|
-| `AGENTS.md` | 单一事实源。所有 agent（Claude Code、Z Code 等）都读它。规则只写这一份 |
-| `CLAUDE.md` | 空壳，`@AGENTS.md` 一行。兼容旧版 Claude Code + 未来 Claude 专属内容挂载点 |
-| `CONTEXT.md` | 领域词汇表。防止不同 agent 对同一个业务词理解不同 |
-| `docs/gearbox-adr/` | 协议 ADR（拷自 Gearbox，工具管）。`docs/adr/` 则放本项目自有决策 |
-| `.github/workflows/ci.yml` | 硬门禁。红了 merge 不进——唯一不依赖 agent 自觉的约束 |
+| `AGENTS.md` | Single source of truth. Every agent (Claude Code, Z Code, etc.) reads it. Rules live here and only here |
+| `CLAUDE.md` | Empty shell, a single `@AGENTS.md` line. Compatible with older Claude Code + a future mount point for Claude-specific content |
+| `CONTEXT.md` | Domain glossary. Keeps different agents from understanding the same business term differently |
+| `docs/gearbox-adr/` | Protocol ADRs (copied from Gearbox, tool-managed). `docs/adr/` holds this project's own decisions |
+| `.github/workflows/ci.yml` | Hard gate. Red means no merge — the one constraint that doesn't depend on agent self-discipline |
 
-刻意**没有** `HANDOFF.md`：进度和交接走 GitHub Issues + PR（append-only、带时间戳、不腐烂）。
+Deliberately **no** `HANDOFF.md`: progress and handoffs run through GitHub Issues + PRs (append-only, timestamped, never goes stale).
 
-## 验证过的实践（date-cli 实验 + Gearbox 自食其力）
+## Validated in practice (the date-cli experiment + Gearbox eating its own dogfood)
 
-这套协议不是空想,在 [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli)（private）里跑过 **4 轮多 agent 协作验证**（Z Code 开局 + Claude Code 接力 3 轮,完整 git log / issues / PR / ADR 可查）,之后又在**本 repo 自身**用同一套协议跑了第 5、6 轮（自食其力:用协议维护协议）。长出的机制全部落成 ADR:
+This protocol isn't just theory — it ran **4 rounds of multi-agent collaboration validation** in [`real-stanyan/date-cli`](https://github.com/real-stanyan/date-cli) (private) (Z Code kicked it off + Claude Code carried it through 3 more rounds, full git log / issues / PR / ADR trail available), then ran rounds 5 and 6 on **this repo itself** using the same protocol (dogfooding: using the protocol to maintain the protocol). Every mechanism that emerged landed as an ADR:
 
-| 机制 | ADR | 解决的问题 | 出处 |
+| Mechanism | ADR | Problem it solves | Origin |
 |---|---|---|---|
-| Memory 五项格式 | 0004 | 排程决策(选 a 不选 b 的理由)不再腐烂,且不污染 ADR | date-cli |
-| 交接 Memory 留 open issue | 0005 | 下一棒开工自然扫到入口,不再靠人指路 | date-cli |
-| 协议变更分级授权(L1/L2) | 0006 | Hard rules/Gate 不能 agent 自主改;Working agreement 可自治 | date-cli |
-| PR 处置细则 | 0007 | merge 策略/merge 权限/互审与否不再靠临时授权 | date-cli 实践追认 |
-| 分工占位符显式化 | 0008 | 分工是项目属性;无约定时兜底 = Task issue 认领制 | 第 5 轮 |
-| 终局收工豁免 | 0009 | 「违规收工」和「工作到头」分得开;沉默的终局不算终局 | 第 5 轮 |
-| 门禁断言分层 | 0010 | 收紧门禁 L2 零摩擦;放松/删除 L1 需人同意 | 第 5 轮 |
-| Subagent 模板与路由 | 0011 | 主 agent 派活缺统一模板;下游可按需回流 | 第 6 轮 |
-| L1/L2 边界判据(机制引用优先) | 0012 | agent 用「可选+纯新增」当 L2 通道扩张协议边界(PR #21 复盘) | 第 6 轮 |
-| 下游回流提醒(B-3) | 0013 | Gearbox 是模板非依赖,下游漏接协议改进无感知 | 第 6 轮 |
+| Memory five-field format | 0004 | Scheduling decisions (why a, not b) no longer rot, without polluting the ADRs | date-cli |
+| Handoff Memory lives in an open issue | 0005 | The next shift naturally finds the entry point when starting work, no longer needs a human to point the way | date-cli |
+| Tiered authorization for protocol changes (L1/L2) | 0006 | Hard rules/Gate can't be changed autonomously by an agent; Working agreement can | date-cli |
+| PR disposition details | 0007 | Merge strategy / merge authority / mutual review or not no longer rely on ad hoc authorization | date-cli practice, retroactively confirmed |
+| Explicit division-of-labor placeholder | 0008 | Division of labor is a project property; the fallback with no agreement = Task issue claim-based ownership | Round 5 |
+| Terminal-shift exemption | 0009 | Distinguishes "ended shift in violation" from "work is genuinely done"; a silent ending doesn't count as terminal | Round 5 |
+| Gate assertion tiering | 0010 | Tightening a gate assertion is frictionless L2; loosening/removing one needs human agreement | Round 5 |
+| Subagent template and routing | 0011 | The main agent lacked a unified template for dispatching work; downstream can backfill it as needed | Round 6 |
+| L1/L2 boundary criterion (mechanism-reference-first) | 0012 | Agents used "optional + pure addition" as an L2 channel to expand the protocol's boundary (retrospective on PR #21) | Round 6 |
+| Downstream backfill reminder (B-3) | 0013 | Gearbox is a template, not a dependency; downstream repos had no visibility into missed protocol improvements | Round 6 |
 
-**实验验证了什么成立、什么不成立:**
+**What the experiment did and didn't validate:**
 
-- ✅ **成立的**:交接零口述、协议自我修复循环(开缺口 → 补进 AGENTS.md)、代码协作三棒无一处靠猜
-- ✅ **第 5 轮新增的**:协议能抓自身违规——上一棒没开交接 issue,下一棒按 On starting 撞空、开缺口 issue、长出 ADR-0009 边界条款,全程无人指路;L1 b-弱同意流程(维护者会话内说「同意」+ PR comment 留痕)首次实跑走通
-- ✅ **第 6 轮新增的**:协议抓越权(PR #21 agent 用 L2 self-merge 引入引用 L1/L2 的模板,复盘长出 0012 判据堵路)+ 回流机制自举闭环(0013 引入 B-3 的 PR 自己按 B-3 补开下游 issue,证据链完整)
-- 🔸 **部分成立的**:门禁拦事——纯函数区真拦,但 I/O 层和测试文件类型是持续暴露的盲区(打地鼠模式)
-- ❌ **未根治的**:门禁"全绿" ≠ "正确"——这是回归性保证的本质,无法用一份协议根治
+- ✅ **Held up:** zero-verbal handoffs, the protocol self-repair loop (find a gap → fold it into AGENTS.md), three shifts of code collaboration with nothing left to guesswork
+- ✅ **New in round 5:** the protocol catching its own violations — the previous shift didn't open a handoff issue, the next shift hit an empty starting point per "On starting a shift," opened a protocol-gap issue, and ADR-0009's boundary clause grew out of that, all without anyone pointing the way; the L1 b-weak consent flow (maintainer says "agree" in-session + leaves a trace in a PR comment) ran end-to-end for the first time
+- ✅ **New in round 6:** the protocol catching an overreach (PR #21 had an agent self-merge under L2 a template that referenced L1/L2, and the retrospective grew ADR-0012's criterion to block that path) + the backfill mechanism closing its own loop (0013 introduced B-3, and the PR that introduced it opened its own downstream issue per B-3 — a complete evidence chain)
+- 🔸 **Partially held up:** the gate as a backstop — it genuinely catches issues in pure-function areas, but the I/O layer and test-file types remain a persistent blind spot (whack-a-mole)
+- ❌ **Not solved:** an all-green gate ≠ "correct" — this is inherent to regression-style guarantees and no protocol can fix it on its own
 
-**诚实的边界——以下全部未验证,拷走后自担:**
+**Honest boundaries — all of the following are unvalidated; you own the risk if you carry this elsewhere:**
 
-- **规模**:n=1 用户、2 个 agent、玩具级代码库。真实项目的代码量与业务复杂度没碰过
-- **并行**:整套协议建立在轮班制(一次一棒)上。多 agent 同时在场会打穿 ADR-0007 的前提(它自己写了推翻条件)
-- **分工**:ADR-0008 承认 n=0,占位符即答案
-- **L1 异步**:目前 b-弱同意都是维护者在场秒回;维护者离线时 L1 改动就挂着,这个瓶颈是明说接受的,但没尝过疼
-- **仪式成本**:每棒 issue + 五项 Memory + 协议改动必 ADR。协议实验里是数据,高频小任务场景里是税
+- **Scale:** n=1 user, 2 agents, a toy-sized codebase. Never tested against a real project's code volume or business complexity
+- **Concurrency:** the whole protocol assumes a shift model (one agent at a time). Multiple agents present simultaneously would break the premise underlying ADR-0007 (which itself documents the conditions that would overturn it)
+- **Division of labor:** ADR-0008 admits n=0 — the placeholder is the answer
+- **L1 while offline:** so far the b-weak consent has always been the maintainer responding in real time; when the maintainer is offline, an L1 change just sits there. This bottleneck is explicitly accepted but has never actually been felt
+- **Ceremony cost:** every shift's issue + five-field Memory + mandatory ADR for protocol changes — in the protocol experiment this was data; in a high-frequency, small-task setting it's a tax
 
-若某个 agent 不认 `AGENTS.md`，在 repo 里软链接：`ln -s AGENTS.md <该工具认的文件名>`。
+If some agent doesn't recognize `AGENTS.md`, symlink it in the repo: `ln -s AGENTS.md <the filename that tool expects>`.
 
-设计讨论出处：mandys_bubble_tea 项目 2026-07-17 会话（多 agent 协作架构反思）。
+Design discussion originated in the mandys_bubble_tea project, 2026-07-17 session (a reflection on multi-agent collaboration architecture).
