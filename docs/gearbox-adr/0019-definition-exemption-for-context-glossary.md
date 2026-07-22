@@ -1,35 +1,35 @@
-# ADR-0019: ADR-0012 判据的定义豁免——CONTEXT.md 词条描述既有机制不触发 L1
+# ADR-0019: Definition Exemption for ADR-0012's Criterion — a CONTEXT.md Entry Describing an Existing Mechanism Does Not Trigger L1
 
 - Date: 2026-07-19
 - Status: accepted
-- 修订对象: ADR-0012(判据保留,加一条豁免;ADR-0012 原文不删)
+- Revises: ADR-0012 (the criterion is kept, one exemption is added; ADR-0012's original text is not deleted)
 
 ## Context
 
-两条规则打架(issue #32):
+Two rules collide (issue #32):
 
-- **While working**:"业务术语的定义查 CONTEXT.md;新术语出现时补进去"——例行义务,零流程
-- **ADR-0012 客观判据**:"文本中出现 L1/L2/Hard rule 等机制关键词……按 L1 处理"
+- **While working**: "look up business-term definitions in CONTEXT.md; add new terms as they appear" — a routine obligation, zero process
+- **ADR-0012's objective criterion**: "if the text contains mechanism keywords such as L1/L2/Hard rule ... treat as L1"
 
-词汇表补协议术语(如「L1/L2 分级」「回流」)必然含机制关键词——例行卫生动作被安全判据拖进 L1,每次都要维护者同意。实例:PR #35 的 CONTEXT.md 补录按严格读法走了 L1(合规但过重)。
+Adding protocol terms to the glossary (e.g. "L1/L2 tiering," "backfill") inevitably contains mechanism keywords — a routine hygiene action gets dragged into L1 by the safety criterion, requiring maintainer agreement every time. Case in point: PR #35's CONTEXT.md addition, read strictly, went through L1 (compliant but overweight).
 
-判据的本意是抓 PR #21 那类**立法**(用"可选+纯新增"当 L2 通道扩张协议边界),不是抓**描述**(把已立的法写进词汇表)。
+The criterion's original intent was to catch the PR #21 kind of **legislation** (using "optional + pure addition" as an L2 channel to expand the protocol's boundary), not to catch **description** (writing already-enacted law into the glossary).
 
 ## Decision
 
-ADR-0012 判据加一条**定义豁免**,要件三条**缺一不可**:
+Add a **definition exemption** to ADR-0012's criterion, with three requirements, **all mandatory**:
 
-1. **改动仅落在 CONTEXT.md**(词条增改;碰 AGENTS.md / ADR / 门禁 / 模板的任何一行即出豁免)
-2. **词条注明出处 ADR**(定义的是已立的法,可溯源;无出处 = 可能在立新法)
-3. **不新增义务、不改流程、不改边界**(词条是既有机制的压缩转述;转述里冒出原 ADR 没有的规则 = 立法)
+1. **The change touches only CONTEXT.md** (adding/editing an entry; touching any line of AGENTS.md / an ADR / the gate / a template disqualifies it)
+2. **The entry cites its source ADR** (it defines already-enacted law and is traceable; no source citation = possibly enacting new law)
+3. **No new obligation, no changed process, no changed boundary** (the entry is a compressed restatement of an existing mechanism; if a rule not present in the source ADR surfaces in the restatement, that's legislation)
 
-满足三条 → **L2**,agent 自主 merge。**任一不满足或拿不准 → 按 L1**,不许自行豁免。
+Meeting all three → **L2**, the agent may self-merge. **Failing any one, or being unsure → default to L1**; self-granting the exemption is not allowed.
 
-**反滥用条款**:借定义之名改语义(词条与出处 ADR 语义不符)= 违规,处置同无 issue/ADR 的协议改动——revert + 重开 issue。维护者事后否决权覆盖本豁免。
+**Anti-abuse clause**: using "it's just a definition" to smuggle in semantic change (the entry's meaning diverges from its source ADR) = a violation, handled the same as a protocol change lacking issue/ADR — revert + reopen the issue. The maintainer's after-the-fact veto overrides this exemption.
 
 ## Consequences
 
-- **例行卫生归位**:补词汇表回到零流程(L2 自主),While working 的义务不再被判据误伤
-- **判据主体不动**:AGENTS.md / ADR / 门禁 / 模板里的机制关键词仍然一律 L1;豁免面只有 CONTEXT.md 一个文件,且被三要件夹死
-- **词条出处成为硬要求**:今后 CONTEXT.md 协议词条必须带 ADR 出处,否则不享受豁免——顺手提升了词汇表的可溯源性
-- **残余风险(接受)**:「转述 vs 立法」的判定仍有主观空间,兜底是"拿不准按 L1" + 维护者 revert 权。若实践中出现借词条走私语义的实例,收紧或废除本豁免(另开 ADR)
+- **Routine hygiene returns to baseline**: adding to the glossary goes back to zero process (L2, self-directed); the "While working" obligation is no longer caught in the criterion's crossfire
+- **The criterion's core is untouched**: mechanism keywords in AGENTS.md / an ADR / the gate / a template are still always L1; the exemption's surface is exactly one file, CONTEXT.md, pinned down by three requirements
+- **Entry provenance becomes a hard requirement**: going forward, protocol terms in CONTEXT.md must carry an ADR source or they don't get the exemption — incidentally improving the glossary's traceability
+- **Residual risk (accepted)**: judging "restatement vs. legislation" still leaves subjective room; the backstop is "when unsure, default to L1" plus the maintainer's revert power. If practice turns up cases of smuggling semantics via an entry, tighten or repeal this exemption (in a separate ADR)

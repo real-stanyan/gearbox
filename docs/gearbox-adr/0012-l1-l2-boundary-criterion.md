@@ -1,54 +1,54 @@
-# ADR-0012: L1/L2 边界判据——"机制引用优先"
+# ADR-0012: L1/L2 boundary criterion — mechanism reference takes priority
 
 - Date: 2026-07-19
-- Status: accepted, 定义豁免见 ADR-0019(CONTEXT.md 词条描述既有机制不触发本判据)
-- Supersedes: ADR-0006(ADR-0006 的 L1/L2 分层按内容类型分,本 ADR 补齐"新增内容怎么归类"的判据;ADR-0006 原文保留不删)
+- Status: accepted, definition exemption see ADR-0019 (CONTEXT.md entries describing existing mechanisms do not trigger this criterion)
+- Supersedes: ADR-0006 (ADR-0006's L1/L2 tiering divides by content type; this ADR fills in the criterion for "how to classify new content"; ADR-0006's original text is kept, not deleted)
 
 ## Context
 
-PR #21 引入 `docs/subagent-system.md` + ADR-0011——一份教 agent 怎么派 subagent 的子系统规格,§5.1 模板还引用了 L1/L2 分级机制。agent 按"没动现有文件"自判 L2,自主 merge 了(issue #22)。
+PR #21 introduced `docs/subagent-system.md` + ADR-0011 — a subsystem spec that teaches agents how to dispatch subagents, whose §5.1 template also references the L1/L2 tiering mechanism. The agent self-judged it as L2 on the grounds of "didn't touch any existing file", and self-merged it (issue #22).
 
-复盘:**实质是扩张 Working agreement 覆盖范围的协议级改动,却走了 L2 通道,绕过维护者审。** 这是 ADR-0006 警惕的"agent 自己给自己扩权"的实例。
+Post-mortem: **in substance this was a protocol-level change that expanded the coverage of the Working agreement, but it went through the L2 channel, bypassing maintainer review.** This is an instance of exactly what ADR-0006 warned against — "an agent granting itself more power".
 
-根因:ADR-0006 按**内容类型**分 L1/L2(Hard rules / Gate / Tech stack = L1;Working agreement / 索引 = L2),但**没规定"新增协议级内容"怎么归类**。agent 钻了这个空子——"我新增文件、没改现有协议文件,所以是 L2"。
+Root cause: ADR-0006 divides L1/L2 by **content type** (Hard rules / Gate / Tech stack = L1; Working agreement / index = L2), but **doesn't specify how to classify "newly added protocol-level content"**. The agent exploited this gap — "I added a new file and didn't change any existing protocol file, so it's L2".
 
-三个候选判据(Stan 选 a):
+Three candidate criteria (Stan chose a):
 
-- **a. 机制引用优先**:新增内容只要引用 L1/L2 分级 / Hard rules / Working agreement 机制,就是 L1。客观可验(grep 文本),防"可选"标签滥用
-- **b. 可选/必选 + 文件维度**:可选+纯新增 = L2。等于事后追认 PR #21 的自判——"可选"是 agent 自己贴的标签,会被滥用
-- **c. 最严纯新增**:纯新增且不引用机制 = L2,其余 L1。最严,但一些真正独立的可选文档也卡进 L1,增加维护者负担
+- **a. Mechanism reference takes priority**: as long as new content references the L1/L2 tiering / Hard rules / Working agreement mechanism, it's L1. Objectively verifiable (grep the text), prevents abuse of the "optional" label
+- **b. Optional/required + file dimension**: optional + pure addition = L2. This is equivalent to retroactively ratifying PR #21's self-judgment — "optional" is a label the agent applies to itself, and it will be abused
+- **c. Strictest pure-addition**: pure addition that doesn't reference any mechanism = L2, everything else L1. The strictest option, but some genuinely independent optional documents also get caught in L1, increasing maintainer burden
 
 ## Decision
 
-**L1/L2 边界判据 = 机制引用优先:**
+**L1/L2 boundary criterion = mechanism reference takes priority:**
 
-> **新增内容只要引用了 L1/L2 分级 / Hard rules / Working agreement 的机制(无论是否"可选"、是否动现有文件),按 L1 处理。**
+> **As long as new content references the L1/L2 tiering / Hard rules / Working agreement mechanism (regardless of whether it's "optional" or touches an existing file), treat it as L1.**
 
-三类归类:
+Three-way classification:
 
-| 场景 | 归类 | 依据 |
+| Scenario | Classification | Basis |
 |---|---|---|
-| 新增模板/子系统,**引用** L1/L2 分级 / Hard rules / Working agreement 机制 | **L1** | 本 ADR |
-| 新增纯说明文档(如"如何贡献"),**不引用**任何协议机制 | L2 | 本 ADR |
-| 改现有协议文件(Hard rules / Gate / Tech stack / Working agreement 内容) | **L1** | ADR-0006 原有 |
-| 改索引(Where to find things) | L2 | ADR-0005 原有 |
+| New template/subsystem that **references** the L1/L2 tiering / Hard rules / Working agreement mechanism | **L1** | this ADR |
+| New pure-documentation file (e.g. "how to contribute"), **not referencing** any protocol mechanism | L2 | this ADR |
+| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Working agreement content) | **L1** | ADR-0006 (pre-existing) |
+| Modifying the index (Where to find things) | L2 | ADR-0005 (pre-existing) |
 
-**客观判据**:"引用"= 文本中出现 `L1` / `L2` / `Hard rule` / `Working agreement` / `分级授权` 等机制关键词,或语义上依赖这些机制运转(如 subagent 路由依赖 L1/L2 决定派谁)。
+**Objective criterion**: "reference" means mechanism keywords like `L1` / `L2` / `Hard rule` / `Working agreement` / "tiered authorization" appear in the text, or the content semantically depends on these mechanisms to function (e.g. subagent routing depends on L1/L2 to decide who to dispatch).
 
-### 关于 PR #21
+### About PR #21
 
-**不 revert,但定性为"实质 L1、流程越权"**。理由:
-- 内容质量好(§7 诚实声明、n=1 边界声明扎实)
-- 为流程 revert 整个 PR 代价过大
-- 维护者事后否决权正在生效——本 ADR 就是 Stan 行使该权利的方式
+**Not reverted, but classified as "substantively L1, process overreach"**. Rationale:
+- The content quality is good (§7's honest disclosures, its n=1 boundary declarations are solid)
+- Reverting the entire PR over process alone would be too costly
+- The maintainer's after-the-fact veto power is in effect — this ADR is exactly how Stan is exercising that right
 
-PR #21 作为先例留档:agent 在 L2 self-merge 通道扩张了协议边界,事后通过补 ADR 把同类扩张归 L1,堵住后续路径。
+PR #21 is documented as a precedent: an agent expanded the protocol's boundary through the L2 self-merge channel, and after the fact, a supplementary ADR classifies the same kind of expansion as L1, closing off that path going forward.
 
 ## Consequences
 
-- **L1 范围扩大**:任何引用协议机制的新增模板/子系统,都要走"issue + ADR + PR + 维护者同意"。维护者负担增加——这是接受的代价
-- **agent 不能再用"纯新增文件"当 L2 通道**:必须看新增内容是否引用协议机制。这是本 ADR 的核心约束
-- **客观可验**:维护者或下一棒 agent 可以 grep 文本判断归类,不靠主观感觉
-- **判据偏严的副作用**:真正独立的可选文档(如纯"如何贡献")仍可走 L2;但任何"教 agent 怎么干活"的模板基本都会引用协议机制,都会卡进 L1。这是有意的——"教 agent 干活"的模板影响协作行为,严格度该跟协议本身同级
-- **后续观察点**:如果实践中发现 L1 卡住了太多低风险文档,可再走 ADR 放宽;反之亦然
-- **风险**:语义依赖(不在文本里出现关键词,但实质依赖机制)仍靠主观判断。缓解——这类情况让 agent 开 Protocol gap issue 由维护者判,不 silent 处理
+- **L1's scope expands**: any new template/subsystem that references a protocol mechanism must go through "issue + ADR + PR + maintainer agreement". The maintainer's burden increases — this is an accepted cost
+- **Agents can no longer use "pure new file" as an L2 channel**: whether new content references a protocol mechanism must be checked. This is this ADR's core constraint
+- **Objectively verifiable**: the maintainer or the next-shift agent can grep the text to determine classification, not rely on subjective feel
+- **Side effect of an intentionally strict criterion**: genuinely independent optional documents (e.g. a pure "how to contribute") can still go through L2; but almost any template that "teaches an agent how to work" will reference a protocol mechanism and get caught in L1. This is deliberate — a template that "teaches an agent how to work" affects collaboration behavior, and its strictness should match the protocol itself
+- **Something to watch going forward**: if practice shows L1 is catching too many low-risk documents, this can be loosened via another ADR; and vice versa
+- **Risk**: semantic dependence (no keyword appears in the text, but the content substantively depends on the mechanism) still relies on subjective judgment. Mitigation — in such cases the agent opens a Protocol gap issue for the maintainer to judge, rather than making a silent call

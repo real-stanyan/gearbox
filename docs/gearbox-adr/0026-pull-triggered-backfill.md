@@ -1,48 +1,48 @@
-# ADR-0026: 回流从 push 触发改 pull 触发——B-3 降级、DOWNSTREAM.md 变可选仪表盘
+# ADR-0026: Backfill trigger changes from push to pull — B-3 downgraded, DOWNSTREAM.md becomes an optional dashboard
 
 - Date: 2026-07-20
 - Status: accepted
-- 关联: ADR-0013(B-3 下游回流提醒,本 ADR 降级之)、ADR-0014(PR 模板引用下游清单)、ADR-0016(gearbox-version)、ADR-0017(gearbox-update)、ADR-0018(Hard rule 标注定级)、ADR-0023(版本号)
+- Related: ADR-0013 (B-3 downstream backfill reminder, downgraded by this ADR), ADR-0014 (PR template references the downstream list), ADR-0016 (gearbox-version), ADR-0017 (gearbox-update), ADR-0018 (Hard rule annotation tiering), ADR-0023 (version scheme)
 
 ## Context
 
-Gearbox 定位是 GitHub 公共模板——任何人可拷走自建上游。但现有回流机制（B-3 / ADR-0013）是 **push**：
+Gearbox is positioned as a public GitHub template — anyone can fork it and stand up their own upstream. But the existing backfill mechanism (B-3 / ADR-0013) is **push**:
 
-> 每个协议改动 PR，merge 前必须给 `DOWNSTREAM.md` 清单里的每个项目各开一个回流 issue，**无链接 = 不能 merge**。
+> For every protocol-change PR, before merge you must open a backfill issue on each project in the `DOWNSTREAM.md` list — **no link, no merge**.
 
-push 成立的前提是上游**知道每个下游是谁、且有权在其 repo 开 issue**。这只在「维护者自己控制的一堆 repo」成立。对公共模板：
+Push only works if the upstream **knows who each downstream is, and has the right to open issues on their repo**. That only holds for "a bunch of repos the maintainer personally controls." For a public template:
 
-1. 陌生人 fork gearbox 自用 → 上游根本不知道他存在 → 无法为他开 issue。
-2. 即便知道，也无权在陌生人 repo 开 issue。
-3. 于是 `DOWNSTREAM.md` 的「已接入项目」硬编码清单，本质是**私有舰队管理数据**，混进了公共模板。
+1. A stranger forks gearbox for their own use → upstream has no idea they exist → can't open an issue for them.
+2. Even if upstream knew, it has no right to open an issue on a stranger's repo.
+3. So `DOWNSTREAM.md`'s hardcoded "Onboarded projects" list is, in substance, **private fleet-management data** that had leaked into a public template.
 
-核心观察：**更新机制早已是 pull**——`gearbox-update` 就是「下游主动去上游找缺失 ADR 拷回来」，`gearbox-version` 就是「下游主动对比上游算落后」。push（B-3 开 issue）**不是更新机制，只是触发器**——让下游 agent 想起来跑 update。触发器可以换成下游开工自查，无需上游预先认识下游。
+Core observation: **the update mechanism was already pull** — `gearbox-update` is "the downstream actively goes to upstream to find and copy back missing ADRs," `gearbox-version` is "the downstream actively compares itself against upstream to compute how far behind it is." Push (B-3's opening of issues) **is not the update mechanism, just the trigger** — it's what makes the downstream agent remember to run update. The trigger can be swapped for a downstream self-check at start of shift, with no need for upstream to know downstream in advance.
 
 ## Decision
 
-回流触发从 **push（上游开 issue）** 改为 **pull（下游开工自查）**。四处联动：
+The backfill trigger changes from **push (upstream opens an issue)** to **pull (downstream self-checks at start of shift)**. Four linked changes:
 
-1. **触发器迁移（下游开工三件事新增一步）**
-   下游开工三件事加第 4 步：`跑 gearbox-version，落后就 gearbox-update`（只读、零副作用、几秒）。下游看到 ⚠️/✗ 自行拉取。
-   → `gearbox-install` 从此为新下游 scaffold 这一步（新增锚点变换）；存量下游经 `gearbox-update` 回流本 ADR 时，报告用 `AGENTS_MD_IMPACT[26]` 提示手动加这一步。
-   → **Gearbox 本体（上游）自身开工三件事不加此步**——它是上游，无上游可查。此步是接收端语义，仅经 install 注入下游。
+1. **Trigger migration (a new step in the downstream three start-of-shift steps)**
+   Add a 4th step to the downstream three start-of-shift steps: `run gearbox-version; if behind, run gearbox-update` (read-only, zero side effects, a few seconds). If the downstream sees ⚠️/✗, it pulls on its own.
+   → `gearbox-install` now scaffolds this step for new downstreams (a new anchor transform); when an existing downstream backfills this ADR via `gearbox-update`, the report uses `AGENTS_MD_IMPACT[26]` to prompt adding this step manually.
+   → **Gearbox itself (upstream) does not add this step to its own three start-of-shift steps** — it is the upstream, with no upstream to check. This step is receiving-end semantics, injected into downstreams only via install.
 
-2. **B-3 降级（ADR-0013，L1 核心改动）**
-   删除「无链接 = 不能 merge」硬门禁。PR 模板的 `Affects downstream` 声明**保留为信息性**（帮人判断影响面），不再强制逐下游开 issue、不再阻塞 merge。B-3 由 Hard rule 降为「可选的维护者告知」。
-   → 连带：ADR-0018 的「Hard rule 标注定级」示例原用 B-3「无链接=不能 merge」，B-3 降级后该示例失效，改用「Issue & PR 的角色」一节的「必须开 issue，不许 silent 判断」硬规则举例（install 接收端版本早已用它，正好统一）。
+2. **B-3 downgrade (ADR-0013, L1 core change)**
+   Remove the "no link, no merge" hard gate. The PR template's `Affects downstream` declaration **remains informational** (helps judge impact scope), no longer forces an issue to be opened per downstream, and no longer blocks merge. B-3 goes from a hard rule down to "optional maintainer notification."
+   → Knock-on effect: ADR-0018's "Hard rule annotation tiering" example originally used B-3's "no link, no merge"; once B-3 is downgraded that example no longer holds, so it's replaced with the "Roles of issues & PRs" section's hard rule "you must open an issue, silent judgment calls are not allowed" as the example (the install receiving-end version already uses it, so this conveniently unifies the two).
 
-3. **DOWNSTREAM.md 降级为可选仪表盘**
-   「已接入项目」表不再是 B-3 的遍历目标 / merge 门禁。保留「入清单判定标准」+「不入清单的已核实项目」作通用文档；「已接入项目」表标注为**非规范性、维护者自用的舰队视图**，公共模板拷走时可整表清空而不破坏任何机制。表本身保留（维护者的私有舰队仪表盘），`check-gearbox.js` 对 `## 已接入项目` 章节的断言保留——现在守的是「仪表盘章节别被误删」，不再是「B-3 遍历目标」。
+3. **DOWNSTREAM.md downgraded to an optional dashboard**
+   The "Onboarded projects" table is no longer B-3's traversal target / a merge gate. Keep the "listing criteria" + "verified projects that don't qualify" sections as general-purpose documentation; the "Onboarded projects" table is now marked **non-normative, a maintainer's own fleet view** — a public template fork can wipe the whole table without breaking any mechanism. The table itself stays (the maintainer's private fleet dashboard), and `check-gearbox.js`'s assertion on the `## Onboarded projects` section stays too — it now guards "don't accidentally delete the dashboard section," not "B-3's traversal target."
 
-4. **工具上游寻址（本 ADR 只声明方向，实现拆 follow-on）**
-   `gearbox-version` / `gearbox-update` 现读本地 `~/Github/gearbox`。陌生下游无此本地副本，pull 对其仍不可用。**远端寻址（git remote / gh / 固定上游 URL）是 pull 真正服务陌生人的必要条件，但范围独立、体量大，拆为后续 ADR（follow-on）**。本 ADR 对**当前共享本地上游的舰队**（dryrun/mandys/Blackbox 都指向同一份 `~/Github/gearbox`）立即生效；公共陌生 fork 的 pull 待 follow-on。
+4. **Tool upstream addressing (this ADR only states the direction; implementation is a separate follow-on)**
+   `gearbox-version` / `gearbox-update` currently read the local `~/Github/gearbox`. A stranger's downstream has no such local copy, so pull is still unusable for them. **Remote addressing (git remote / gh / a fixed upstream URL) is the necessary condition for pull to truly serve strangers, but it's an independently large scope, split off into a follow-on ADR.** This ADR takes effect immediately for the **fleet currently sharing a local upstream** (dryrun/mandys/Blackbox all point at the same `~/Github/gearbox`); pull for public strangers' forks awaits the follow-on.
 
 ## Consequences
 
-- **公共模板与私有舰队解耦**：模板不再内嵌下游清单作门禁；舰队数据变成维护者可选的本地便利，删了不破协议。解决了「公共项目不该硬编码下游清单」。
-- **触发保证的性质变化（诚实记录）**：push 是「上游保证 issue 存在」，pull 是「下游保证开工自查」。看似 pull 更弱，但——① push 也只保证 issue 存在，不保证下游行动，下游照样得开工三件事 + 动手；② 对陌生人 push 从来是虚构的保证；③ pull 对「上游忘了开 issue」这一失效模式更健壮。净评估：现实威胁模型下 pull 至少不弱于 push。
-- **AGENTS.md 正文级改动仍需人工**：`gearbox-update` 护栏本就不碰下游 AGENTS.md，那部分靠报告的人工评估提示——push/pull 都不替你改，换 pull 零损失。本 ADR 改了下游开工三件事，属 AGENTS.md 正文级 → `AGENTS_MD_IMPACT` 新增 26 条目（并补回历史漏登的 25 = null）。
-- **存量下游一次性迁移（最后一次 push）**：dryrun/mandys/Blackbox 各需在自己 AGENTS.md 加开工第 4 步。本 PR 自身 `Affects downstream: yes`，按**本 PR 仍生效的 B-3** 给三者各开一个迁移 issue——这是 B-3 退役前的最后一次 push，恰好用来分发 pull 迁移。迁移后它们靠自查，不再依赖上游开 issue。
-- **分级 / 版本**：删除 B-3「无链接=不能 merge」这条 Hard rule 断言 = **L1**（放松/删除现有门禁语义，ADR-0010）。改下游 AGENTS.md 开工三件事契约、下游需人工加步 = **major**（ADR-0023）→ v0.3.0 之后为 **v1.0.0**，也恰当标记「Gearbox 首次破坏性变更 / 走向公共」。
-- **三件套**：Protocol gap issue + 本 ADR + 分支 PR，CI 绿 + **维护者「同意」后**方可 merge（L1）。
-- **考虑过但未采纳**：保留 push 服务私有舰队 + pull 服务公共（双轨）。否决——双轨要同时维护 DOWNSTREAM.md 清单和自查步，复杂度翻倍；push 半条命的价值（上游保证）在有 pull 后边际收益低。宁可 pull 单轨 + DOWNSTREAM.md 纯可选仪表盘。
+- **Decoupling the public template from the private fleet**: the template no longer embeds a downstream list as a gate; fleet data becomes an optional local convenience for the maintainer, deletable without breaking the protocol. This resolves "a public project shouldn't hardcode a downstream list."
+- **The nature of the trigger guarantee changes (honest record)**: push was "upstream guarantees the issue exists," pull is "downstream guarantees it self-checks at start of shift." Pull looks weaker, but — ① push also only guarantees the issue exists, not that downstream acts on it; downstream still has to do the three start-of-shift steps + take action; ② for strangers, push was always a fictional guarantee; ③ pull is more robust against the failure mode "upstream forgot to open the issue." Net assessment: under a realistic threat model, pull is at least no weaker than push.
+- **AGENTS.md body-level changes still need a human**: `gearbox-update`'s guardrails never touched downstream AGENTS.md anyway — that part relies on human judgment prompted by the report; push vs. pull doesn't change that for you, so switching to pull loses nothing. This ADR changes the downstream three start-of-shift steps, which is an AGENTS.md body-level change → add entry 26 to `AGENTS_MD_IMPACT` (and backfill the previously missing entry 25 = null).
+- **One-time migration for existing downstreams (the last push)**: dryrun/mandys/Blackbox each need to add the 4th start-of-shift step to their own AGENTS.md. This PR itself is `Affects downstream: yes`; under **the still-in-effect B-3 of this very PR**, open one migration issue for each of the three — this is the last push before B-3 retires, conveniently used to distribute the pull migration. After migrating, they rely on self-checks and no longer depend on upstream opening issues.
+- **Tier / version**: removing the B-3 "no link, no merge" hard-rule assertion = **L1** (relaxing/removing an existing gate's semantics, ADR-0010). Changing the downstream AGENTS.md three-start-of-shift-steps contract, requiring downstream to manually add a step = **major** (ADR-0023) → after v0.3.0 this becomes **v1.0.0**, which also appropriately marks "Gearbox's first breaking change / moving toward public."
+- **Three-piece set**: Protocol gap issue + this ADR + branch PR, merge only after CI is green + **the maintainer "agrees"** (L1).
+- **Considered but not adopted**: keeping push serving the private fleet + pull serving the public (dual-track). Rejected — dual-track means maintaining both the DOWNSTREAM.md list and the self-check step at once, doubling complexity; push's half-measure value (upstream's guarantee) has low marginal benefit once pull exists. Better to go pull-only + DOWNSTREAM.md as a purely optional dashboard.

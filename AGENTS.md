@@ -1,150 +1,150 @@
 # Gearbox
 
-多 agent 协作项目的开局骨架：`AGENTS.md` 作单一事实源 + ADR + CI 硬门禁。给凡是想让多个 AI coding agent（不限工具——Claude Code、Z Code、Cursor 等任意 agent coding tool 皆可）在同一个 repo 里轮流干活而不打架的人用。
+A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the single source of truth + ADRs + a CI hard gate. For anyone who wants multiple AI coding agents (tool-agnostic — Claude Code, Z Code, Cursor, or any agent coding tool) to take turns working in the same repo without stepping on each other.
 
 > This file is the single source of truth for ALL AI coding agents, whatever the tool (Claude Code, Z Code, Cursor, etc.).
 > Rules live here and only here. Do not duplicate them elsewhere.
 
 ## Tech stack
 
-- Node.js（结构自检脚本 + `scripts/gearbox-update` 下游回流 / `scripts/gearbox-install` 开局安装 / `scripts/gearbox-prune` 分支卫生，无运行时依赖，ADR-0017/0022/0030）
-- Bash（`scripts/gearbox-version` 下游同步速查，零依赖、只读，ADR-0016）
-- 纯 Markdown 文档（AGENTS.md / CONTEXT.md / ADR）
+- Node.js (structural self-check script + `scripts/gearbox-update` downstream backfill / `scripts/gearbox-install` scaffold install / `scripts/gearbox-prune` branch hygiene, no runtime dependencies, ADR-0017/0022/0030)
+- Bash (`scripts/gearbox-version` downstream sync quick-check, zero dependencies, read-only, ADR-0016)
+- Plain Markdown documentation (AGENTS.md / CONTEXT.md / ADRs)
 
 ## Hard rules
 
-<不可违反的项目规则，每条一行。例：钱一律用 cents + BigInt；禁止向客户端暴露 SECRET_*。>
+<Project rules that must not be violated, one per line. Example: money is always cents + BigInt; never expose SECRET_* to the client.>
 
-> **Gearbox 自身(dogfood)的硬规则不在本节复述**——以门禁断言为准(`scripts/check-gearbox.js` 是可执行的事实源)。协议正文中标注 **Hard rule / 硬规则** 的条款(如「Issue & PR 的角色」一节「必须开 issue,不许 silent 判断」硬规则,ADR-0003)**视同本节内容,受 L1 保护**:判据锚定标注本身,不锚定条款物理住在哪个章节(ADR-0018)。
-> 拷走本 Gearbox 时:删掉本注,把占位符换成你项目的硬规则。
+> **Gearbox's own (dogfood) hard rules are not repeated in this section** — the gate assertions are the source of truth (`scripts/check-gearbox.js` is the executable source of truth). Any clause in the protocol body marked **Hard rule** (e.g., the "must open an issue, no silent judgment" hard rule in the "Roles of issues & PRs" section, ADR-0003) **counts as part of this section and is protected under L1**: the criterion anchors to the marking itself, not to which section the clause physically lives in (ADR-0018).
+> When you copy this Gearbox: delete this note and replace the placeholder with your project's hard rules.
 
 ## Working agreement (multi-agent)
 
-### On starting a shift（开工三件事）
+### On starting a shift (the three start-of-shift steps)
 
-1. `git log --oneline -10` — 看最近发生了什么
-2. 查 GitHub Issues — **先找 open 的交接 issue**（上一棒的 Memory 在里面；读完关闭它 = 接手，见 ADR-0005。找不到 → 查最近关闭的 issue 有无「无下一棒」终局声明：有 = 合规终局收工（ADR-0009），正常开工；无 = 上一棒违规收工，开 Protocol gap issue 记录——两种情况都从 git log + open issues 重建上下文），然后看其他 open 任务和备注
-3. 跑一遍门禁命令（见下）确认基线是绿的 — 红的先修或开 issue，不带病开工
+1. `git log --oneline -10` — see what happened recently
+2. Check GitHub Issues — **first look for an open handoff issue** (the previous shift's Memory is in there; reading it and closing it = taking over, see ADR-0005. If none found → check whether the most recently closed issue has a "no next shift" terminal declaration: if yes = a compliant terminal shift (ADR-0009), start work normally; if no = the previous shift ended out of compliance, open a Protocol gap issue to record it — either way, rebuild context from git log + open issues), then check other open tasks and notes
+3. Run the gate command (see below) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline
 
 ### While working
 
-- 小步 commit，message 写清 **why**，不只是 what
-- 一个任务从头到尾一个 agent 做完；交接只发生在任务边界（issue 关闭 / PR 合并），不在任务中间
-- 非 trivial 改动走分支 + PR；typo 级小改可直接进 main
-- **项目自有**架构决策写 `docs/adr/`（一个决策一个文件，从 0001 起）；协议 ADR 在 `docs/gearbox-adr/`，由 gearbox 工具管，手别改
-- 业务术语的定义查 `CONTEXT.md`；新术语出现时补进去
+- Commit in small steps; the message should spell out the **why**, not just the what
+- One agent sees a task through from start to finish; handoffs only happen at task boundaries (issue closed / PR merged), never mid-task
+- Non-trivial changes go through a branch + PR; typo-level tweaks can go straight into main
+- **Project-owned** architectural decisions go in `docs/adr/` (one decision per file, starting at 0001); protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
+- Look up domain-term definitions in `CONTEXT.md`; add new terms as they come up
 
-### Issue & PR 的角色
+### Roles of issues & PRs
 
-Issues 和 PR 是 agent 之间（以及 agent ↔ 人之间）带时间戳、append-only、不腐烂的会话载体。在本协议里有**三个不重叠的角色**——每个 issue/PR 都该能归入其中一类：
+Issues and PRs are the timestamped, append-only, non-decaying conversation carriers between agents (and between agents and humans). In this protocol they have **three non-overlapping roles** — every issue/PR should fit into one of these:
 
-| 角色 | 什么时候用 | 什么时候关 |
+| Role | When to use | When to close |
 |---|---|---|
-| **Task**（任务） | 要做一件可执行的事 | 任务做完且门禁绿 |
-| **Memory**（交接记忆） | 收工时在**交接 issue**（见 On ending a shift）留 comment，五项格式 | 下一棒读完并关闭交接 issue = 接手完成 |
-| **Protocol gap**（协议缺口） | 撞上 repo 回答不了的问题（规则没写、歧义、边界模糊） | 缺口被补进 AGENTS.md / CONTEXT.md / ADR |
+| **Task** | There's an actionable thing to do | The task is done and the gate is green |
+| **Memory** (handoff memory) | Leave a comment on the **handoff issue** (see On ending a shift) at shift-end, five-part format | The next shift reads it and closes the handoff issue = handoff complete |
+| **Protocol gap** | Hit a question the repo can't answer (rule not written, ambiguous, boundary unclear) | The gap gets folded into AGENTS.md / CONTEXT.md / an ADR |
 
-硬规则：
+Hard rules:
 
-- **撞上 repo 回答不了的问题，必须开 issue（Protocol gap 类），不许 silent 判断。** 这是协议自我修复的唯一入口——缺口从"靠默契"变成"显性、可讨论、可关闭"。
-- **Memory 类 comment 的最小格式**（ADR-0004）：① 做到哪 ② 卡在哪 ③ 下一步是什么 ④ 任务完成则关 issue ⑤ **判断依据 / 权衡**——本棒做了非既定决策时必填（选了什么、为什么、什么前提失效时该推翻）；没做决策就写「无」，不许省略。少一项都不算合格交接。
-- **交接 = issue 关闭 / PR 合并的那一刻**，不是"我觉得讲清楚了"。没关 issue 就换人 = 任务中途换手，违反上一节。
-- **PR 是 Task 的实施载体，不是独立角色**：PR 引用它实现的 Task issue，merge 时关 issue。PR review 中发现的新问题另开 issue，不在 PR 评论里堆。
+- **When you hit a question this repo can't answer, you must open an issue (Protocol gap type) — silent judgment calls are not allowed.** This is the only entry point for the protocol's self-repair — it turns gaps from "tacit understanding" into something explicit, discussable, and closeable.
+- **Memory five-part format** (the minimum valid format for a handoff comment, ADR-0004): ① what's done ② what's blocked ③ what's next ④ close the issue if the task is complete ⑤ **rationale / trade-offs** — required whenever this shift made a non-default decision (what was chosen, why, and what premise failing would overturn it); if no decision was made, write "none" — don't omit it. Missing any one item means the handoff doesn't count.
+- **Handoff = the moment the issue closes / the PR merges**, not just feeling like things were "explained clearly." Switching agents without closing the issue is a mid-task handoff, which violates the previous section.
+- **A PR is the implementation vehicle for a Task, not a separate role**: a PR references the Task issue it implements, and closes that issue on merge. New issues found during PR review get their own issue — don't pile them up in PR comments.
 
-> 为什么用 issue comment 而不是独立交接文件：理由见 `docs/gearbox-adr/0003-issue-roles.md`。为什么 Memory 留在 open 交接 issue 而不是关闭的 Task issue：见 `docs/gearbox-adr/0005-handoff-lives-in-an-open-issue.md`。
+> Why use an issue comment instead of a standalone handoff file: see `docs/gearbox-adr/0003-issue-roles.md`. Why Memory lives in an open handoff issue rather than a closed Task issue: see `docs/gearbox-adr/0005-handoff-lives-in-an-open-issue.md`.
 
-### PR 处置（merge 规则）
+### PR disposition (merge rules)
 
-四条规则（ADR-0007）：
+Four rules (ADR-0007):
 
-- **merge 方式一律 merge commit**，不 squash、不 rebase：小步 commit 的 why 是协议资产（repo 是会话之间唯一的共享记忆），squash 等于删记忆；风格定死一种，历史才可预测。
-- **谁 merge**：PR 作者 agent 在 CI 绿后自行 merge。协议改动按分级走（见「协议自身的变更」）：L1 等 `<维护者>` 同意，L2 自主。
-- **review 不强制第二 agent**：轮班制下常态只有一棒在场，强制互审会阻塞在交接边界上。质量兜底 = CI 门禁 + `<维护者>` 事后否决权（revert + 重开 issue）。
-- **不接手别人的 open PR**——那是任务中途换手（见 While working）。例外：交接 issue 明确移交，或 `<维护者>` 指示。
+- **Always merge via merge commit** — never squash, never rebase: the why behind small-step commits is a protocol asset (the repo is the only shared memory between sessions), and squashing is equivalent to deleting memory; locking in one style keeps history predictable.
+- **Who merges**: the PR's author agent merges it themself once CI is green. Protocol changes follow the tier system (see "Changing the protocol itself"): L1 waits for `<maintainer>` agreement, L2 is autonomous.
+- **A second agent's review is not mandatory**: under the shift system, normally only one shift is present at a time, and forcing mutual review would block at handoff boundaries. Quality backstop = the CI gate + the `<maintainer>`'s after-the-fact veto (revert + reopen the issue).
+- **Don't take over someone else's open PR** — that's a mid-task handoff (see While working). Exception: the handoff issue explicitly transfers it, or the `<maintainer>` directs it.
 
-收工时 PR 还挂着 = 任务没做完：按 On ending a shift 第 3 条把进度写进 Task issue comment，PR 留 open。
+If a PR is still hanging open at shift-end, the task isn't done: per item 3 of On ending a shift, write progress into the Task issue's comment and leave the PR open.
 
-### 协议自身的变更（改本文件的规则）
+### Changing the protocol itself (rules for changing this file)
 
-agent 可以修改 AGENTS.md,但**按改动内容分级**(ADR-0006):
+Agents can modify AGENTS.md, but **the change is tiered by its content** (ADR-0006):
 
-| 层级 | 内容 | 流程 |
+| Tier | Content | Process |
 |---|---|---|
-| **L1 严格层** | Hard rules / Gate 命令 / Tech stack / 本节自身 | issue + ADR + PR,**且必须 `<维护者>` 在会话或 PR comment 中明确同意后 agent 才能 merge** |
-| **L2 自治层** | Working agreement(除 Gate)/ 索引(Where to find things) | issue + ADR + PR,agent 可自主 merge |
+| **L1 strict tier** | Hard rules / Gate command / Tech stack / this section itself | issue + ADR + PR, **and the agent may only merge after the `<maintainer>` explicitly agrees, in the session or in a PR comment** |
+| **L2 autonomous tier** | Working agreement (except Gate) / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
 
-> **拷走本 Gearbox 时:把 `<维护者>` 换成你(或你的团队)的名字。** 见 ADR-0006。
+> **When you copy this Gearbox: replace `<maintainer>` with your (or your team's) name.** See ADR-0006.
 
-「Gate 命令」的边界(ADR-0010):命令行本身与**放松/删除/改写门禁脚本现有断言** = L1;**新增收紧断言** = L2,随所属 PR 走。纯重构(行为不变)算 L2,举证责任在改的 agent。
+The boundary of "Gate command" (ADR-0010): the command line itself, and **loosening/deleting/rewriting an existing gate-script assertion** = L1; **adding a new, stricter assertion** = L2, riding along with its own PR. Pure refactors (behavior unchanged) count as L2, with the burden of proof on the agent making the change.
 
-**测试型门禁**(vitest / tsc / lint,ADR-0020):配置层直接套上行(收紧 L2 / 放松 L1 / 命令行 L1);测试内容层按**动机**定级——测试跟随产品代码变更同 PR 增删改 = L2 常规开发;**为绿而删**(删 / `.skip` / 弱化测试而 diff 无对应产品变更)= L1,沉默的 skip = 违规。删/skip 测试必须在 commit message 或 PR body 写明动机。
+**Test-type gates** (vitest / tsc / lint, ADR-0020): the config layer follows the rule above directly (tightening = L2 / loosening = L1 / the command line = L1); the test-content layer is tiered by **motive** — tests added/removed/changed in the same PR as the product code they follow = L2 routine development; **deleting to go green** (deleting / `.skip`-ing / weakening a test with no corresponding product-code change in the diff) = L1, and a silent skip is a violation. Deleting or skipping a test must state its motive in the commit message or PR body.
 
-通用规则(两层都适用):
+General rules (apply to both tiers):
 
-- **三件套缺一不可**:对应 issue(通常是 Protocol gap 类)+ ADR(记录决策与理由)+ 分支 PR(CI 绿才能 merge,merge 时关 issue)。
-- **没有 issue + ADR 的协议改动是违规的**,应当 revert,无论属于哪一层。
-- **协议变更比代码改动更重**:代码只在架构性决策时才要 ADR,协议变更一律要。
-- **人保留事后否决权**:revert 对应 PR + 重开 issue,即撤销该变更——即便当时没拦住。
+- **All three pieces are required, none optional**: a matching issue (usually Protocol gap type) + an ADR (recording the decision and its rationale) + a branch PR (CI must be green to merge; closes the issue on merge).
+- **A protocol change without an issue + ADR is out of compliance** and should be reverted, regardless of which tier it belongs to.
+- **Protocol changes carry more weight than code changes**: code only needs an ADR for architectural decisions, but protocol changes always need one.
+- **Humans retain an after-the-fact veto**: reverting the corresponding PR + reopening the issue undoes the change — even if it wasn't caught at the time.
 
-**L1/L2 边界判据**(ADR-0012,**机制引用优先**):新增内容只要**引用了 L1/L2 分级 / Hard rules / Working agreement 的机制**(无论是否"可选"、是否动现有文件),按 **L1** 处理。客观判据——文本中出现 `L1` / `L2` / `Hard rule` / `Working agreement` / `分级授权` 等机制关键词,或语义上依赖这些机制运转(如 subagent 路由依赖 L1/L2 决定派谁)。
+**L1/L2 boundary criterion** (ADR-0012, **mechanism reference takes priority**): any new content that **references the L1/L2 tiering / Hard rules / Working agreement mechanism** (regardless of whether it's "optional" or touches an existing file) is treated as **L1**. Objective criterion — the text contains mechanism keywords like `L1` / `L2` / `Hard rule` / `Working agreement` / "tiered authorization", or semantically depends on these mechanisms to function (e.g., subagent routing that depends on L1/L2 to decide who gets assigned).
 
-| 场景 | 归类 | 依据 |
+| Scenario | Classification | Basis |
 |---|---|---|
-| 新增模板/子系统,**引用** 协议机制 | **L1** | ADR-0012 |
-| 新增纯说明文档(如"如何贡献"),**不引用** 任何协议机制 | L2 | ADR-0012 |
-| 改现有协议文件(Hard rules / Gate / Tech stack / Working agreement 内容) | **L1** | ADR-0006 |
-| 改索引(Where to find things) | L2 | ADR-0005 |
-| CONTEXT.md 词条**定义**既有机制(仅改 CONTEXT.md + 注明出处 ADR + 不新增义务/不改流程边界,三要件缺一不可) | L2 | ADR-0019 |
+| New template/subsystem that **references** a protocol mechanism | **L1** | ADR-0012 |
+| New purely informational document (e.g. "how to contribute") that **references** no protocol mechanism | L2 | ADR-0012 |
+| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Working agreement content) | **L1** | ADR-0006 |
+| Modifying the index (Where to find things) | L2 | ADR-0005 |
+| A CONTEXT.md entry **defines** an existing mechanism (changes only CONTEXT.md + cites its source ADR + adds no new obligation/changes no process boundary — all three conditions required) | L2 | ADR-0019 |
 
-**定义豁免**(ADR-0019):判据抓的是**立法**(新增/修改机制语义),不是**描述**(把已立的法写进词汇表)。三要件任一不满足或拿不准 → 按 L1,不许自行豁免;借定义之名改语义 = 违规,revert + 重开 issue。
+**Definition exemption** (ADR-0019): the criterion targets **legislating** (adding/changing mechanism semantics), not **describing** (writing an already-legislated rule into the glossary). If any of the three conditions isn't met, or you're unsure → default to L1; don't grant yourself the exemption. Changing semantics under the guise of a definition is a violation — revert + reopen the issue.
 
-> 为什么严:agent 容易用"可选+纯新增"当 L2 通道扩张协议边界(参见 PR #21 复盘——subagent-system 引用 L1/L2 却 L2 self-merge)。本判据把这条路堵掉。
+> Why so strict: agents easily use "optional + purely additive" as an L2 channel to expand the protocol's boundaries (see the PR #21 retrospective — subagent-system referenced L1/L2 but self-merged as L2). This criterion closes off that path.
 
-L1 的"明确同意"是 b-弱形态:`<维护者>` 在会话里说"同意"或在 PR comment 里写"同意"即可,agent 自己操作 merge 按钮。**不强制 GitHub 的 approve 按钮**——代价是 `<维护者>` 成为 L1 瓶颈,这个代价接受。
+L1's "explicit agreement" is a weak-b form: it's enough for the `<maintainer>` to say "agreed" in the session or write "agreed" in a PR comment, and the agent presses the merge button itself. **GitHub's Approve button is not required** — the cost is that the `<maintainer>` becomes the L1 bottleneck, and that cost is accepted.
 
-**下游回流**(ADR-0013,pull 触发见 ADR-0026):回流以 **pull 为主**——下游开工时跑 `gearbox-version` 自查协议版本,落后就 `gearbox-update`(触发不依赖上游认识下游,适配公共 fork)。上游侧:每个协议改动 PR 仍在 PR body 声明 `Affects downstream`(`yes`/`no` + 一句理由),但**降为信息性——帮判断影响面,不再逐下游开 issue、不再阻塞 merge**(「无链接=不能 merge」已随 ADR-0026 退役)。维护者若维护私有舰队,可**可选地**对 `DOWNSTREAM.md` 已登记项目开告知 issue,非强制。
+**Downstream backfill** (ADR-0013, pull trigger see ADR-0026): backfill is **pull-primary** — when a downstream project starts a shift, it runs `gearbox-version` to self-check the protocol version, and runs `gearbox-update` if it's behind (the trigger doesn't depend on upstream knowing about downstream, which fits public forks). On the upstream side: every protocol-change PR still declares `Affects downstream` in the PR body (`yes`/`no` + one reason), but this is now **downgraded to informational — it helps gauge blast radius, and no longer opens an issue per downstream project or blocks merge** ("no link = can't merge" was retired along with ADR-0026). A maintainer running a private fleet may **optionally** open notification issues against projects registered in `DOWNSTREAM.md`; this is not mandatory.
 
-**协议版本号**(ADR-0023):semver 变体,基线 `v0.0.0`。段位判据——**major** = 跨工具/跨 repo 契约变更(hash 戳记格式、install 锚点结构、文件布局、改名),下游回流需人工干预;**minor** = 新增机制(新 ADR / 新工具 / 新协议条款);**patch** = 已有文件修订(措辞、status 行、typo)。流程(ADR-0029 补全至 npm 上线)——PR body 必须声明 `Version bump: major|minor|patch|none`(`none` 需一句理由,通过 PR 模板);**同一 PR 里作者把 `package.json` 的 `version` 改成本次目标版本(= 最新 tag + 段位,与 git tag 恒等号,ADR-0028)**;merge 后**作者 agent** 以 merge 时刻最新 tag 为基准打 annotated tag 并 push;**然后维护者跑 `npm publish` 发布 npx 包(ADR-0028/0029;发外部 registry、需凭据,agent 不代跑)**。`none` 段位不触发 tag/publish、不动 `package.json` version。不建 CHANGELOG——tag message + ADR 即变更记录。下游本地版本记在 `.gearbox-version` 戳记文件,工具写工具读(install 装机写 / update 回流更新 / version 读取对比),人不维护。
+**Protocol version number** (ADR-0023): a semver variant, baseline `v0.0.0`. Segment criterion — **major** = a cross-tool/cross-repo contract change (hash stamp format, install-anchor structure, file layout, renames) that needs manual intervention for downstream backfill; **minor** = a new mechanism (new ADR / new tool / new protocol clause); **patch** = a revision to an existing file (wording, a status line, a typo). Process (ADR-0029 completes it through npm launch) — the PR body must declare `Version bump: major|minor|patch|none` (`none` needs one reason, enforced via the PR template); **in the same PR, the author sets `package.json`'s `version` to this change's target version (= latest tag + segment, held equal to the git tag, ADR-0028)**; after merge, **the author agent** tags an annotated tag based on the latest tag at merge time and pushes it; **then the maintainer runs `npm publish` to release the npx package (ADR-0028/0029; this hits an external registry and needs credentials, so agents don't run it on the maintainer's behalf)**. A `none` segment triggers no tag/publish and doesn't touch `package.json`'s version. No CHANGELOG is maintained — the tag message + the ADR serve as the change record. Downstream local versions are recorded in the `.gearbox-version` stamp file, written and read by tooling (install writes it at scaffold time / update refreshes it during backfill / version reads it to compare) — humans don't maintain it.
 
-### Gate（门禁 — 收工前必须全绿）
+### Gate (the hard gate — must be all-green before shift-end)
 
 ```bash
 node scripts/check-gearbox.js
 ```
 
-> 本 repo 是文档型模板(Gearbox 本体)，门禁不跑 vitest/tsc/lint，而是跑一个**结构自检脚本**：验证必需文件存在、`CLAUDE.md` 仍是 `@AGENTS.md` 空壳、关键章节锚点没被改名、不出现 `HANDOFF`、本 Gate 一节确实跑这个脚本（防止"CI 和 AGENTS.md 各跑各的"的契约漂移）。
+> This repo is a documentation-only template (the Gearbox core itself), so the gate doesn't run vitest/tsc/lint — it runs a **structural self-check script**: it verifies required files exist, `CLAUDE.md` is still the `@AGENTS.md` empty shell, the key section anchors haven't been renamed, `HANDOFF` never appears, and this Gate section actually runs this script (guarding against "CI and AGENTS.md running different things" contract drift).
 
-CI（`.github/workflows/ci.yml`）跑同一套命令，红了不许 merge。
+CI (`.github/workflows/ci.yml`) runs the same set of commands; if it's red, merging is not allowed.
 
-### On ending a shift（收工规矩）
+### On ending a shift (shift-end rules)
 
-1. 门禁全绿
+1. The gate is all-green
 2. commit + push
-3. 做完的 Task issue 照常关闭；做到一半的,进度写到该 issue 的 comment
-4. **开下一棒的交接 issue**（Task 类,保持 open,ADR-0005）:body 写现状与下一步建议,本轮 Memory comment（五项格式,ADR-0004）留在这里。**这是下一棒唯一保证撞见的入口**——Memory 不再埋进随手关闭的 Task issue。**唯一例外——终局收工**（ADR-0009）:归档 / 确认无下一棒时可不开,但必须在最后关闭的 issue 里 comment 显式声明「无下一棒」+ 理由,沉默的终局不算终局
+3. Close finished Task issues as usual; for half-finished ones, write progress into that issue's comment
+4. **Open a handoff issue for the next shift** (Task type, kept open, ADR-0005): the body states the current state and suggestions for next steps, and this shift's Memory comment (five-part format, ADR-0004) goes here. **This is the only entry point the next shift is guaranteed to encounter** — Memory no longer gets buried in a casually closed Task issue. **The sole exception — a terminal shift** (ADR-0009): when archiving / confirming there's no next shift, you may skip opening one, but you must explicitly declare "no next shift" + the reason in a comment on the last closed issue. A silent terminal doesn't count as terminal
 
-### 分支卫生（可选）
+### Branch hygiene (optional)
 
-收工前（或开工撞到 stale refs 时）跑 `npx gearbox-agents prune`（本仓库可直接跑 `node scripts/gearbox-prune`）。清理三样（ADR-0030）：
+Before shift-end (or when you hit stale refs at shift-start), run `npx gearbox-agents prune` (in this repo you can run `node scripts/gearbox-prune` directly). It cleans up three things (ADR-0030):
 
-- 本地已合并分支（`git branch -d` 安全删，失败响亮）
-- stale remote-tracking refs（`git fetch --prune`）
-- 远程已合并分支（`--apply-remote`，删前打印清单 + 确认）
+- Locally merged branches (`git branch -d` safe-deletes, fails loudly)
+- stale remote-tracking refs (`git fetch --prune`)
+- Remote merged branches (`--apply-remote`, prints the list + asks for confirmation before deleting)
 
-默认 dry-run 不删任何东西；白名单保护当前分支 / 默认分支 / `gearbox-backfill-*`；永不强删（`-D`）。不替代 GitHub 的 `delete_branch_on_merge` 设置——推荐仓库 owner 开启（根治），工具是兜底（`--check-settings` 核对并给出开启命令，不自动改）。
+Dry-run by default — deletes nothing; a whitelist protects the current branch / the default branch / `gearbox-backfill-*`; never force-deletes (`-D`). This doesn't replace GitHub's `delete_branch_on_merge` setting — turning that on is the recommended root fix for repo owners; the tool is a backstop (`--check-settings` checks it and prints the command to enable it, without changing it automatically).
 
-### Division of labor（可选，按需填）
+### Division of labor (optional, fill in as needed)
 
-分工是项目属性，模板不预设（ADR-0008）。拷走时三选一：
+Division of labor is a project-level property; the template doesn't presume one (ADR-0008). When you copy this, pick one of three:
 
-1. **填实**：哪类任务归哪个 agent（按能力分，不绑定具体工具）。<未验证的候选示例：机械性批量修改、补测试 → 擅长批量执行的 agent；架构设计、难 bug → 擅长深推理的 agent>
-2. **不填**：默认规则 = **Task issue 认领制**——谁认领谁从头做到尾（见 While working），任务不按 agent 特长路由。
-3. **单 agent 项目**：整节删除（本节不是门禁锚点，删除不破 `check-gearbox.js`）。
+1. **Fill it in**: which kind of task goes to which agent (split by capability, not tied to a specific tool). <Unvalidated candidate example: mechanical bulk edits, filling in tests → an agent good at bulk execution; architectural design, hard bugs → an agent good at deep reasoning>
+2. **Leave it blank**: the default rule = **Task-issue claim-based ownership** — whoever claims a task sees it through start to finish (see While working); tasks aren't routed by agent specialty.
+3. **Single-agent project**: delete this whole section (it's not a gate anchor, so deleting it won't break `check-gearbox.js`).
 
 ## Where to find things
 
-- `CONTEXT.md` — 领域词汇表
-- `docs/gearbox-adr/` — 协议 ADR（拷自 Gearbox，工具管，手别改）
-- `docs/adr/` — 本项目自有架构决策（从 0001 起）
-- `scripts/` — 门禁自检（check-gearbox.js）+ 下游工具家族（gearbox-install 开局 / gearbox-version 读 / gearbox-update 写 / gearbox-prune 分支卫生，ADR-0016/0017/0022/0030）
-- <其他模块文档目录，如 docs/modules/>
+- `CONTEXT.md` — domain glossary
+- `docs/gearbox-adr/` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
+- `docs/adr/` — this project's own architectural decisions (starting at 0001)
+- `scripts/` — gate self-check (check-gearbox.js) + the downstream tool family (gearbox-install scaffold / gearbox-version read / gearbox-update write / gearbox-prune branch hygiene, ADR-0016/0017/0022/0030)
+- <other module documentation directories, e.g. docs/modules/>

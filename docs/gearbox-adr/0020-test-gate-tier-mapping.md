@@ -1,43 +1,43 @@
-# ADR-0020: 测试型门禁的分层映射——配置层套 0010,内容层按动机定级
+# ADR-0020: Tier Mapping for Test-Type Gates — Configuration Layer Follows ADR-0010, Content Layer Is Tiered by Motive
 
 - Date: 2026-07-19
 - Status: accepted
-- 修订对象: ADR-0010(补齐其未定义的测试型门禁映射;结构自检型的原判据不动)
+- Revises: ADR-0010 (fills the gap it left undefined for test-type gates; the original criterion for structural-self-check-type gates is unchanged)
 
 ## Context
 
-ADR-0010 的断言分层(收紧 L2 / 放松删除 L1)是对着**结构自检型**门禁(`check-gearbox.js`)定的——断言是协议契约:少、稳定、不随功能变。下游项目跑的是**测试型**门禁(vitest / tsc / lint)——测试是产品行为规格:多、高频增删改、跟着功能走。直接套用等于"每删一个过时测试都要维护者同意",不可用。缺口挂在 issue #19。
+ADR-0010's assertion tiering (tightening = L2 / loosening or removing = L1) was written against a **structural-self-check-type** gate (`check-gearbox.js`) — its assertions are a protocol contract: few, stable, and don't move with features. Downstream projects run **test-type** gates (vitest / tsc / lint) — tests are a product-behavior spec: many, frequently added/removed/changed, and they move with features. Applying the tiering directly would mean "every deleted stale test needs maintainer agreement" — unworkable. The gap sat in issue #19.
 
-分层的本意:**不许为了过门禁而偷偷放松门禁**。对测试型门禁,威胁模型是"agent 删/skip 失败的测试换绿",不是"agent 正常维护测试"。
+The tiering's original intent: **don't quietly loosen the gate in order to pass it**. For test-type gates, the threat model is "the agent deletes/skips a failing test to turn it green," not "the agent does normal test maintenance."
 
 ## Decision
 
-测试型门禁分两层定级:
+Test-type gates are tiered on two layers:
 
-### 1. 门禁配置层——直接套 ADR-0010
+### 1. Gate configuration layer — apply ADR-0010 directly
 
-| 动作 | 归类 |
+| Action | Tier |
 |---|---|
-| Gate 命令行本身(`vitest run` / `tsc --noEmit` 等) | **L1** |
-| 收紧配置:开 strict flag、升 coverage 阈值、加 lint rule | L2,随所属 PR 走 |
-| 放松配置:关 flag、降阈值、disable rule、加 exclude/skip pattern | **L1** |
+| The gate command line itself (`vitest run` / `tsc --noEmit` etc.) | **L1** |
+| Tightening config: turning on a strict flag, raising a coverage threshold, adding a lint rule | L2, rides with its own PR |
+| Loosening config: turning off a flag, lowering a threshold, disabling a rule, adding an exclude/skip pattern | **L1** |
 
-### 2. 测试内容层——判据从「动作」改成「动机」
+### 2. Test content layer — the criterion shifts from "action" to "motive"
 
-| 动作 | 归类 |
+| Action | Tier |
 |---|---|
-| 测试**跟随产品代码变更**同 PR 增删改(功能删了测试跟着删、行为改了断言跟着改) | L2,常规开发,零仪式 |
-| **为绿而删**:删 / `.skip` / 弱化测试,diff 里**没有对应产品代码变更** | **L1**;沉默的 skip = 违规,revert 对象 |
+| Tests **follow product code changes** in the same PR (adds/removes/edits) — a feature was removed so its tests follow, behavior changed so assertions follow | L2, routine development, zero ceremony |
+| **Deleted purely to go green**: deleting / `.skip`ping / weakening a test, with **no corresponding product-code change** in the diff | **L1**; a silent skip = a violation, subject to revert |
 
-可 review 的客观信号:PR 出现 `.skip` / `.todo` / 删测试文件,而无对应产品 diff → 触发 L1 审查。
+A reviewable, objective signal: a PR that contains `.skip` / `.todo` / a deleted test file with no matching product diff → triggers L1 review.
 
-### 3. 执行方式——声明义务,不上脚本
+### 3. Enforcement — a declared obligation, not scripted
 
-测试数量正常波动,无法像结构门禁那样脚本断言。执行靠声明义务:**删/skip 测试必须在 commit message 或 PR body 写明动机**。失效模式可见(review 一眼抓)——与 B-3(ADR-0013)同款取舍:用可见性换简单性。
+Test counts fluctuate normally and can't be asserted by script the way the structural gate can. Enforcement relies on a declared obligation: **deleting/skipping a test must state its motive in the commit message or PR body**. The failure mode is visible (a one-glance review catches it) — the same trade-off as B-3 (ADR-0013): trading visibility for simplicity.
 
 ## Consequences
 
-- **下游拿到可用的判据**:3 个下游全跑测试型门禁,本 ADR 就是为它们补的;随 AGENTS.md 模板拷贝生效
-- **常规开发零新增仪式**:跟随功能的测试增删改不需要任何额外动作;只有"删测试却不改产品代码"这个窄面需要声明动机
-- **边界诚实声明**:分层管"不许偷偷放松",不管"测试写得好不好";"全绿 ≠ 正确"(README 已认)照旧不根治
-- **残余空间(接受)**:「对应产品代码变更」的判定有主观余地(重构大挪移时对应关系模糊)。兜底同 ADR-0019:拿不准按 L1 + 维护者事后否决权
+- **Downstream gets a usable criterion**: all 3 downstream projects run test-type gates; this ADR was written to fill that gap for them, and takes effect via the AGENTS.md template copy
+- **Zero new ceremony for routine development**: test add/remove/edit that follows a feature needs no extra action; only the narrow case of "deleted a test without changing product code" needs a declared motive
+- **The boundary is stated honestly**: the tiering governs "don't quietly loosen," not "are the tests well-written"; "all green ≠ correct" (already acknowledged in the README) remains unaddressed
+- **Residual space (accepted)**: judging "a corresponding product-code change" still leaves subjective room (a large refactor can blur the correspondence). Same backstop as ADR-0019: when unsure, default to L1, plus the maintainer's after-the-fact veto

@@ -1,39 +1,51 @@
 #!/usr/bin/env node
-// gearbox-update — 激进版下游 ADR 同步工具
+// gearbox-update — aggressive downstream ADR sync tool
 //
-// 用法: 在下游 repo 根目录跑 `gearbox-update [--refresh-drift] [--force-redo] [--allow-branch]`
-//   --refresh-drift  重拷「上游已修订」的漂移拷贝(ADR-0024): 带 sha256 戳记的
-//                    slug 匹配拷贝, 记录 hash ≠ 上游当前 hash 时用上游最新内容
-//                    重跑变换覆盖(保留下游编号, 戳记换新)。会丢下游对拷贝的
-//                    本地修改——靠分支 + PR review 兜底, 所以是 opt-in。
-//   --force-redo     今日回流分支已存在时删掉重建(ADR-0025), push 用
-//                    --force-with-lease 覆盖远端。分支上的手工修改会丢——
-//                    确认没有再用。默认(无 flag)报错不删。
-//   --allow-branch   跳过「自动切回 main/master」(ADR-0025), 基于当前分支跑。
-//                    基分支正确性自担——基不对产物就不可信。
+// Usage: run `gearbox-update [--refresh-drift] [--force-redo] [--allow-branch]` from a
+//   downstream repo's root
+//   --refresh-drift  re-copy backfilled ADRs whose "upstream has been revised" (ADR-0024):
+//                    for a slug-matched copy carrying a sha256 stamp, when the recorded hash
+//                    ≠ the upstream file's current hash, rerun the transform against the
+//                    upstream's latest content and overwrite (keeps the downstream number,
+//                    stamp gets refreshed). This drops any local edits the downstream made to
+//                    the copy — a branch + PR review is the safety net, so it's opt-in.
+//   --force-redo     if today's backfill branch already exists, delete and rebuild it
+//                    (ADR-0025); push uses --force-with-lease to overwrite the remote. Manual
+//                    edits on that branch are lost — confirm there are none before using this.
+//                    Default (no flag): error out, don't delete.
+//   --allow-branch   skip the "auto-switch back to main/master" step (ADR-0025) and run
+//                    against the current branch. Base-branch correctness is on you — if the
+//                    base is wrong, the output isn't trustworthy.
 //
-// 开跑防呆(ADR-0025): clean 检查豁免本工具自己的 gearbox-update-report.md;
-// 不在 main/master 时自动 git checkout main(除非 --allow-branch)。
+// Startup safety checks (ADR-0025): the clean-worktree check exempts this tool's own
+// gearbox-update-report.md; auto `git checkout main` when not on main/master (unless
+// --allow-branch).
 //
-// 做什么:
-//   1. 扫描 gearbox 有而下游缺的 ADR,按上游原号拷入 docs/gearbox-adr/
-//      (双目录分家后协议 ADR 号与上游 1:1 恒等,不撞号、不重编号,ADR-0031)
-//   2. 同步 supersede 关系（gearbox 0012 → 下游 0006 status 改 partially superseded）
-//   3. 更新 .gearbox-version 戳记为上游最新 tag（ADR-0023）
-//   4. git add + commit + push 到新分支 docs/gearbox-backfill-{date}
-//   5. 输出 gearbox-update-report.md 提示用户手改 AGENTS.md（脚本不碰 AGENTS.md）
+// What it does:
+//   1. Scans for ADRs Gearbox has that downstream lacks, and copies them into
+//      docs/gearbox-adr/ under their upstream number (after the dual-directory split,
+//      protocol ADR numbers are 1:1 with upstream — no collisions, no renumbering, ADR-0031)
+//   2. Syncs supersede relationships (gearbox 0012 → downstream 0006 status becomes
+//      partially superseded)
+//   3. Updates the `.gearbox-version` stamp to upstream's latest tag (ADR-0023)
+//   4. git add + commit + push to a new branch docs/gearbox-backfill-{date}
+//   5. Writes gearbox-update-report.md prompting the user to hand-edit AGENTS.md (the script
+//      never touches AGENTS.md)
 //
-// 不做什么:
-//   - 不改下游 AGENTS.md（L1 文件，只报告）
-//   - 不改 gearbox repo 任何文件（下游侧工具）
-//   - 不自动 gh pr create（留给用户）
-//   - 不自动 merge（L1 需维护者同意）
+// What it doesn't do:
+//   - Doesn't touch downstream AGENTS.md (an L1 file — report only)
+//   - Doesn't touch any file in the gearbox repo itself (this is a downstream-side tool)
+//   - Doesn't run `gh pr create` automatically (left for the user)
+//   - Doesn't auto-merge (L1 requires maintainer agreement)
 //
-// 协议合规: 个人工具，不是 gearbox 协议改动。回流 PR 仍走下游 L1 流程。
-// 对比 gearbox-version: version 只读报状态；update 写文件 + 开分支。
+// Protocol compliance: this is a personal tool, not a Gearbox protocol change. A backfill PR
+// still goes through the downstream's own L1 flow.
+// Compared to gearbox-version: version is read-only and reports status; update writes files
+// and opens a branch.
 //
-// 上游寻址 (ADR-0027): env GEARBOX_DIR > 本地 ~/Github/gearbox > .gearbox-upstream
-// 远端缓存 (~/.cache/gearbox/, 浅克隆)。远端取不到 → 硬报错 (拉不到不能假装成功)。
+// Upstream addressing (ADR-0027): env GEARBOX_DIR > local ~/Github/gearbox > .gearbox-upstream
+// remote cache (~/.cache/gearbox/, shallow clone). If the remote can't be reached → hard error
+// (a failed pull can't be reported as success).
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -41,17 +53,18 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 
-// ============== 配置 ==============
+// ============== Config ==============
 
-// 上游寻址(ADR-0027): 运行时 resolveUpstream() 解析——env/本地默认命中用本地,
-// 否则 .gearbox-upstream 远端浅克隆缓存。这三个在 main() 开头被 resolveUpstream 重写。
+// Upstream addressing (ADR-0027): resolved at runtime by resolveUpstream() — a hit on
+// env/local default uses local, otherwise falls back to the .gearbox-upstream remote
+// shallow-clone cache. These three are overwritten by resolveUpstream() at the start of main().
 let GEARBOX_DIR = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
 let GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
-let UPSTREAM_URL = null; // 远端时 = .gearbox-upstream URL;本地时 = null
+let UPSTREAM_URL = null; // = the .gearbox-upstream URL when remote; null when local
 const GEARBOX_GITHUB_BASE =
   "https://github.com/real-stanyan/gearbox/blob/master/docs/gearbox-adr";
 
-// CLI 参数
+// CLI args
 let refreshDrift = false;
 let forceRedo = false;
 let allowBranch = false;
@@ -65,12 +78,12 @@ for (const a of argv.slice(2)) {
     );
     exit(0);
   } else {
-    console.error(`未知参数: ${a} (--help 看用法)`);
+    console.error(`Unknown argument: ${a} (see --help for usage)`);
     exit(1);
   }
 }
 
-// 颜色
+// Colors
 const C = {
   red: (s) => `\x1b[31m${s}\x1b[0m`,
   green: (s) => `\x1b[32m${s}\x1b[0m`,
@@ -92,7 +105,7 @@ function pad4(n) {
   return String(n).padStart(4, "0");
 }
 
-// sha256 前 12 位(ADR-0021 戳记契约)
+// sha256, first 12 chars (ADR-0021 stamp contract)
 function sha12(s) {
   return createHash("sha256").update(s).digest("hex").slice(0, 12);
 }
@@ -109,12 +122,13 @@ function tryRun(cmd) {
   }
 }
 
-// 上游寻址(ADR-0027): env > 本地默认 > .gearbox-upstream 远端缓存。
-// 重写模块级 GEARBOX_DIR / GEARBOX_ADR_DIR / UPSTREAM_URL。main() 开头调用。
+// Upstream addressing (ADR-0027): env > local default > .gearbox-upstream remote cache.
+// Overwrites the module-level GEARBOX_DIR / GEARBOX_ADR_DIR / UPSTREAM_URL. Called at the
+// start of main().
 function resolveUpstream() {
   const localDir = env.GEARBOX_DIR || `${env.HOME}/Github/gearbox`;
   if (existsSync(join(localDir, "docs/gearbox-adr"))) {
-    GEARBOX_DIR = localDir; // 本地命中(维护者舰队),不碰远端
+    GEARBOX_DIR = localDir; // local hit (a maintainer's own fleet) — don't touch the remote
     GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
     return;
   }
@@ -133,10 +147,10 @@ function resolveUpstream() {
           run(`git clone -q --depth 1 "${url}" "${cacheDir}"`);
         }
       } catch {
-        // update 主动拉取,取不到就是取不到——硬报错(ADR-0027)
+        // update actively pulls — if it can't reach upstream, that's a hard error (ADR-0027)
         die(
-          `无法访问上游远端(离线?): ${url}`,
-          "gearbox-update 需能拉取上游;检查网络或 .gearbox-upstream URL(ADR-0027)",
+          `Can't reach the upstream remote (offline?): ${url}`,
+          "gearbox-update needs to fetch upstream — check your network or the .gearbox-upstream URL (ADR-0027)",
         );
       }
       GEARBOX_DIR = cacheDir;
@@ -145,12 +159,12 @@ function resolveUpstream() {
       return;
     }
   }
-  // 都没有:保持本地默认,后续 existsSync(GEARBOX_ADR_DIR) 报错兜底
+  // Neither is set: keep the local default, existsSync(GEARBOX_ADR_DIR) reports the error later
   GEARBOX_DIR = localDir;
   GEARBOX_ADR_DIR = join(localDir, "docs/gearbox-adr");
 }
 
-// 跑 git 命令并喂 stdin(用于多行 commit message)
+// Run a git command feeding stdin (used for multi-line commit messages)
 function runWithStdin(cmd, input) {
   return execSync(cmd, {
     input,
@@ -159,7 +173,7 @@ function runWithStdin(cmd, input) {
   }).trim();
 }
 
-// 提取 ADR 元数据从文件名 + 内容
+// Extract ADR metadata from the filename + content
 function parseAdrFile(filePath) {
   const fileName = filePath.split("/").pop();
   const match = fileName.match(/^(\d{4})-(.+)\.md$/);
@@ -178,21 +192,22 @@ function parseAdrFile(filePath) {
   const titleLine = lines.find((l) => l.startsWith("# ADR-"));
   const title = titleLine ? titleLine.replace(/^# ADR-\d+:\s*/, "") : slug;
 
-  // header = 前 15 行（足够覆盖 Status/Date/溯源/Supersedes/修订对象）
+  // header = the first 15 lines (enough to cover Status/Date/Provenance/Supersedes/Revises)
   const headerLines = lines.slice(0, 15);
   const headerText = headerLines.join("\n");
 
-  // 解析 header 字段
+  // Parse header fields
   const statusMatch = headerText.match(/^- Status:\s*(.+)$/m);
   const supersedesMatch = headerText.match(/^- Supersedes:\s*ADR-(\d+)/m);
   const supersededByMatch = headerText.match(
     /partially superseded by ADR-(\d+)/,
   );
-  // 兼容改名前后两种写法: "回流自 scaffold ADR-NNNN" / "回流自 Gearbox ADR-NNNN"
+  // Canonical provenance regex: matches both the install-written "copied from" stamp and the
+  // update-written "backfilled from" stamp (Gearbox Task 3/4 provenance contract).
   const provenanceMatch = headerText.match(
-    /溯源:\s*回流自\s*\[?(?:scaffold|gearbox)\s+ADR-(\d+)/i,
+    /Provenance:\s*(?:copied|backfilled) from\s*\[?(?:scaffold|gearbox)\s+ADR-(\d+)/i,
   );
-  const 修订对象Match = headerText.match(/修订对象:\s*ADR-(\d+)/);
+  const revisesMatch = headerText.match(/Revises:\s*ADR-(\d+)/);
 
   return {
     num,
@@ -209,8 +224,8 @@ function parseAdrFile(filePath) {
     provenanceGearboxNum: provenanceMatch
       ? parseInt(provenanceMatch[1], 10)
       : null,
-    修订对象: 修订对象Match ? parseInt(修订对象Match[1], 10) : null,
-    hasProvenanceField: /- 溯源:/.test(headerText),
+    revises: revisesMatch ? parseInt(revisesMatch[1], 10) : null,
+    hasProvenanceField: /- Provenance:/.test(headerText),
   };
 }
 
@@ -225,7 +240,7 @@ function buildAdrIndex(adrDir) {
   return index;
 }
 
-// ============== 入口校验 ==============
+// ============== entry validation ==============
 
 function validateContext() {
   const downDir = cwd();
@@ -233,44 +248,46 @@ function validateContext() {
 
   if (!existsSync(GEARBOX_ADR_DIR)) {
     die(
-      `找不到 gearbox ADR 目录: ${GEARBOX_ADR_DIR}`,
-      "设 GEARBOX_DIR 环境变量,或在 .gearbox-upstream 写上游 git URL(ADR-0027 远端寻址)",
+      `Gearbox ADR directory not found: ${GEARBOX_ADR_DIR}`,
+      "set the GEARBOX_DIR env var, or put the upstream git URL in .gearbox-upstream (ADR-0027 remote addressing)",
     );
   }
   if (!existsSync(downAdrDir)) {
     die(
-      "当前目录没有 docs/gearbox-adr/",
-      "请在下游 repo 根目录跑本命令(gearbox 协议项目都有 docs/gearbox-adr/)",
+      "Current directory has no docs/gearbox-adr/",
+      "run this from a downstream repo's root (Gearbox-protocol projects all have docs/gearbox-adr/)",
     );
   }
 
-  // git repo 校验
+  // git repo check
   const inGitRepo = tryRun("git rev-parse --is-inside-work-tree");
   if (inGitRepo !== "true") {
-    die("当前目录不是 git repo", "gearbox-update 需要 git 操作");
+    die("Current directory is not a git repo", "gearbox-update needs git operations");
   }
 
-  // 工作树 clean 校验(ADR-0025: 豁免本工具自己的报告文件——用完即弃, 每次覆盖)
+  // Clean-worktree check (ADR-0025: exempts this tool's own report file — it's disposable and
+  // overwritten every run)
   const statusLines = run("git status --porcelain")
     .split("\n")
     .filter(Boolean)
     .filter((l) => !/gearbox-update-report\.md$/.test(l));
   if (statusLines.length > 0) {
     die(
-      "工作树不 clean,有未提交改动:",
-      "先 commit 或 stash,再跑 gearbox-update(避免脚本污染你的改动):\n" +
+      "Working tree isn't clean, there are uncommitted changes:",
+      "commit or stash first, then run gearbox-update (this keeps the script from clobbering your changes):\n" +
         statusLines.join("\n"),
     );
   }
 
-  // 基分支(ADR-0025): 不在 main/master → 自动切回, 防止回流分支从错误的基
-  // 分叉(继承旧拷贝, 产物不可信)。--allow-branch 跳过, 基分支正确性自担。
+  // Base branch (ADR-0025): auto-switch when not on main/master, so the backfill branch
+  // doesn't fork from the wrong base (inheriting stale copies, producing untrustworthy
+  // output). --allow-branch skips this — base-branch correctness is on you.
   let branch = run("git rev-parse --abbrev-ref HEAD");
   if (branch !== "main" && branch !== "master") {
     if (allowBranch) {
       stdout.write(
-        C.yellow(`⚠️  --allow-branch: 基于 ${branch} 分支跑(不是 main/master)\n`) +
-          C.dim("  基分支正确性自担——基不对产物就不可信\n"),
+        C.yellow(`⚠️  --allow-branch: running against ${branch} (not main/master)\n`) +
+          C.dim("  base-branch correctness is on you — if the base is wrong, the output isn't trustworthy\n"),
       );
     } else {
       const target = tryRun("git rev-parse --verify --quiet main")
@@ -280,21 +297,22 @@ function validateContext() {
           : null;
       if (!target) {
         die(
-          `当前在 ${branch} 分支,且找不到 main/master 可切换`,
-          "回流分支必须基于主分支(ADR-0025)。真要基于当前分支: --allow-branch",
+          `Currently on ${branch}, and no main/master to switch to`,
+          "the backfill branch must be based on the main branch (ADR-0025). To really base it on the current branch: --allow-branch",
         );
       }
       run(`git checkout ${target}`);
       stdout.write(
-        C.yellow(`⚠️  当前在 ${branch},已自动切回 ${target}(ADR-0025)\n`) +
-          C.dim("  真要基于原分支跑: --allow-branch\n"),
+        C.yellow(`⚠️  Was on ${branch}, auto-switched to ${target} (ADR-0025)\n`) +
+          C.dim("  To really run against the original branch: --allow-branch\n"),
       );
       branch = target;
     }
   }
 
-  // 预检查:今日分支名是否已存在。默认报错(分支上可能有手工 L1 修改,
-  // 自动删 = 可能销毁人工工作); --force-redo 显式删掉重建(ADR-0025)。
+  // Pre-check: does today's branch name already exist? Errors by default (the branch may hold
+  // manual L1 edits — auto-deleting could destroy that work); --force-redo explicitly deletes
+  // and rebuilds it (ADR-0025).
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
   const branchExists = tryRun(`git rev-parse --verify ${plannedBranch} 2>/dev/null`);
@@ -302,16 +320,16 @@ function validateContext() {
     if (forceRedo) {
       run(`git branch -D ${plannedBranch}`);
       stdout.write(
-        C.yellow(`⚠️  --force-redo: 已删本地分支 ${plannedBranch},重建\n`) +
-          C.dim("  push 将用 --force-with-lease 覆盖远端(若存在)\n"),
+        C.yellow(`⚠️  --force-redo: deleted local branch ${plannedBranch}, rebuilding\n`) +
+          C.dim("  push will use --force-with-lease to overwrite the remote (if it exists)\n"),
       );
     } else {
       die(
-        `今日分支已存在: ${plannedBranch}`,
-        `今天已经跑过一次。三选一:\n` +
-          `  1) 分支上有你的手工改动 → 回该分支继续,不重跑\n` +
-          `  2) 废弃重来 → gearbox-update --force-redo(删本地分支重建,--force-with-lease 覆盖远端)\n` +
-          `  3) 手动: git branch -D ${plannedBranch}`,
+        `Today's branch already exists: ${plannedBranch}`,
+        `Already ran once today. Three options:\n` +
+          `  1) There are manual edits on that branch → go back to it and continue, don't rerun\n` +
+          `  2) Discard and redo → gearbox-update --force-redo (deletes and rebuilds the local branch, --force-with-lease overwrites the remote)\n` +
+          `  3) Manual: git branch -D ${plannedBranch}`,
       );
     }
   }
@@ -319,14 +337,14 @@ function validateContext() {
   return { downDir, downAdrDir, branch };
 }
 
-// ============== 匹配算法 ==============
+// ============== matching algorithm ==============
 
-// 对每个 gearbox ADR,判断下游是否已有,以及如何回流
+// For each gearbox ADR, decide whether downstream already has it, and how to backfill it
 function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
   const actions = []; // { type: 'skip'|'copy'|'refresh', gearbox, target?, reason? }
 
   for (const [gearboxNum, gearboxAdr] of gearboxIndex) {
-    // 1. slug 匹配(下游有 slug 相同的 ADR → 已回流)
+    // 1. slug match (downstream has an ADR with the same slug → already backfilled)
     let slugMatch = null;
     for (const [, downAdr] of downIndex) {
       if (downAdr.slug === gearboxAdr.slug) {
@@ -335,7 +353,8 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
       }
     }
     if (slugMatch) {
-      // hash 漂移检测(ADR-0021/0024): 拷贝里记录的上游 hash vs 上游当前 hash
+      // hash drift detection (ADR-0021/0024): the upstream hash recorded in the copy vs
+      // upstream's current hash
       const recorded = (slugMatch.content.match(/sha256:([0-9a-f]{12})/) ||
         [])[1];
       const drifted = recorded && recorded !== sha12(gearboxAdr.content);
@@ -343,7 +362,7 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
         actions.push({
           type: "refresh",
           gearbox: gearboxAdr,
-          reason: `漂移重拷: 记录 sha256:${recorded} ≠ 上游当前, 覆盖下游 ADR-${pad4(slugMatch.num)}`,
+          reason: `drift re-copy: recorded sha256:${recorded} ≠ upstream's current hash, overwriting downstream ADR-${pad4(slugMatch.num)}`,
         });
         continue;
       }
@@ -352,13 +371,14 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
         gearbox: gearboxAdr,
         drifted: Boolean(drifted),
         reason: drifted
-          ? `slug 已存在(下游 ADR-${pad4(slugMatch.num)}), 但上游已修订(hash 漂移)——用 --refresh-drift 重拷`
-          : `slug 已存在(下游 ADR-${pad4(slugMatch.num)})`,
+          ? `slug already exists (downstream ADR-${pad4(slugMatch.num)}), but upstream has been revised (hash drift) — use --refresh-drift to re-copy`
+          : `slug already exists (downstream ADR-${pad4(slugMatch.num)})`,
       });
       continue;
     }
 
-    // 2. 溯源匹配(下游有 ADR header 写 "回流自 gearbox ADR-{num}" → 已回流)
+    // 2. provenance match (a downstream ADR header reads "backfilled from gearbox ADR-{num}"
+    // → already backfilled)
     let provenanceMatch = null;
     for (const [, downAdr] of downIndex) {
       if (downAdr.provenanceGearboxNum === gearboxNum) {
@@ -370,37 +390,39 @@ function matchAdrs(gearboxIndex, downIndex, refreshDrift) {
       actions.push({
         type: "skip",
         gearbox: gearboxAdr,
-        reason: `下游 ADR-${pad4(provenanceMatch.num)} 溯源字段指向本 ADR`,
+        reason: `downstream ADR-${pad4(provenanceMatch.num)}'s provenance field points to this ADR`,
       });
       continue;
     }
 
-    // 3. 缺: 按 gearbox 原号拷入 gearbox-adr/(不撞号,号恒等)
+    // 3. missing: copy in under gearbox's original number (no collision — the number stays
+    // 1:1 with upstream)
     actions.push({
       type: "copy",
       gearbox: gearboxAdr,
-      reason: "下游缺,按 gearbox 原号拷",
+      reason: "missing downstream, copying under the gearbox original number",
     });
   }
 
   return actions;
 }
 
-// ============== 拷贝 ==============
+// ============== copying ==============
 
-// 拷贝单个 ADR + 应用溯源戳记(不重编号——双目录分家后号与上游 1:1 恒等,
-// ADR-XXXX 交叉引用无需改写)
+// Copy a single ADR + apply the provenance stamp (no renumbering — after the dual-directory
+// split, the number is 1:1 with upstream, so ADR-XXXX cross-references never need rewriting)
 function transformAdrContent(gearboxAdr) {
   const content0 = gearboxAdr.content;
 
-  // 溯源字段(若 gearbox ADR 没自带,追加一行机器生成版)
+  // Provenance field (append a machine-generated line if the gearbox ADR doesn't already have one)
   if (gearboxAdr.hasProvenanceField) return content0;
 
   const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
-  // hash 戳记(ADR-0021): 上游文件内容 sha256 前 12 位,gearbox-version 用它检测
-  // 拷贝后的上游漂移。格式 `sha256:[0-9a-f]{12}` 是两工具间的契约。
+  // Hash stamp (ADR-0021): the first 12 chars of the upstream file's content sha256 — gearbox-version
+  // uses it to detect upstream drift on the copy. The format `sha256:[0-9a-f]{12}` is the
+  // contract between the two tools.
   const upstreamHash = sha12(gearboxAdr.content);
-  const provenanceLine = `- 溯源: 回流自 [gearbox ADR-${pad4(gearboxAdr.num)}](${gearboxUrl})（gearbox-update 工具同步,上游 sha256:${upstreamHash}）`;
+  const provenanceLine = `- Provenance: backfilled from [gearbox ADR-${pad4(gearboxAdr.num)}](${gearboxUrl}) (gearbox-update tool sync, upstream sha256:${upstreamHash})`;
   const lines = content0.split("\n");
   let insertAt = 1;
   for (let i = 0; i < Math.min(lines.length, 8); i++) {
@@ -413,8 +435,9 @@ function transformAdrContent(gearboxAdr) {
   return lines.join("\n");
 }
 
-// supersede 联动: 若本次回流含 gearbox 0012,改下游 0006 status
-// (号与上游 1:1 恒等,下游落地号恒为 12,调用方已确认本次 toCopy 含 0012 才会调用)
+// Supersede link: if this backfill includes gearbox 0012, change downstream 0006's status
+// (the number is 1:1 with upstream, so the downstream landing number is always 12; the caller
+// only invokes this after confirming this run's toCopy includes 0012)
 function applySupersedeLink(downAdrDir) {
   const downstream0006Path = join(downAdrDir, "0006-tiered-change-authority.md");
   if (!existsSync(downstream0006Path)) return null;
@@ -428,7 +451,7 @@ function applySupersedeLink(downAdrDir) {
     return { alreadyApplied: true, newNum: 12 };
   }
 
-  const newStatus = `partially superseded by ADR-0012（由 gearbox-update 自动同步）`;
+  const newStatus = `partially superseded by ADR-0012 (auto-synced by gearbox-update)`;
   content = content.replace(
     /^(- Status:\s*).+$/m,
     `$1${newStatus}`,
@@ -437,53 +460,55 @@ function applySupersedeLink(downAdrDir) {
   return { alreadyApplied: false, newNum: 12, file: downstream0006Path };
 }
 
-// ============== AGENTS.md 报告 ==============
+// ============== AGENTS.md report ==============
 
-// 已知:gearbox ADR → 影响哪个 AGENTS.md section
-// (基于 Explore 报告:0011 不动 AGENTS.md;0012/0013 改 ### 协议自身的变更)
-// 维护契约: 上游每新增一个 ADR,这里必须补一行(null = 不动 AGENTS.md)。
-// 缺项不会报错,但报告就不会提示对应的 AGENTS.md 手改——宁可显式写 null。
+// Known: which gearbox ADR → which AGENTS.md section it affects
+// (per an earlier Explore report: 0011 doesn't touch AGENTS.md; 0012/0013 change
+// "### Changing the protocol itself")
+// Maintenance contract: every time upstream adds an ADR, add a line here (null = doesn't touch
+// AGENTS.md). Missing entries don't error, but the report simply won't flag the corresponding
+// AGENTS.md hand-edit — write null explicitly rather than omitting an entry.
 const AGENTS_MD_IMPACT = {
-  11: null, // subagent-system 是可选模板,不动 AGENTS.md
+  11: null, // subagent-system is an optional template — doesn't touch AGENTS.md
   12: {
-    section: "### 协议自身的变更",
-    note: '加 "L1/L2 边界判据(机制引用优先)" 小节 + 归类表。参考 gearbox AGENTS.md 同名小节。',
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: 'Add the "L1/L2 boundary criterion (mechanism reference takes priority)" subsection + its classification table. See the same-named subsection in gearbox AGENTS.md for reference.',
   },
   13: {
-    section: "### 协议自身的变更",
-    note: '加 "B-3 下游回流提醒" 字段说明(若本项目有下游)。若本项目无下游(如 dryrun/mandys_app 是终端节点),可跳过。',
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: 'Add the "B-3 downstream backfill reminder" field note (if this project has downstream projects). If this project has no downstream (e.g. dryrun/mandys_app are terminal nodes), this can be skipped.',
   },
-  14: null, // PR 模板引用 DOWNSTREAM 清单——上游 B-3 载体实现细节,下游无对应物
-  15: null, // rename-to-gearbox——纯称呼,下游改不改自便(有单独回流提醒 issue)
-  16: null, // gearbox-version 工具入库——上游侧工具,不动下游 AGENTS.md
-  17: null, // gearbox-update 工具入库——同上
+  14: null, // PR template references the DOWNSTREAM list — an upstream B-3 implementation detail, no downstream counterpart
+  15: null, // rename-to-gearbox — pure naming, downstream can rename or not at its own discretion (has its own backfill-reminder issue)
+  16: null, // gearbox-version tool onboarding — upstream-side tooling, doesn't touch downstream AGENTS.md
+  17: null, // gearbox-update tool onboarding — same
   18: {
     section: "## Hard rules",
-    note: "加「标注 Hard rule 的条款视同本节内容,受 L1 保护」注(判据锚定标注,不锚定章节)。参考 gearbox AGENTS.md Hard rules 注。",
+    note: 'Add the note that "a clause marked Hard rule counts as part of this section and is protected under L1" (the criterion anchors to the marking, not to which section it lives in). See the same note in gearbox AGENTS.md for reference.',
   },
   19: {
-    section: "### 协议自身的变更",
-    note: "归类表加 CONTEXT.md 定义豁免行 + 「定义豁免」段(三要件)。参考 gearbox AGENTS.md 同名小节。",
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: 'Add the CONTEXT.md definition-exemption row to the classification table + the "Definition exemption" paragraph (the three criteria). See the same-named subsection in gearbox AGENTS.md for reference.',
   },
   20: {
-    section: "### 协议自身的变更",
-    note: "加「测试型门禁」段(配置层套上行 / 内容层按动机定级 / 为绿而删 = L1)。参考 gearbox AGENTS.md 同名小节。",
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: 'Add the "test-type gate" paragraph (config layer follows the existing tier / content layer is graded by motive / "deleted just to go green" = L1). See the same-named subsection in gearbox AGENTS.md for reference.',
   },
-  21: null, // hash 戳记漂移检测——工具层契约,不动下游 AGENTS.md
-  22: null, // gearbox-install 工具入库——上游侧工具
-  23: null, // 协议版本号——上游侧机制;下游只持有 .gearbox-version 戳记,由本工具自动维护
-  24: null, // --refresh-drift 漂移重拷——本工具自身能力,不动下游 AGENTS.md
-  25: null, // update 开跑防呆——本工具自身行为,不动下游 AGENTS.md
+  21: null, // hash-stamp drift detection — a tool-layer contract, doesn't touch downstream AGENTS.md
+  22: null, // gearbox-install tool onboarding — upstream-side tooling
+  23: null, // protocol version numbering — an upstream-side mechanism; downstream only holds the .gearbox-version stamp, maintained automatically by this tool
+  24: null, // --refresh-drift re-copy — this tool's own capability, doesn't touch downstream AGENTS.md
+  25: null, // update's startup safety checks — this tool's own behavior, doesn't touch downstream AGENTS.md
   26: {
-    section: "### On starting a shift",
-    note: "开工三件事加第 4 步:跑 gearbox-version 自查协议版本,落后就 gearbox-update(回流从 push 触发改 pull 触发,ADR-0026)。新装下游由 gearbox-install 自动注入;存量下游手动加。参考 gearbox-install 的「开工三件事自查步」变换。",
+    section: "### On starting a shift (the three start-of-shift steps)",
+    note: "Add a 4th step to the three start-of-shift steps: run gearbox-version to self-check the protocol version, and gearbox-update to backfill if it's behind (backfill trigger moved from push to pull, ADR-0026). New downstream installs get this from gearbox-install automatically; existing downstream projects add it by hand. See gearbox-install's \"start-of-shift self-check step\" transform for reference.",
   },
-  27: null, // 远端上游寻址——工具能力,不动下游 AGENTS.md
-  28: null, // npx 分发——上游侧打包/发布,不动下游 AGENTS.md
-  29: null, // release 纳入 npm publish——上游发布流程;下游不发布 gearbox 协议包
+  27: null, // remote upstream addressing — a tool capability, doesn't touch downstream AGENTS.md
+  28: null, // npx distribution — upstream-side packaging/publishing, doesn't touch downstream AGENTS.md
+  29: null, // release now includes npm publish — an upstream release-process change; downstream doesn't publish the gearbox protocol package
   30: {
     section: "## Working agreement (multi-agent)",
-    note: "可选加「分支卫生」小节(收工前跑 npx gearbox-agents prune;软规则,不进 Hard rules)。新装下游 AGENTS.md 自带(install 原样透传);存量下游自行决定是否纳入。参考 gearbox AGENTS.md 同名小节。",
+    note: "Optionally add a \"Branch hygiene\" subsection (run npx gearbox-agents prune before ending a shift; a soft rule, not a Hard rule). New downstream installs get this from AGENTS.md as-is (install passes it through verbatim); existing downstream projects decide for themselves whether to adopt it. See the same-named subsection in gearbox AGENTS.md for reference.",
   },
 };
 
@@ -497,26 +522,26 @@ function generateReport({
   baseBranch,
 }) {
   const lines = [];
-  lines.push(`# gearbox-update 报告`);
+  lines.push(`# gearbox-update report`);
   lines.push("");
-  lines.push(`- 时间: ${reportDate}`);
-  lines.push(`- 下游: ${downstreamRepo}`);
-  lines.push(`- 分支: \`${branchName}\``);
+  lines.push(`- Date: ${reportDate}`);
+  lines.push(`- Downstream: ${downstreamRepo}`);
+  lines.push(`- Branch: \`${branchName}\``);
   lines.push("");
 
   if (assignments.length === 0 && refreshes.length === 0) {
-    lines.push("## 无 ADR 待回流 ✅");
+    lines.push("## No ADRs to backfill ✅");
     lines.push("");
-    lines.push("下游已经同步到最新 gearbox。");
+    lines.push("Downstream is already synced to the latest gearbox.");
     return lines.join("\n");
   }
 
-  // 漂移重拷表(ADR-0024)
+  // Drift re-copy table (ADR-0024)
   if (refreshes.length > 0) {
-    lines.push("## 漂移重拷的 ADR(--refresh-drift)");
+    lines.push("## ADRs re-copied due to drift (--refresh-drift)");
     lines.push("");
     lines.push(
-      "上游已修订、下游拷贝被**覆盖**的文件。⚠️ 若下游曾对这些拷贝做过本地修改, 已丢失——review diff 时重点看:",
+      "Files where upstream was revised and the downstream copy was **overwritten**. ⚠️ If downstream had made local edits to these copies, they're gone — pay special attention to these when reviewing the diff:",
     );
     lines.push("");
     lines.push("| gearbox | slug |");
@@ -527,9 +552,9 @@ function generateReport({
     lines.push("");
   }
 
-  // 已回流表(号与上游 1:1 恒等,不再重编号)
+  // Backfilled table (number is 1:1 with upstream, no renumbering)
   if (assignments.length > 0) {
-    lines.push("## 已回流的 ADR");
+    lines.push("## Backfilled ADRs");
     lines.push("");
     lines.push("| gearbox | slug |");
     lines.push("|---|---|");
@@ -539,23 +564,23 @@ function generateReport({
     lines.push("");
   }
 
-  // supersede 联动
+  // supersede link
   if (supersedeResult) {
-    lines.push("## supersede 联动(gearbox 0012 → 下游 0006)");
+    lines.push("## Supersede link (gearbox 0012 → downstream 0006)");
     lines.push("");
     if (supersedeResult.alreadyApplied) {
       lines.push(
-        `- 下游 0006 status 已是 partially superseded(幂等,未重复改)`,
+        `- Downstream 0006's status is already partially superseded (idempotent, not re-applied)`,
       );
     } else {
       lines.push(
-        `- 下游 \`docs/gearbox-adr/0006-tiered-change-authority.md\` status 改为 \`partially superseded by ADR-${pad4(supersedeResult.newNum)}\``,
+        `- Downstream \`docs/gearbox-adr/0006-tiered-change-authority.md\`'s status changed to \`partially superseded by ADR-${pad4(supersedeResult.newNum)}\``,
       );
     }
     lines.push("");
   }
 
-  // AGENTS.md 需手改
+  // AGENTS.md hand-edits needed
   const agentsMdTasks = assignments
     .map((action) => ({
       adr: action.gearbox,
@@ -564,33 +589,33 @@ function generateReport({
     .filter((t) => t.impact);
 
   if (agentsMdTasks.length > 0) {
-    lines.push("## ⚠️ AGENTS.md 需要手改(脚本不碰 AGENTS.md,L1 文件)");
+    lines.push("## ⚠️ AGENTS.md needs a hand-edit (the script doesn't touch AGENTS.md, an L1 file)");
     lines.push("");
     lines.push(
-      "脚本是工具不是协议执行者——AGENTS.md 的 L1 改动需要你 review 后手动加。建议每个改动 grep 检查是否已存在对应小节(幂等回流时可能已有)。",
+      "The script is a tool, not a protocol enforcer — AGENTS.md's L1 changes need your review before you add them by hand. Suggestion: grep-check whether the corresponding subsection already exists for each change (an idempotent backfill run may have already added it).",
     );
     lines.push("");
     for (const t of agentsMdTasks) {
       lines.push(
-        `### ADR-${pad4(t.adr.num)} (${t.adr.slug}) → 改 \`${t.impact.section}\``,
+        `### ADR-${pad4(t.adr.num)} (${t.adr.slug}) → edit \`${t.impact.section}\``,
       );
       lines.push("");
       lines.push(`${t.impact.note}`);
       lines.push("");
       lines.push(
-        `参考源: [gearbox AGENTS.md](https://github.com/real-stanyan/gearbox/blob/master/AGENTS.md)`,
+        `Reference: [gearbox AGENTS.md](https://github.com/real-stanyan/gearbox/blob/master/AGENTS.md)`,
       );
       lines.push("");
     }
   }
 
-  // commit + push 状态
-  lines.push("## 已 commit + push");
+  // commit + push status
+  lines.push("## Committed + pushed");
   lines.push("");
-  lines.push(`- 分支已推到远端: \`origin/${branchName}\``);
-  lines.push("- 脚本**没有**开 PR(L1 改动需维护者同意)");
+  lines.push(`- Branch pushed to remote: \`origin/${branchName}\``);
+  lines.push("- The script did **not** open a PR (L1 changes need maintainer agreement)");
   lines.push("");
-  lines.push("### 下一步(手动)");
+  lines.push("### Next steps (manual)");
   lines.push("");
   lines.push("```bash");
   lines.push(
@@ -598,75 +623,76 @@ function generateReport({
   );
   const titleParts = [
     ...assignments.map((action) => pad4(action.gearbox.num)),
-    ...refreshes.map((a) => `${pad4(a.gearbox.num)}(重拷)`),
+    ...refreshes.map((a) => `${pad4(a.gearbox.num)}(refresh)`),
   ];
-  lines.push(`  --title "docs(adr): 回流 gearbox ADR ${titleParts.join(" + ")}" \\`);
+  lines.push(`  --title "docs(adr): backfill gearbox ADR ${titleParts.join(" + ")}" \\`);
   lines.push(`  --body "..."`);
   lines.push("```");
   lines.push("");
-  lines.push("- [ ] review diff");
-  lines.push("- [ ] 按 AGENTS.md 章节(上面)手改 AGENTS.md(L1)");
-  lines.push("- [ ] 跑下游门禁");
-  lines.push("- [ ] 开 PR,等维护者在 PR comment 写'同意'才能 merge(L1 b-弱形态)");
+  lines.push("- [ ] review the diff");
+  lines.push("- [ ] hand-edit AGENTS.md per the sections above (L1)");
+  lines.push("- [ ] run the downstream gate");
+  lines.push("- [ ] open the PR, wait for the maintainer to write \"agree\" in a PR comment before merging (L1 b-weak form)");
   lines.push("");
-  lines.push("## 完事后清理");
+  lines.push("## Cleanup once done");
   lines.push("");
-  lines.push("- [ ] PR merge 后删本报告文件 `gearbox-update-report.md`");
+  lines.push("- [ ] delete this report file `gearbox-update-report.md` after the PR merges");
   lines.push("");
 
   return lines.join("\n");
 }
 
-// ============== git 操作 ==============
+// ============== git operations ==============
 
 function gitOps(downDir, assignments, refreshes, supersedeResult, branchName, upstreamVersion) {
-  // 创建分支
+  // Create the branch
   run(`git checkout -b ${branchName}`);
 
-  // 每个漂移重拷一个 commit(ADR-0024)
+  // One commit per drift re-copy (ADR-0024)
   for (const a of refreshes) {
     const dstPath = `docs/gearbox-adr/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`;
     run(`git add ${dstPath}`);
     const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`;
-    const commitMsg = `docs(adr): 漂移重拷 ADR-${pad4(a.gearbox.num)}（${a.gearbox.slug}）
+    const commitMsg = `docs(adr): drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})
 
-上游 gearbox ADR-${pad4(a.gearbox.num)} 已修订(hash 漂移), 用上游最新内容
-重跑变换覆盖, 溯源戳记换新 → sha256:${sha12(a.gearbox.content)}。
-by gearbox-update --refresh-drift (gearbox ADR-0024)。
-溯源: ${gearboxUrl}`;
+Upstream gearbox ADR-${pad4(a.gearbox.num)} has been revised (hash drift); rerunning the
+transform against upstream's latest content and overwriting, provenance stamp refreshed →
+sha256:${sha12(a.gearbox.content)}.
+by gearbox-update --refresh-drift (gearbox ADR-0024).
+Provenance: ${gearboxUrl}`;
     runWithStdin(`git commit -F -`, commitMsg);
   }
 
-  // 每个回流 ADR 一个 commit(号与上游 1:1 恒等,不再重编号)
+  // One commit per backfilled ADR (number is 1:1 with upstream, no renumbering)
   for (const action of assignments) {
     const gearboxAdr = action.gearbox;
     const dstPath = `docs/gearbox-adr/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
     run(`git add ${dstPath}`);
 
     const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
-    const commitMsg = `docs(adr): 回流 gearbox ADR-${pad4(gearboxAdr.num)}（${gearboxAdr.slug}）
+    const commitMsg = `docs(adr): backfill gearbox ADR-${pad4(gearboxAdr.num)} (${gearboxAdr.slug})
 
 by gearbox-update tool.
-溯源: ${gearboxUrl}
+Provenance: ${gearboxUrl}
 
-注: AGENTS.md 对应章节需用户手动改(L1 文件,脚本不碰)。
-    见 gearbox-update-report.md。`;
+Note: the corresponding AGENTS.md section needs a manual edit (an L1 file, the script doesn't
+    touch it). See gearbox-update-report.md.`;
 
     runWithStdin(`git commit -F -`, commitMsg);
   }
 
-  // supersede 联动 commit(若改了)
+  // supersede-link commit (if it changed)
   if (supersedeResult && !supersedeResult.alreadyApplied) {
     run(`git add docs/gearbox-adr/0006-tiered-change-authority.md`);
-    const commitMsg = `docs(adr): 同步 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
+    const commitMsg = `docs(adr): sync 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
 
-gearbox 0012 supersedes 0006,本 commit 把下游 0006 的 status 行
-同步为 partially superseded 状态。by gearbox-update tool。`;
+gearbox 0012 supersedes 0006; this commit syncs downstream 0006's status line to
+partially superseded. by gearbox-update tool.`;
     runWithStdin(`git commit -F -`, commitMsg);
   }
 
-  // .gearbox-version 戳记(ADR-0023): 回流完成即视为同步到上游当前版本。
-  // 内容没变就不动——空 commit 会失败。
+  // .gearbox-version stamp (ADR-0023): a completed backfill counts as synced to upstream's
+  // current version. Skip if unchanged — an empty commit would fail.
   let stampUpdated = false;
   if (upstreamVersion) {
     const stampPath = join(downDir, ".gearbox-version");
@@ -678,14 +704,14 @@ gearbox 0012 supersedes 0006,本 commit 把下游 0006 的 status 行
       run("git add .gearbox-version");
       const commitMsg = `chore: .gearbox-version → ${upstreamVersion}
 
-回流完成,版本戳记更新为上游最新 tag(gearbox ADR-0023)。
-by gearbox-update tool。`;
+Backfill complete, version stamp updated to upstream's latest tag (gearbox ADR-0023).
+by gearbox-update tool.`;
       runWithStdin(`git commit -F -`, commitMsg);
       stampUpdated = true;
     }
   }
 
-  // push(--force-redo 重建过分支 → --force-with-lease 覆盖远端, ADR-0025)
+  // push (--force-redo rebuilt the branch → --force-with-lease to overwrite the remote, ADR-0025)
   const pushResult = tryRun(
     forceRedo
       ? `git push --force-with-lease -u origin ${branchName} 2>&1`
@@ -694,49 +720,49 @@ by gearbox-update tool。`;
   return { pushResult, stampUpdated };
 }
 
-// ============== 主流程 ==============
+// ============== main flow ==============
 
 function main() {
   stdout.write(C.bold(C.cyan("\n⟳ gearbox-update\n")));
-  stdout.write(C.dim("  激进版下游 ADR 同步工具\n\n"));
+  stdout.write(C.dim("  aggressive downstream ADR sync tool\n\n"));
 
-  resolveUpstream(); // 上游寻址(本地/远端), 重写 GEARBOX_DIR (ADR-0027)
+  resolveUpstream(); // upstream addressing (local/remote), overwrites GEARBOX_DIR (ADR-0027)
   const { downDir, downAdrDir, branch } = validateContext();
-  // PR base 用检测到的主分支;若当前在别的分支上跑,兜底 master
+  // PR base uses the detected main branch; if running on some other branch, falls back to master
   const baseBranch = branch === "main" || branch === "master" ? branch : "master";
 
-  // repo 名
+  // repo name
   const remoteUrl = tryRun("git remote get-url origin") || "";
   const downRepo =
     remoteUrl.replace(/.*[:/]/, "").replace(/\.git$/, "") ||
     downDir.split("/").pop();
 
-  stdout.write(`${C.dim("下游:")}     ${downRepo}\n`);
+  stdout.write(`${C.dim("downstream:")}  ${downRepo}\n`);
   stdout.write(
     UPSTREAM_URL
-      ? `${C.dim("gearbox:")} ${UPSTREAM_URL} ${C.dim(`(远端缓存 ${GEARBOX_DIR}, ADR-0027)`)}\n\n`
-      : `${C.dim("gearbox:")} ${GEARBOX_DIR}\n\n`,
+      ? `${C.dim("gearbox:")}     ${UPSTREAM_URL} ${C.dim(`(remote cache ${GEARBOX_DIR}, ADR-0027)`)}\n\n`
+      : `${C.dim("gearbox:")}     ${GEARBOX_DIR}\n\n`,
   );
 
-  // 扫描两侧
+  // scan both sides
   const gearboxIndex = buildAdrIndex(GEARBOX_ADR_DIR);
   const downIndex = buildAdrIndex(downAdrDir);
 
   if (gearboxIndex.size === 0) {
-    die("gearbox ADR 目录为空", `检查 ${GEARBOX_ADR_DIR}`);
+    die("gearbox ADR directory is empty", `check ${GEARBOX_ADR_DIR}`);
   }
 
   stdout.write(
-    `${C.dim("gearbox ADR:")}  ${pad4(Math.max(...gearboxIndex.keys()))} (共 ${gearboxIndex.size} 个)\n`,
+    `${C.dim("gearbox ADRs:")}    ${pad4(Math.max(...gearboxIndex.keys()))} (${gearboxIndex.size} total)\n`,
   );
   stdout.write(
-    `${C.dim("下游 ADR:")}    ${pad4(Math.max(...downIndex.keys()))} (共 ${downIndex.size} 个)\n\n`,
+    `${C.dim("downstream ADRs:")} ${pad4(Math.max(...downIndex.keys()))} (${downIndex.size} total)\n\n`,
   );
 
-  // 匹配
+  // match
   const actions = matchAdrs(gearboxIndex, downIndex, refreshDrift);
 
-  // 打印诊断(按 gearbox num 升序,保证输出/commit 顺序稳定)
+  // print diagnostics (sorted ascending by gearbox num, to keep output/commit order stable)
   const skipped = actions.filter((a) => a.type === "skip");
   const toCopy = actions
     .filter((a) => a.type === "copy")
@@ -745,8 +771,8 @@ function main() {
   const driftedSkips = skipped.filter((a) => a.drifted);
 
   if (toCopy.length === 0 && toRefresh.length === 0) {
-    stdout.write(C.green("✅ 无 ADR 待回流——下游已同步到最新 gearbox\n\n"));
-    stdout.write(C.dim("已跳过(下游已有):\n"));
+    stdout.write(C.green("✅ No ADRs to backfill — downstream is already synced to the latest gearbox\n\n"));
+    stdout.write(C.dim("Already skipped (downstream already has these):\n"));
     for (const a of skipped) {
       stdout.write(
         `  ${C.dim("skip")} ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
@@ -755,7 +781,7 @@ function main() {
     if (driftedSkips.length > 0) {
       stdout.write(
         C.yellow(
-          `\n⚠️  ${driftedSkips.length} 项拷贝的上游已修订(hash 漂移)——重拷跑 gearbox-update --refresh-drift (ADR-0024)\n`,
+          `\n⚠️  ${driftedSkips.length} copies have been revised upstream (hash drift) — re-copy with gearbox-update --refresh-drift (ADR-0024)\n`,
         ),
       );
     }
@@ -764,22 +790,22 @@ function main() {
   }
 
   if (toCopy.length > 0) {
-    stdout.write(C.yellow(`⚠️  待回流 ${toCopy.length} 个:\n`));
+    stdout.write(C.yellow(`⚠️  ${toCopy.length} to backfill:\n`));
     for (const a of toCopy) {
       stdout.write(
-        `  ${C.green("[原号拷]")} gearbox ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
+        `  ${C.green("[original-number copy]")} gearbox ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
       );
     }
   }
   if (toRefresh.length > 0) {
-    stdout.write(C.yellow(`⚠️  待重拷(漂移) ${toRefresh.length} 个:\n`));
+    stdout.write(C.yellow(`⚠️  ${toRefresh.length} to re-copy (drift):\n`));
     for (const a of toRefresh) {
       stdout.write(
-        `  ${C.yellow("[漂移重拷]")} gearbox ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
+        `  ${C.yellow("[drift re-copy]")} gearbox ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
       );
     }
   }
-  stdout.write(`\n${C.dim("已跳过(下游已有):")}\n`);
+  stdout.write(`\n${C.dim("Already skipped (downstream already has these):")}\n`);
   for (const a of skipped) {
     stdout.write(
       `  ${C.dim("skip")} ADR-${pad4(a.gearbox.num)} ${a.gearbox.slug} — ${a.reason}\n`,
@@ -788,15 +814,15 @@ function main() {
   if (driftedSkips.length > 0 && !refreshDrift) {
     stdout.write(
       C.yellow(
-        `  ⚠️  其中 ${driftedSkips.length} 项漂移——重拷跑 gearbox-update --refresh-drift (ADR-0024)\n`,
+        `  ⚠️  ${driftedSkips.length} of these have drifted — re-copy with gearbox-update --refresh-drift (ADR-0024)\n`,
       ),
     );
   }
   stdout.write("\n");
 
-  // 拷贝(号与上游 1:1 恒等,不再分配/重编号)
+  // copy (number is 1:1 with upstream, no more assignment/renumbering)
   if (toCopy.length > 0) {
-    stdout.write(C.bold("拷贝:\n"));
+    stdout.write(C.bold("Copying:\n"));
     for (const action of toCopy) {
       const gearboxAdr = action.gearbox;
       const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
@@ -809,9 +835,10 @@ function main() {
     stdout.write("\n");
   }
 
-  // 执行漂移重拷(ADR-0024): 保留下游编号(= 上游原号), 上游最新内容重跑变换覆盖
+  // execute drift re-copies (ADR-0024): keep the downstream number (= upstream original
+  // number), rerun the transform against upstream's latest content and overwrite
   if (toRefresh.length > 0) {
-    stdout.write(C.bold("漂移重拷(覆盖, 戳记换新):\n"));
+    stdout.write(C.bold("Drift re-copy (overwrite, stamp refreshed):\n"));
     for (const a of toRefresh) {
       const dstPath = join(
         downAdrDir,
@@ -820,21 +847,21 @@ function main() {
       const transformed = transformAdrContent(a.gearbox);
       writeFileSync(dstPath, transformed);
       stdout.write(
-        `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")} ${C.dim(`(上游 sha256:${sha12(a.gearbox.content)})`)}\n`,
+        `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")} ${C.dim(`(upstream sha256:${sha12(a.gearbox.content)})`)}\n`,
       );
     }
     stdout.write("\n");
   }
 
-  // supersede 联动(仅当本次实际回流了 gearbox 0012 才触发)
+  // supersede link (only triggers when this run actually backfilled gearbox 0012)
   let supersedeResult = null;
   if (toCopy.some((a) => a.gearbox.num === 12)) {
-    stdout.write(C.bold("supersede 联动(gearbox 0012 → 下游 0006):\n"));
+    stdout.write(C.bold("Supersede link (gearbox 0012 → downstream 0006):\n"));
     supersedeResult = applySupersedeLink(downAdrDir);
     if (supersedeResult) {
       if (supersedeResult.alreadyApplied) {
         stdout.write(
-          `  ${C.dim("✓ 0006 status 已是 partially superseded,幂等未改")}\n`,
+          `  ${C.dim("✓ 0006 status is already partially superseded, idempotent, unchanged")}\n`,
         );
       } else {
         stdout.write(
@@ -843,19 +870,20 @@ function main() {
       }
     } else {
       stdout.write(
-        `  ${C.dim("下游无 0006-tiered-change-authority.md,跳过")}\n`,
+        `  ${C.dim("Downstream has no 0006-tiered-change-authority.md, skipping")}\n`,
       );
     }
     stdout.write("\n");
   }
 
-  // git 操作
+  // git operations
   const reportDate = new Date().toISOString().slice(0, 10);
   const branchName = `docs/gearbox-backfill-${reportDate}`;
 
-  // 上游最大版本 tag(ADR-0023 戳记用;semver 排序,无 tag 则跳过戳记)
-  // 优先级: env override(npx 包传 package.json 版本, ADR-0028) > 远端 ls-remote
-  // (ADR-0027,浅克隆不保证带全 tag)> 本地 git tag。
+  // Upstream's highest version tag (for the ADR-0023 stamp; semver-sorted, skip the stamp if
+  // there's no tag). Priority: env override (npx package passes package.json version,
+  // ADR-0028) > remote ls-remote (ADR-0027, a shallow clone isn't guaranteed to carry every
+  // tag) > local git tag.
   const upstreamVersion =
     env.GEARBOX_UPSTREAM_VERSION ||
     (UPSTREAM_URL
@@ -866,7 +894,7 @@ function main() {
       : ((tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
           .split("\n")[0] || null));
 
-  stdout.write(C.bold(`git 操作(分支 ${branchName}):\n`));
+  stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   try {
     const { pushResult, stampUpdated } = gitOps(
       downDir,
@@ -878,7 +906,7 @@ function main() {
     );
     for (const a of toRefresh) {
       stdout.write(
-        `  ${C.green("✓ commit")} 漂移重拷 ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})\n`,
+        `  ${C.green("✓ commit")} drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})\n`,
       );
     }
     for (const action of toCopy) {
@@ -887,38 +915,38 @@ function main() {
       );
     }
     if (supersedeResult && !supersedeResult.alreadyApplied) {
-      stdout.write(`  ${C.green("✓ commit")} 0006 status 同步\n`);
+      stdout.write(`  ${C.green("✓ commit")} 0006 status sync\n`);
     }
     if (stampUpdated) {
       stdout.write(
-        `  ${C.green("✓ commit")} .gearbox-version → ${upstreamVersion} ${C.dim("(ADR-0023 戳记)")}\n`,
+        `  ${C.green("✓ commit")} .gearbox-version → ${upstreamVersion} ${C.dim("(ADR-0023 stamp)")}\n`,
       );
     } else if (upstreamVersion) {
       stdout.write(
-        `  ${C.dim(`✓ .gearbox-version 已是 ${upstreamVersion},未动`)}\n`,
+        `  ${C.dim(`✓ .gearbox-version is already ${upstreamVersion}, unchanged`)}\n`,
       );
     } else {
       stdout.write(
-        `  ${C.yellow("⚠")} .gearbox-version 未更新——上游无 tag\n`,
+        `  ${C.yellow("⚠")} .gearbox-version not updated — upstream has no tag\n`,
       );
     }
     if (pushResult) {
       stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
     } else {
       stdout.write(
-        `  ${C.yellow("⚠ push 失败——本地分支已建,手动 push:")}\n`,
+        `  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n`,
       );
       stdout.write(`     git push -u origin ${branchName}\n`);
     }
   } catch (e) {
     die(
-      `git 操作失败: ${e.message}`,
-      "本地文件已写入但未 commit/push,手动处理:\n  git status\n  git add docs/gearbox-adr/\n  git commit\n  git push",
+      `git operation failed: ${e.message}`,
+      "local files were written but not committed/pushed, handle it manually:\n  git status\n  git add docs/gearbox-adr/\n  git commit\n  git push",
     );
   }
   stdout.write("\n");
 
-  // 生成报告
+  // generate the report
   const report = generateReport({
     downstreamRepo: downRepo,
     assignments: toCopy,
@@ -931,25 +959,25 @@ function main() {
   const reportPath = join(downDir, "gearbox-update-report.md");
   writeFileSync(reportPath, report);
 
-  stdout.write(C.green(`✓ 报告: ${reportPath.replace(downDir + "/", "")}\n`));
+  stdout.write(C.green(`✓ report: ${reportPath.replace(downDir + "/", "")}\n`));
   stdout.write(
     C.dim(
-      "  (本文件不入 commit——PR merge 后手动删)\n\n",
+      "  (this file isn't committed — delete it by hand after the PR merges)\n\n",
     ),
   );
 
-  stdout.write(C.bold(C.green("✓ 完成\n")));
+  stdout.write(C.bold(C.green("✓ done\n")));
   stdout.write("\n");
-  stdout.write(C.bold("下一步:\n"));
+  stdout.write(C.bold("Next steps:\n"));
   stdout.write(
-    `  1. 看 ${C.cyan("gearbox-update-report.md")} 决定哪些 AGENTS.md 章节要手改\n`,
+    `  1. Check ${C.cyan("gearbox-update-report.md")} to decide which AGENTS.md sections need hand-edits\n`,
   );
-  stdout.write(`  2. 手改 AGENTS.md(L1)\n`);
-  stdout.write(`  3. 跑下游门禁\n`);
-  stdout.write(`  4. 开 PR:\n`);
+  stdout.write(`  2. Hand-edit AGENTS.md (L1)\n`);
+  stdout.write(`  3. Run the downstream gate\n`);
+  stdout.write(`  4. Open a PR:\n`);
   stdout.write(`     ${C.cyan(`gh pr create --base ${baseBranch} --head ${branchName} --title "..." --body "..."`)}\n`);
   stdout.write(
-    `  5. PR comment 里维护者写"同意"才能 merge(L1 b-弱形态)\n\n`,
+    `  5. Wait for the maintainer to write "agree" in a PR comment before merging (L1 b-weak form)\n\n`,
   );
 }
 

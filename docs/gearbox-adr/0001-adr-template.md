@@ -1,16 +1,16 @@
-# ADR-0001: <决策标题>
+# ADR-0001: <decision title>
 
 - Date: <YYYY-MM-DD>
 - Status: accepted | superseded by ADR-XXXX
 
 ## Context
 
-<为什么需要做这个决定。当时的约束是什么。>
+<Why this decision was needed. What constraints applied at the time.>
 
 ## Decision
 
-<决定了什么。一段话说死。>
+<What was decided. State it in one paragraph, no hedging.>
 
 ## Consequences
 
-<代价和影响。后来的 agent 看到"反直觉"的代码时，这一节解释为什么不许改回去。>
+<Costs and impact. When a later agent sees code that looks "counterintuitive," this section explains why it must not be changed back.>

@@ -1,29 +1,29 @@
-# ADR-0018: Hard rule 按标注定级,不按住址——Hard rules 节占位符保留 + 加注
+# ADR-0018: Hard Rules Are Tiered by Designation, Not Location — the Hard Rules Section Placeholder Stays, Plus a Note
 
 - Date: 2026-07-19
 - Status: accepted
 
 ## Context
 
-issue #31 的两个结构矛盾:
+Two structural contradictions from issue #31:
 
-1. ADR-0013 的硬规则(「无链接 = 不能 merge」)被称为 Hard rule,却住在「协议自身的变更」小节,不在 `## Hard rules` 节——"Hard rule" 有协议含义(L1 保护对象),散落在别处 = 语义漂移:L1 判据(ADR-0006/0012)按章节圈地,圈不到它
-2. Gearbox 自食其力,但自己的 Hard rules 节是给下游填的 `<占位符>`——事实上的硬规则(CLAUDE.md 空壳、无 HANDOFF、门禁两处一致)活在门禁断言和 CONTEXT.md Key invariants 里,唯独不在这节。模板角色和 dogfood 角色在同一文件里打架
+1. ADR-0013's hard rule ("no link = cannot merge") is called a Hard rule, yet it lives in the "Changing the protocol itself" subsection, not in the `## Hard rules` section — "Hard rule" carries protocol meaning (an L1-protected object); scattering it elsewhere is semantic drift: the L1 criterion (ADR-0006/ADR-0012) stakes out territory by section, and section-based staking can't reach it
+2. Gearbox dogfoods itself, but its own Hard rules section is the `<placeholder>` meant for downstream to fill in — Gearbox's actual hard rules (CLAUDE.md as an empty shell, no HANDOFF, the gate's two locations staying consistent) live in gate assertions and CONTEXT.md's Key invariants, and nowhere in this section. The template role and the dogfood role fight each other inside the same file
 
 ## Decision
 
-选 b(占位符保留 + 加注),两句话解决两个矛盾:
+Choose option b (keep the placeholder, add a note) — two sentences resolve both contradictions:
 
-1. **Gearbox 自身硬规则以门禁断言为准**,不在 Hard rules 节复述。`check-gearbox.js` 是可执行的事实源——比散文强(改了断言 CI 立刻红,改了散文没人知道)
-2. **协议正文中标注 "Hard rule" 的条款视同 Hard rules 节内容,受 L1 保护**——判据锚定标注本身,不锚定章节住址。ADR-0012 的机制关键词判据(文本出现 `Hard rule` 即触发 L1)因此有了明确的语义基础:关键词出现在哪,L1 领地就到哪
+1. **Gearbox's own hard rules are authoritative via gate assertions**, not restated in the Hard rules section. `check-gearbox.js` is the executable source of truth — stronger than prose (change an assertion and CI turns red immediately; change prose and nobody notices)
+2. **Any clause in the protocol body marked "Hard rule" is treated as content of the Hard rules section and receives L1 protection** — the criterion anchors to the designation itself, not to the section it physically lives in. ADR-0012's mechanism-keyword criterion (the text containing `Hard rule` triggers L1) thereby gets an explicit semantic basis: wherever the keyword appears, that's where L1 territory extends
 
-### 为什么不选 a / c
+### Why not option a / c
 
-- **a(把自身硬规则填进节)**:那些规则已活在门禁断言 + CONTEXT.md Key invariants 两处,填进来是第三处复制;且下游拷走时容易忘清,把 Gearbox 的规则误当自己的
-- **c(把散落硬规则收编/复述进节)**:同一规则活两处,违反单一事实源——协议第一原则不该被协议自己破坏。ADR-0014 刚填掉"下游清单硬编码"这类坑,不再挖
+- **a (fill Gearbox's own hard rules into the section)**: those rules already live in two places — gate assertions and CONTEXT.md's Key invariants — filling them in here would be a third copy; and when downstream copies this file away, it's easy to forget to clear it out, mistaking Gearbox's own rules for its own
+- **c (collect/restate the scattered hard rules into the section)**: the same rule would live in two places, violating single source of truth — the protocol's first principle shouldn't be broken by the protocol itself. ADR-0014 just plugged the "hardcoded downstream list" hole; no more digging
 
 ## Consequences
 
-- **双轨显式化**:模板占位(给下游)和 dogfood 实例(指向门禁)在同一节里靠一行注分流。门禁兜底——删注不删断言,规则还在;门禁同时新增断言保护本注的关键短语(「视同本节内容」),防止加注被静默移除
-- **Hard rule 标注成为受保护记号**:未来任何条款想成为硬规则,写上 "Hard rule" 标注即自动进入 L1 领地;反过来,删除或改写任何带此标注的条款 = L1
-- **下游可回流**:走 L1/L2 分级的下游(如 dryrun)有同样的"判据圈不到散落硬规则"问题,B-3 回流提醒照发;不走分级的下游可拒
+- **Two tracks made explicit**: the template placeholder (for downstream) and the dogfood instance (pointing at the gate) are separated by a single note within the same section. The gate is the backstop — delete the note but not the assertion, and the rule still holds; the gate simultaneously gains an assertion protecting this note's key phrase ("treated as content of this section"), preventing the note from being silently removed
+- **The "Hard rule" designation becomes a protected marker**: any future clause that wants to become a hard rule automatically enters L1 territory by writing the "Hard rule" designation on it; conversely, deleting or rewriting any clause carrying this designation = L1
+- **Downstream can backfill this**: downstream projects that follow the tier system (e.g. dryrun) have the same "the criterion can't reach scattered hard rules" problem — the B-3 backfill notice still goes out; downstream projects that don't follow the tier system may decline

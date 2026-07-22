@@ -1,30 +1,30 @@
-# ADR-0031: ADR 双目录分家——协议 ADR 与项目 ADR 拆目录,消撞号删重编号
+# ADR-0031: ADR dual-directory split — protocol ADRs and project ADRs get separate directories, eliminating number collisions and renumbering
 
 - Date: 2026-07-21
 - Status: accepted
-- 关联: ADR-0021(hash 戳记)、ADR-0022(gearbox-install)、ADR-0023(版本号)、ADR-0024(重编号回流)、ADR-0016/0017(version/update)
+- Related: ADR-0021 (hash stamp), ADR-0022 (gearbox-install), ADR-0023 (version scheme), ADR-0024 (renumber-on-backfill), ADR-0016/0017 (version/update)
 
 ## Context
 
-下游 `docs/adr/` 一个目录同装两类 ADR:协议 ADR(拷自上游,带 `- 溯源:` 戳记 ADR-0021)与项目自有 ADR。两类抢同一编号命名空间会撞号——例 Blackbox 自有 ADR-0014 占号,上游 0014–0020 回流被整体重编号为本地 0015–0021。`gearbox-update` 为此背了整套「撞号检测 → 重编号 → 改内文 `ADR-XXXX` 引用」逻辑(`buildExistingNumMap` / `assignDownstreamNums` / `replaceAdrRefs`),复杂且脆:编号漂移让「下游第 N 号 = 上游第几号」不再恒等。
+Downstream's single `docs/adr/` directory holds two kinds of ADRs at once: protocol ADRs (copied from upstream, carrying the `- Provenance:` stamp, ADR-0021) and the project's own ADRs. The two kinds compete for the same numbering namespace, which causes collisions — e.g. Blackbox's own ADR-0014 occupied that number, so backfilling upstream's 0014–0020 got wholesale renumbered to local 0015–0021. `gearbox-update` carried a whole "collision detection → renumber → rewrite in-text `ADR-XXXX` references" subsystem for this (`buildExistingNumMap` / `assignDownstreamNums` / `replaceAdrRefs`), which is complex and fragile: number drift means "downstream's Nth number = upstream's which number" is no longer an identity.
 
 ## Decision
 
-拆成两个平行目录,上游下游一致:
+Split into two parallel directories, consistent between upstream and downstream:
 
-- `docs/gearbox-adr/` — 协议 ADR。工具独占管理(install 写 / update 回流 / version 读),手别改。
-- `docs/adr/` — 项目自有 ADR。人写,从 0001 起,工具永不碰。
+- `docs/gearbox-adr/` — protocol ADRs. Exclusively managed by the tools (install writes / update backfills / version reads), hands off.
+- `docs/adr/` — the project's own ADRs. Human-written, starting from 0001, the tools never touch it.
 
-上游本 repo 的协议 ADR 全部住 `docs/gearbox-adr/`;上游无 `docs/adr/`(Gearbox 自身暂无非协议决策)。
+In this upstream repo, all protocol ADRs live in `docs/gearbox-adr/`; upstream has no `docs/adr/` (Gearbox itself currently has no non-protocol decisions).
 
-因两类分属不同目录,永不撞号,下游 `gearbox-adr/` 编号与上游 **1:1 恒等**。`gearbox-update` 的重编号子系统整体删除——它本就只因撞号而存在。
+Because the two kinds now belong to different directories, they never collide, and downstream's `gearbox-adr/` numbering stays a **1:1 identity** with upstream. `gearbox-update`'s renumbering subsystem is removed entirely — it only ever existed because of collisions.
 
-不写迁移工具:现有 3 个下游(dryrun/mandys/Blackbox)是早期自测舰队,将来真回流时手动 `git mv` 即可。
+No migration tool is written: the current 3 downstreams (dryrun/mandys/Blackbox) are an early self-test fleet; when a real backfill happens, a manual `git mv` is enough.
 
 ## Consequences
 
-- **版本 = minor → v1.4.0**。文件布局变更按 ADR-0023 字面为 major,但**无外部采纳者**(存量 3 下游均为自测舰队),实际不产生下游破坏,维护者定为 minor(按「新增双目录机制」计,ADR-0023)。碰 Gate 锚点 + 三工具 = **L1**(ADR-0006,与版本段位正交)。
-- `gearbox-update` 大幅简化:删撞号/重编号/内文改写,回流即「缺则按上游原号拷入 gearbox-adr/」。
-- 下游项目 ADR 从 0001 独立编号,语义清晰:`ls docs/adr/` 只见自家决策,`ls docs/gearbox-adr/` 只见协议。
-- 存量下游需一次性手动 `git mv`(本次不做);未迁移的老下游跑新 update 会把协议 ADR 拷进 `gearbox-adr/`,`docs/adr/` 里的旧协议 ADR 残留需手动清。
-- **考虑过但未采纳**:子目录(`docs/adr/gearbox/`,路径多一层易混)、文件名前缀(`gearbox-0001-*`,仍混在一个 ls)、迁移工具(3 个下游手动足够)、上游保持 `docs/adr/`(工具要分源/目标两常量,语义不正)。
+- **Version = minor → v1.4.0**. By ADR-0023's letter, a file-layout change is major, but with **no external adopters** (all 3 existing downstreams are the self-test fleet), it produces no actual downstream breakage in practice, so the maintainer set it as minor (counted as "adding the dual-directory mechanism," ADR-0023). Touches the Gate anchor + all three tools = **L1** (ADR-0006, orthogonal to the version segment).
+- `gearbox-update` simplifies substantially: collision detection/renumbering/in-text rewriting are removed; backfill becomes simply "if missing, copy into `gearbox-adr/` under its original upstream number."
+- Downstream project ADRs get their own independent numbering starting from 0001, semantics are clear: `ls docs/adr/` shows only the project's own decisions, `ls docs/gearbox-adr/` shows only protocol.
+- Existing downstreams need a one-time manual `git mv` (not done in this ADR); old downstreams that haven't migrated and run the new update will get protocol ADRs copied into `gearbox-adr/`, while the old protocol ADRs left behind in `docs/adr/` need to be cleaned up manually.
+- **Considered but not adopted**: a subdirectory (`docs/adr/gearbox/`, one extra path level, easy to confuse), a filename prefix (`gearbox-0001-*`, still mixed in one `ls`), a migration tool (manual is enough for 3 downstreams), keeping upstream on `docs/adr/` (the tools would need separate source/destination constants, semantics wrong).

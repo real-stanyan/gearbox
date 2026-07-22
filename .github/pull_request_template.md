@@ -1,43 +1,51 @@
 <!--
-本模板是 Gearbox 的协议层契约载体 (ADR-0013)。
-新建 PR 时 GitHub 会自动套用本模板。请按需填写, 不要删 Affects downstream 字段。
+This template is the protocol-layer contract carrier for Gearbox (ADR-0013).
+GitHub applies it automatically to new PRs. Fill in as needed; do not delete the
+Affects downstream field.
 -->
 
 ## What / Why / Changes
 
-<!-- 简述: 做了什么 / 为什么 / 改动文件清单。CI 绿后请自行 merge (L2) 或等维护者同意 (L1)。 -->
+<!-- Briefly: what was done / why / list of changed files. Once CI is green, merge it yourself (L2) or wait for maintainer agreement (L1). -->
 
 ## Affects downstream
 
-<!-- 信息性声明 (ADR-0013 → ADR-0026 pull 模型)。二选一:
+<!-- Informational declaration (ADR-0013 → ADR-0026 pull model). Pick one:
 
-  - `no`  —— 本 PR 不影响下游项目 (如纯 Gearbox 内部文档、CI 配置、ADR 模板改动)
-  - `yes` —— 本 PR 影响 downstream (协议级改动: Hard rules / Gate / Tech stack / Working agreement /
-             索引 / 任何引用 L1/L2 分级或协议机制的新增内容, 见 ADR-0012 判据)
+  - `no`  —— this PR doesn't affect downstream projects (e.g. Gearbox-internal docs, CI config, ADR template tweaks)
+  - `yes` —— this PR affects downstream (protocol-level changes: Hard rules / Gate / Tech stack /
+             Working agreement / the index / any new content that references L1/L2 tiering or a
+             protocol mechanism — see the ADR-0012 criterion)
 
-回流靠 pull: 下游开工跑 `gearbox-version` 自查、落后就 `gearbox-update` (ADR-0026)。
-本字段**不再阻塞 merge**——填 `yes` 无需逐下游开 issue。仅在判断影响面 + 帮维护者决定是否
-可选地对私有舰队 (`DOWNSTREAM.md` 已登记项目) 开告知 issue。
+Backfill is pull-driven: downstream repos self-check with `gearbox-version` when starting a shift,
+and run `gearbox-update` if behind (ADR-0026). This field **no longer blocks merge** — marking `yes`
+does not require opening an issue against every downstream repo. It only helps assess the blast
+radius + helps the maintainer decide whether to **optionally** open a notification issue against
+projects registered in `DOWNSTREAM.md` (the private fleet).
 
-若 `no`: 简要说明为什么不影响 (如 "纯 ADR 模板格式调整, 不改协议内容")。
+If `no`: briefly explain why it doesn't affect downstream (e.g. "pure ADR template formatting tweak, doesn't change protocol content").
 -->
 
-- Affects downstream: <!-- no | yes + 一句影响面说明 -->
+- Affects downstream: <!-- no | yes + one sentence on the blast radius -->
 
 ## Version bump
 
-<!-- 必填 (ADR-0023)。四选一:
+<!-- Required (ADR-0023). Pick one of four:
 
-  - `major` —— 跨工具/跨 repo 契约变更 (hash 戳记格式 / install 锚点结构 / 文件布局 / 改名), 下游需人工干预
-  - `minor` —— 新增机制 (新 ADR / 新工具 / 新协议条款)
-  - `patch` —— 已有文件修订 (措辞 / status 行 / typo)
-  - `none`  —— 不动协议与工具 (需一句理由, 如 "纯 README typo")
+  - `major` —— a cross-tool/cross-repo contract change (hash-stamp format / install anchor structure /
+               file layout / rename); downstream needs manual intervention
+  - `minor` —— a new mechanism (new ADR / new tool / new protocol clause)
+  - `patch` —— a revision to an existing file (wording / status line / typo)
+  - `none`  —— doesn't touch the protocol or tooling (needs one sentence of justification, e.g.
+               "pure README typo")
 
-同一 PR 里作者把 package.json 的 version 改成本次目标版本(= 最新 tag + 段位, ADR-0028/0029)。
-merge 后作者 agent 以 merge 时刻最新 tag 为基准打 annotated tag 并 push:
-  git tag -a v0.x.y -m "一句话摘要" && git push origin v0.x.y
-然后维护者跑 npm publish 发布 npx 包(ADR-0029; 需 npm 凭据, agent 不代跑)。
-none 段位不触发 tag/publish, 也不动 package.json version。
+In the same PR, the author sets package.json's version to the target for this change
+(= latest tag + bump segment, ADR-0028/0029).
+After merge, the author agent tags relative to the latest tag as of merge time and pushes it:
+  git tag -a v0.x.y -m "one-line summary" && git push origin v0.x.y
+The maintainer then runs npm publish to release the npx package (ADR-0029; needs npm credentials,
+agents don't run this on the maintainer's behalf).
+`none` triggers no tag/publish and doesn't touch package.json's version.
 -->
 
 - Version bump: <!-- major | minor | patch | none -->
@@ -45,5 +53,5 @@ none 段位不触发 tag/publish, 也不动 package.json version。
 ## Gate
 
 ```
-<!-- 粘贴 node scripts/check-gearbox.js 输出 -->
+<!-- paste the output of node scripts/check-gearbox.js -->
 ```

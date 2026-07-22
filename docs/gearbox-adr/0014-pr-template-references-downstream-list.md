@@ -1,22 +1,22 @@
-# ADR-0014: PR 模板引用 DOWNSTREAM.md 清单,不硬编码下游项目名
+# ADR-0014: PR template references the DOWNSTREAM.md list instead of hardcoding downstream project names
 
 - Date: 2026-07-19
 - Status: accepted
 
 ## Context
 
-ADR-0013 落地时,`.github/pull_request_template.md` 把当时的两个下游项目名(dryrun / mandys_bubble_tea_admin_app)直接写死在「下游回流 issue 链接」小节里。
+When ADR-0013 was rolled out, `.github/pull_request_template.md` hardcoded the two downstream project names at the time (dryrun / mandys_bubble_tea_admin_app) directly into the "downstream backfill issue links" subsection.
 
-这造成同一份信息活在两处:`DOWNSTREAM.md` 是清单的权威源(ADR-0013 明文:"必须给 DOWNSTREAM.md 清单里的每个项目各开一个回流 issue"),PR 模板是它的复印件。下游清单变化时(新项目接入 / 项目归档),DOWNSTREAM.md 会改(ADR-0013 的维护规则要求),但 PR 模板必然被忘掉——模板不在任何维护清单里。漂移后果:PR 作者按模板里的旧名单开回流 issue,漏掉新下游,B-3 机制在盲区失效——正是 B-3 要解决的"漏接"以另一种形式回归。
+This caused the same piece of information to live in two places: `DOWNSTREAM.md` is the authoritative source of the list (ADR-0013 states explicitly: "a backfill issue must be opened for each project in the DOWNSTREAM.md list"), and the PR template is a copy of it. When the downstream list changes (a new project onboards / a project is archived), DOWNSTREAM.md gets updated (required by ADR-0013's maintenance rule), but the PR template is bound to be forgotten — the template isn't on any maintenance checklist. The consequence of the drift: a PR author opens backfill issues against the stale list in the template, missing new downstream projects, and the B-3 mechanism fails in this blind spot — exactly the "missed notification" B-3 was meant to solve, returning in a different form.
 
 ## Decision
 
-PR 模板不再列具体项目名,改为指令:**"按 `DOWNSTREAM.md`「已接入项目」清单逐项列出,一项一行"**,附占位行 `<repo>: <回流 issue 链接>`。
+The PR template no longer lists specific project names; instead it gives an instruction: **"list them one by one, per the `DOWNSTREAM.md` 'Onboarded projects' list, one item per line"**, with a placeholder line `<repo>: <backfill issue link>`.
 
-单一事实源原则(CONTEXT.md 第一条术语)应用于协议自身:清单只活在 DOWNSTREAM.md。
+The single-source-of-truth principle (CONTEXT.md's first term) is applied to the protocol itself: the list lives only in DOWNSTREAM.md.
 
 ## Consequences
 
-- **填 PR 时多一跳**:作者要打开 DOWNSTREAM.md 看清单,不能照模板抄。可接受——B-3 流程本来就要求逐项开 issue,清单必读
-- **门禁不受影响**:check-gearbox.js 断言的是模板保留 `Affects downstream` 字段与 DOWNSTREAM.md 保留「已接入项目」节,不断言具体项目名
-- **下游拷走模板时噪音更小**:模板不再带 Gearbox 自己的项目名(README 开局指引仍要求下游删/改写该模板)
+- **One more hop when filling out a PR**: the author has to open DOWNSTREAM.md to see the list, rather than copying from the template. Acceptable — the B-3 process already requires opening an issue per item, so reading the list is required anyway
+- **The gate is unaffected**: check-gearbox.js asserts that the template keeps the `Affects downstream` field and that DOWNSTREAM.md keeps the "Onboarded projects" section — it doesn't assert specific project names
+- **Less noise when downstream copies the template**: the template no longer carries Gearbox's own project names (the README's startup guide still requires downstream to delete/rewrite this template)
