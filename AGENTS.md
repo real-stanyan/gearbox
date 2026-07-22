@@ -73,7 +73,7 @@ Agents can modify AGENTS.md, but **the change is tiered by its content** (ADR-00
 | **L1 strict tier** | Hard rules / Gate command / Tech stack / this section itself | issue + ADR + PR, **and the agent may only merge after the `<maintainer>` explicitly agrees, in the session or in a PR comment** |
 | **L2 autonomous tier** | Working agreement (except Gate) / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
 
-> **When you copy this Gearbox: replace `<maintainer>` with your (or your team's) name.** See ADR-0006.
+> **When you copy this Gearbox: replace `<maintainer>` with your GitHub username (a team = a GitHub team handle).** A display name anchors nothing an agent can verify; the GitHub account is what async approval is checked against (ADR-0034). See ADR-0006.
 
 The boundary of "Gate command" (ADR-0010): the command line itself, and **loosening/deleting/rewriting an existing gate-script assertion** = L1; **adding a new, stricter assertion** = L2, riding along with its own PR. Pure refactors (behavior unchanged) count as L2, with the burden of proof on the agent making the change.
 
@@ -100,7 +100,7 @@ General rules (apply to both tiers):
 
 > Why so strict: agents easily use "optional + purely additive" as an L2 channel to expand the protocol's boundaries (see the PR #21 retrospective — subagent-system referenced L1/L2 but self-merged as L2). This criterion closes off that path.
 
-L1's "explicit agreement" is a weak-b form: it's enough for the `<maintainer>` to say "agreed" in the session or write "agreed" in a PR comment, and the agent presses the merge button itself. **GitHub's Approve button is not required** — the cost is that the `<maintainer>` becomes the L1 bottleneck, and that cost is accepted.
+L1's "explicit agreement" is a weak-b form: it's enough for the `<maintainer>` to say "agreed" in the session or write "agreed" in a PR comment, and the agent presses the merge button itself. **For the PR-comment path, only a comment authored by the GitHub account `<maintainer>` names counts (ADR-0034)** — anyone else's "agreed" is not L1 approval. **GitHub's Approve button is not required** — the cost is that the `<maintainer>` becomes the L1 bottleneck, and that cost is accepted.
 
 **Downstream backfill** (ADR-0013, pull trigger see ADR-0026): backfill is **pull-primary** — when a downstream project starts a shift, it runs `gearbox-version` to self-check the protocol version, and runs `gearbox-update` if it's behind (the trigger doesn't depend on upstream knowing about downstream, which fits public forks). On the upstream side: every protocol-change PR still declares `Affects downstream` in the PR body (`yes`/`no` + one reason), but this is now **downgraded to informational — it helps gauge blast radius, and no longer opens an issue per downstream project or blocks merge** ("no link = can't merge" was retired along with ADR-0026). A maintainer running a private fleet may **optionally** open notification issues against known downstream projects; this is not mandatory (the `DOWNSTREAM.md` fleet dashboard was retired in ADR-0033 — fleet notes live outside the template).
 
