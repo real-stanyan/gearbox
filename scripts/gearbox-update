@@ -478,7 +478,7 @@ const AGENTS_MD_IMPACT = {
     section: "### Changing the protocol itself (rules for changing this file)",
     note: 'Add the "B-3 downstream backfill reminder" field note (if this project has downstream projects). If this project has no downstream (e.g. dryrun/mandys_app are terminal nodes), this can be skipped.',
   },
-  14: null, // PR template references the DOWNSTREAM list — an upstream B-3 implementation detail, no downstream counterpart
+  14: null, // PR template's Affects downstream field — an upstream B-3 implementation detail, no downstream counterpart (the fleet list itself was retired in ADR-0033)
   15: null, // rename-to-gearbox — pure naming, downstream can rename or not at its own discretion (has its own backfill-reminder issue)
   16: null, // gearbox-version tool onboarding — upstream-side tooling, doesn't touch downstream AGENTS.md
   17: null, // gearbox-update tool onboarding — same
