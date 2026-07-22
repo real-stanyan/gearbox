@@ -1,41 +1,41 @@
-# ADR-0021: 同步工具加 hash 戳记——已同步 ADR 的上游漂移可检测
+# ADR-0021: Sync Tools Gain a Hash Stamp — Upstream Drift on Already-Synced ADRs Becomes Detectable
 
 - Date: 2026-07-19
 - Status: accepted
-- 修订对象: ADR-0016 / ADR-0017(给两个工具各加一个行为,原契约不变)
+- Revises: ADR-0016 / ADR-0017 (adds one behavior to each tool; the original contract is unchanged)
 
 ## Context
 
-issue #45:上游修订**已被下游拷贝过的 ADR 正文**时,两个同步工具都看不见——`gearbox-version` 按 slug 存在即报 ✅,`gearbox-update` 只拷缺失文件。「已同步」实际含义是「拷过」,不是「与上游一致」。
+Issue #45: when upstream revises the body of an ADR **that downstream has already copied**, neither sync tool can see it — `gearbox-version` reports ✅ as long as the slug exists, and `gearbox-update` only copies missing files. "Already synced" actually means "was copied," not "matches upstream."
 
-这个漂移不是偶发,是**结构性的**:Gearbox 惯例是新 ADR 修订旧 ADR 时给旧 ADR 状态行加指针(0006、0010、0012 都被加过)。协议持续演化,已同步 ADR 的状态行就持续变。实例:Blackbox PR #5 验证时靠人眼才发现下游 0010/0012 缺上游本轮加的两行指针。
+This drift is not incidental — it's **structural**: Gearbox's convention is that a new ADR revising an old one appends a status-line pointer to the old ADR (0006, 0010, and 0012 have all had this happen to them). As the protocol keeps evolving, the status lines of already-synced ADRs keep changing. Case in point: during Blackbox PR #5 verification, only a human eyeballing it caught that downstream's 0010/0012 were missing the two pointer lines upstream had just added.
 
-三个候选(维护者选 c):
+Three candidates (the maintainer chose c):
 
-- **a. 内容 diff**:下游拷贝被重编号+改写过交叉引用,diff 前要反向 `replaceAdrRefs` 还原——实现复杂且脆,为状态行级别的信号不值
-- **b. 纯声明 honest boundary**:兜底是「回流 issue 里记得写」——本轮恰恰是人眼才抓到的,结构性漂移交给流程记忆,失效模式就是重演
-- **c. hash 戳记**:检测自动化、修复仍人工,成本几行,与工具「只产出待 review 信号,不自动改」的护栏一致
+- **a. Content diff**: downstream copies have been renumbered and had their cross-references rewritten, so a diff would first need to reverse `replaceAdrRefs` to restore the original — complex and fragile to implement, not worth it for a status-line-level signal
+- **b. Pure declaration, honest boundary**: the backstop is "remember to note it in the backfill issue" — this exact case is one a human eye caught; handing structural drift to process memory just replays the same failure mode
+- **c. Hash stamp**: detection is automated, the fix stays manual, the cost is a few lines, and it matches the tools' guardrail of "only produce signals awaiting review, never auto-edit"
 
 ## Decision
 
-**hash 戳记(方案 c):**
+**Hash stamp (option c):**
 
-1. **`gearbox-update`(写侧)**:拷贝 ADR 时,机器生成的溯源行追加上游文件内容的 sha256 前 12 位:
+1. **`gearbox-update` (write side)**: when copying an ADR, the machine-generated provenance line appends the first 12 hex characters of the sha256 of the upstream file's content:
 
    ```
-   - 溯源: 回流自 [gearbox ADR-0014](…)（gearbox-update 工具同步,上游 sha256:xxxxxxxxxxxx）
+   - Provenance: backfilled from [gearbox ADR-0014](…) (synced by the gearbox-update tool, upstream sha256:xxxxxxxxxxxx)
    ```
 
-2. **`gearbox-version`(读侧)**:对 slug 匹配的拷贝,提取戳记与上游文件当前 hash 比对:
-   - 一致 → ✅ 同步(现状)
-   - 不一致 → **⚠️ 上游已修订**(drift,提示人工 diff 或重拷)
-   - 无戳记 → ✅ 照旧,汇总行报 legacy 数量(漂移不可检测)
+2. **`gearbox-version` (read side)**: for a slug-matched copy, extract the stamp and compare it against the upstream file's current hash:
+   - Match → ✅ in sync (unchanged)
+   - Mismatch → **⚠️ upstream has been revised** (drift — prompts a manual diff or recopy)
+   - No stamp → ✅ as before, the summary line reports the legacy count (drift not detectable)
 
-3. **存量拷贝不回填**:hash 随未来回流自然出现;legacy 状态显式计数,不装看得见。
+3. **Existing copies are not backfilled**: the hash appears naturally as future backfills happen; the legacy status is counted explicitly rather than being hidden.
 
 ## Consequences
 
-- **结构性漂移有了自动信号**:上游改一个已同步 ADR,下游下次 `gearbox-version` 就报 ⚠️,不再依赖人眼
-- **honest boundary(方案 b 的残值)**:hash 级检测只报「变了」,不判断变动是否值得回流——判断仍是人/下游 agent 的事;溯源引用型同步(非拷贝)无戳记,不检测
-- **分级**:工具行为收紧(多报不少报),类推 ADR-0010 收紧侧 = L2 随 PR 走;方案由维护者会话拍板(issue #45 选 c)
-- **戳记格式成为两工具间的契约**:`sha256:[0-9a-f]{12}`;改格式要同时动两侧,举证在改的 agent
+- **Structural drift now has an automatic signal**: when upstream edits an already-synced ADR, downstream's next `gearbox-version` run reports ⚠️, no longer dependent on a human eye
+- **Honest boundary (the residual value of option b)**: hash-level detection only reports "it changed," not whether the change is worth backfilling — that judgment still belongs to a human/downstream agent; provenance-by-reference sync (not a copy) carries no stamp and is not checked
+- **Tiering**: the tool behavior is tightened (reports more, not less), which by analogy with ADR-0010's tightening side = L2, rides with its PR; the choice of option was decided in a maintainer session (issue #45 chose c)
+- **The stamp format becomes a contract between the two tools**: `sha256:[0-9a-f]{12}`; changing the format requires updating both sides, and the burden of proof is on the agent making the change
