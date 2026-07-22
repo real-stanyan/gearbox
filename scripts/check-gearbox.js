@@ -9,6 +9,7 @@
 // Exit non-zero on any violation. Keep assertions structural, not stylistic.
 
 import { readFileSync, existsSync, statSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { join } from "node:path";
 
 const root = process.cwd();
@@ -151,6 +152,44 @@ if (existsSync(join(root, "AGENTS.md"))) {
     readFile("AGENTS.md").includes("Affects downstream"),
   );
 }
+// 7c. Protocol files must not be gitignored (ADR-0037): the repo is the only
+//     shared memory between shifts — an ignored protocol file exists locally
+//     but never reaches the next agent's clone. `git check-ignore` matches
+//     .gitignore patterns even for paths that don't exist yet, so this also
+//     guards `.gearbox-version` (only written downstream). Skipped when not
+//     inside a git repo (e.g. a bare template copy).
+const neverIgnored = [
+  "AGENTS.md",
+  "CLAUDE.md",
+  "CONTEXT.md",
+  "docs/gearbox-adr",
+  ".gearbox-version",
+  ".github/workflows/ci.yml",
+];
+let inGitRepo = false;
+try {
+  execSync("git rev-parse --is-inside-work-tree", { stdio: "ignore" });
+  inGitRepo = true;
+} catch {
+  /* not a git repo — nothing to check */
+}
+if (inGitRepo) {
+  for (const f of neverIgnored) {
+    let ignored = false;
+    try {
+      // exit 0 = a .gitignore pattern matches this path
+      execSync(`git check-ignore -q "${f}"`, { stdio: "ignore" });
+      ignored = true;
+    } catch {
+      /* exit 1 = not ignored */
+    }
+    check(
+      `protocol file must not be gitignored: ${f} (ADR-0037 — it would never reach the next shift's clone)`,
+      !ignored,
+    );
+  }
+}
+
 // 8. "No HANDOFF.md" is a filesystem contract, not just prose: asserting only
 //    that AGENTS.md never mentions it would miss someone adding the file itself.
 check(

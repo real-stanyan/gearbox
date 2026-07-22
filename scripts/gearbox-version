@@ -205,6 +205,21 @@ if (upstreamVersion) {
 }
 console.log("");
 
+// Gitignore blind-spot check (Gearbox ADR-0037): protocol files must reach the
+// next shift's clone — a .gitignore pattern covering them silently kills the
+// shared-memory premise. `git check-ignore -q` exits 0 when a pattern matches
+// (even for paths that don't exist yet, so `.gearbox-version` is covered before
+// the first backfill writes it); tryRun maps "no match"/"not a git repo" to null.
+// Warn-only: this script is a read-only quick-check and never blocks (exit 0).
+const neverIgnored = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md", "docs/gearbox-adr", ".gearbox-version"];
+const gitignoredProtocolFiles = neverIgnored.filter((f) => tryRun(`git check-ignore -q "${f}"`) !== null);
+if (gitignoredProtocolFiles.length > 0) {
+  console.log(`${YELLOW}⚠️  gitignored protocol files: ${gitignoredProtocolFiles.join(", ")}${RESET}`);
+  console.log(`${DIM}   these exist locally but never reach the next shift's clone — remove the${RESET}`);
+  console.log(`${DIM}   matching .gitignore patterns (Gearbox ADR-0037)${RESET}`);
+  console.log("");
+}
+
 // Pre-read downstream ADR files once (for slug matching + reference grep)
 const downFiles = readdirSync(DOWNSTREAM_ADR_DIR)
   .filter((f) => /^\d{4}-.+\.md$/.test(f))
