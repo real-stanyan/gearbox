@@ -112,6 +112,44 @@ function pxLines(visible) {
 const WORDMARK = "g e a r b o x";
 const TAGLINE = "multi-agent · one source of truth";
 
+// ============== Big wordmark (half-block pixel letters, 6px tall = 3 rows) ==============
+
+const WM_TEXT = "gearbox";
+const WM_FONT = {
+  g: [".####", "#....", "#....", "#..##", "#...#", ".####"],
+  e: ["#####", "#....", "####.", "#....", "#....", "#####"],
+  a: [".###.", "#...#", "#...#", "#####", "#...#", "#...#"],
+  r: ["####.", "#...#", "#...#", "####.", "#..#.", "#...#"],
+  b: ["####.", "#...#", "####.", "#...#", "#...#", "####."],
+  o: [".###.", "#...#", "#...#", "#...#", "#...#", ".###."],
+  x: ["#...#", ".#.#.", "..#..", "..#..", ".#.#.", "#...#"],
+};
+const WM_GLYPHS = [...WM_TEXT].map((ch) => WM_FONT[ch]);
+const WM_WIDTH = WM_GLYPHS.reduce((w, g) => w + g[0].length + 1, -1);
+
+// Render the first `letterCount` letters as 3 half-block lines, gradient bone → amber
+// over the full wordmark width (colors stay put while letters reveal one by one).
+function wordmarkLines(letterCount) {
+  const lines = [];
+  for (let y = 0; y < 6; y += 2) {
+    let line = "";
+    let x0 = 0;
+    for (let gi = 0; gi < Math.min(letterCount, WM_GLYPHS.length); gi++) {
+      const g = WM_GLYPHS[gi];
+      for (let x = 0; x < g[0].length; x++) {
+        const color = fg(mix(BONE, AMBER, (x0 + x) / Math.max(WM_WIDTH - 1, 1)));
+        const t = g[y][x] === "#";
+        const b = g[y + 1][x] === "#";
+        line += t && b ? color + "█" + RESET : t ? color + "▀" + RESET : b ? color + "▄" + RESET : " ";
+      }
+      line += " ";
+      x0 += g[0].length + 1;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
 // Full logo show: grey pixels dissolve in (ease-out), amber bar sweeps left→right,
 // gradient wordmark + tagline type in beside the bar. Non-TTY: no-op (tools print
 // their own plain headers).
@@ -167,21 +205,43 @@ export async function logo({ speed = 1 } = {}) {
     await sleep(22 / speed);
   }
   // wordmark + tagline beside the amber bar
-  const wordRow = Math.floor(PX_H / 4) + 1;
   const col = PX_W + 6;
-  up(H2 - wordRow);
-  const word = [...WORDMARK];
-  for (let k = 1; k <= word.length; k++) {
-    stdout.write(`${ESC}${col}G${ESC}0K` + BOLD + grad(word.slice(0, k).join("")) + RESET);
-    await sleep(35 / speed);
+  const wide = (stdout.columns || 80) >= col + WM_WIDTH + 1;
+  if (wide) {
+    // big pixel wordmark: 3 half-block rows + tagline, vertically centered on the bar
+    const wordTop = 5;
+    up(H2 - wordTop);
+    for (let k = 1; k <= WM_GLYPHS.length; k++) {
+      for (const ln of wordmarkLines(k)) stdout.write(`${ESC}${col}G${ESC}0K` + ln + "\n");
+      if (k < WM_GLYPHS.length) {
+        up(3);
+        await sleep(70 / speed);
+      }
+    }
+    stdout.write(`${ESC}${col}G` + DIM);
+    for (const ch of TAGLINE) {
+      stdout.write(ch);
+      await sleep(8 / speed);
+    }
+    stdout.write(RESET);
+    stdout.write(`${ESC}${H2 - wordTop - 4}B\r\n`);
+  } else {
+    // narrow terminal: single-line gradient wordmark (original rendering)
+    const wordRow = Math.floor(PX_H / 4) + 1;
+    up(H2 - wordRow);
+    const word = [...WORDMARK];
+    for (let k = 1; k <= word.length; k++) {
+      stdout.write(`${ESC}${col}G${ESC}0K` + BOLD + grad(word.slice(0, k).join("")) + RESET);
+      await sleep(35 / speed);
+    }
+    stdout.write(`\n${ESC}${col}G` + DIM);
+    for (const ch of TAGLINE) {
+      stdout.write(ch);
+      await sleep(8 / speed);
+    }
+    stdout.write(RESET);
+    stdout.write(`${ESC}${H2 - wordRow - 1}B\r\n`);
   }
-  stdout.write(`\n${ESC}${col}G` + DIM);
-  for (const ch of TAGLINE) {
-    stdout.write(ch);
-    await sleep(8 / speed);
-  }
-  stdout.write(RESET);
-  stdout.write(`${ESC}${H2 - wordRow - 1}B\r\n`);
   showCursor();
 }
 
