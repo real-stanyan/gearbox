@@ -56,7 +56,6 @@ import { join, basename } from "node:path";
 import { env, exit, cwd, stdout } from "node:process";
 import * as tui from "./lib/tui.js";
 
-const RED = "\x1b[31m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const DIM = "\x1b[2m";
@@ -110,9 +109,11 @@ function resolveUpstream() {
     return { gearboxDir: cacheDir, upstreamUrl, isRemote: true };
   }
 
-  console.log(`${RED}✗ Gearbox upstream not found${RESET}`);
-  console.log(`  no local ${defaultLocal}/docs/gearbox-adr, and no .gearbox-upstream config at the repo root`);
-  console.log(`  set the GEARBOX_DIR env var, or put the upstream git URL in .gearbox-upstream (ADR-0027)`);
+  tui.fail(
+    "Gearbox upstream not found",
+    `no local ${defaultLocal}/docs/gearbox-adr, and no .gearbox-upstream config at the repo root\nset the GEARBOX_DIR env var, or put the upstream git URL in .gearbox-upstream (ADR-0027)`,
+    { stream: stdout },
+  );
   exit(1);
 }
 
@@ -133,7 +134,9 @@ function semverLag(local, upstream) {
 
 const DOWNSTREAM_ADR_DIR = "docs/gearbox-adr";
 if (!existsSync(DOWNSTREAM_ADR_DIR)) {
-  console.log(`${RED}✗ Current directory has no docs/gearbox-adr/ — run this from a downstream repo's root${RESET}`);
+  tui.fail("Current directory has no docs/gearbox-adr/ — run this from a downstream repo's root", "", {
+    stream: stdout,
+  });
   exit(1);
 }
 
@@ -151,7 +154,7 @@ const { gearboxDir, upstreamUrl, isRemote } = upstream;
 const UPSTREAM_ADR_DIR = join(gearboxDir, "docs/gearbox-adr");
 
 if (!existsSync(UPSTREAM_ADR_DIR)) {
-  console.log(`${RED}✗ Upstream ADR directory missing: ${UPSTREAM_ADR_DIR}${RESET}`);
+  tui.fail(`Upstream ADR directory missing: ${UPSTREAM_ADR_DIR}`, "", { stream: stdout });
   exit(1);
 }
 

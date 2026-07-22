@@ -10,7 +10,7 @@
 //     tool behavior, output semantics, or exit codes.
 //   - Palette is baked from the project logo (bone/steel/iron greys + amber bar).
 
-import { stdout } from "node:process";
+import { stdout, stderr } from "node:process";
 
 export const isTTY = Boolean(stdout.isTTY);
 
@@ -319,6 +319,30 @@ export async function typeLine(line, msPerChar = 4) {
     if (!tok.startsWith("\x1b")) await sleep(msPerChar);
   }
   stdout.write("\n");
+}
+
+// ============== Error block ==============
+
+export const RUST = [224, 82, 66]; // error red, warm to sit next to the amber palette
+
+// Styled failure output: rust → amber gradient rule + message + dim ↳ hint on a TTY
+// stream; plain "✗ msg" lines when piped (CI/log semantics unchanged). Does not exit —
+// callers own the exit code. Pass { stream: stdout } for tools that report errors on stdout.
+export function fail(msg, hint = "", { stream = stderr } = {}) {
+  const msgLines = String(msg).split("\n");
+  const hintLines = hint ? String(hint).split("\n") : [];
+  if (!stream.isTTY) {
+    stream.write(`✗ ${msgLines.join("\n  ")}\n`);
+    for (const h of hintLines) stream.write(`  ${h}\n`);
+    return;
+  }
+  const head = "── ✗ error ";
+  stream.write("\n  " + grad(head + "─".repeat(Math.max(44 - head.length, 0)), RUST, AMBER) + "\n");
+  for (const m of msgLines) stream.write("  " + fg(RUST) + m + RESET + "\n");
+  hintLines.forEach((h, i) => {
+    stream.write("  " + DIM + (i === 0 ? "↳ " : "  ") + h + RESET + "\n");
+  });
+  stream.write("\n");
 }
 
 // Gradient horizontal rule with an optional inline title.
