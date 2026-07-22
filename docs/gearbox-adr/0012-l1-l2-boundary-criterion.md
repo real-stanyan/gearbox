@@ -1,4 +1,4 @@
-# ADR-0012: L1/L2 boundary criterion — "mechanism reference priority"
+# ADR-0012: L1/L2 boundary criterion — mechanism reference takes priority
 
 - Date: 2026-07-19
 - Status: accepted, definition exemption see ADR-0019 (CONTEXT.md entries describing existing mechanisms do not trigger this criterion)
@@ -14,13 +14,13 @@ Root cause: ADR-0006 divides L1/L2 by **content type** (Hard rules / Gate / Tech
 
 Three candidate criteria (Stan chose a):
 
-- **a. Mechanism reference priority**: as long as new content references the L1/L2 tiering / Hard rules / Working agreement mechanism, it's L1. Objectively verifiable (grep the text), prevents abuse of the "optional" label
+- **a. Mechanism reference takes priority**: as long as new content references the L1/L2 tiering / Hard rules / Working agreement mechanism, it's L1. Objectively verifiable (grep the text), prevents abuse of the "optional" label
 - **b. Optional/required + file dimension**: optional + pure addition = L2. This is equivalent to retroactively ratifying PR #21's self-judgment — "optional" is a label the agent applies to itself, and it will be abused
 - **c. Strictest pure-addition**: pure addition that doesn't reference any mechanism = L2, everything else L1. The strictest option, but some genuinely independent optional documents also get caught in L1, increasing maintainer burden
 
 ## Decision
 
-**L1/L2 boundary criterion = mechanism reference priority:**
+**L1/L2 boundary criterion = mechanism reference takes priority:**
 
 > **As long as new content references the L1/L2 tiering / Hard rules / Working agreement mechanism (regardless of whether it's "optional" or touches an existing file), treat it as L1.**
 
