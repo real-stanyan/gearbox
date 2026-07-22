@@ -64,8 +64,8 @@ This protocol isn't just theory — it ran **4 rounds of multi-agent collaborati
 **What the experiment did and didn't validate:**
 
 - ✅ **Held up:** zero-verbal handoffs, the protocol self-repair loop (find a gap → fold it into AGENTS.md), three shifts of code collaboration with nothing left to guesswork
-- ✅ **New in round 5:** the protocol catching its own violations — the previous shift didn't open a handoff issue, the next shift hit an empty starting point per "On starting a shift," opened a protocol-gap issue, and ADR-0009's boundary clause grew out of that, all without anyone pointing the way; the L1 b-weak consent flow (maintainer says "agree" in-session + leaves a trace in a PR comment) ran end-to-end for the first time
-- ✅ **New in round 6:** the protocol catching an overreach (PR #21 had an agent self-merge under L2 a template that referenced L1/L2, and the retrospective grew ADR-0012's criterion to block that path) + the backfill mechanism closing its own loop (0013 introduced B-3, and the PR that introduced it opened its own downstream issue per B-3 — a complete evidence chain)
+- ✅ **New in round 5:** the protocol catching its own violations — the previous shift didn't open a handoff issue, the next shift hit an empty starting point per "On starting a shift," opened a protocol-gap issue, and ADR-0009's boundary clause grew out of that, all without anyone pointing the way; the L1 weak-b form (maintainer says "agree" in-session + leaves a trace in a PR comment) ran end-to-end for the first time
+- ✅ **New in round 6:** the protocol catching an overreach (PR #21 had an agent use an L2 self-merge to introduce a template that referenced L1/L2, and the retrospective grew ADR-0012's criterion to block that path) + the backfill mechanism closing its own loop (0013 introduced B-3, and the PR that introduced it opened its own downstream issue per B-3 — a complete evidence chain)
 - 🔸 **Partially held up:** the gate as a backstop — it genuinely catches issues in pure-function areas, but the I/O layer and test-file types remain a persistent blind spot (whack-a-mole)
 - ❌ **Not solved:** an all-green gate ≠ "correct" — this is inherent to regression-style guarantees and no protocol can fix it on its own
 
@@ -74,7 +74,7 @@ This protocol isn't just theory — it ran **4 rounds of multi-agent collaborati
 - **Scale:** n=1 user, 2 agents, a toy-sized codebase. Never tested against a real project's code volume or business complexity
 - **Concurrency:** the whole protocol assumes a shift model (one agent at a time). Multiple agents present simultaneously would break the premise underlying ADR-0007 (which itself documents the conditions that would overturn it)
 - **Division of labor:** ADR-0008 admits n=0 — the placeholder is the answer
-- **L1 while offline:** so far the b-weak consent has always been the maintainer responding in real time; when the maintainer is offline, an L1 change just sits there. This bottleneck is explicitly accepted but has never actually been felt
+- **L1 while offline:** so far the weak-b form has always been the maintainer responding in real time; when the maintainer is offline, an L1 change just sits there. This bottleneck is explicitly accepted but has never actually been felt
 - **Ceremony cost:** every shift's issue + five-field Memory + mandatory ADR for protocol changes — in the protocol experiment this was data; in a high-frequency, small-task setting it's a tax
 
 If some agent doesn't recognize `AGENTS.md`, symlink it in the repo: `ln -s AGENTS.md <the filename that tool expects>`.
