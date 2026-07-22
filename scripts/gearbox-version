@@ -235,6 +235,11 @@ const upstreamFiles = readdirSync(UPSTREAM_ADR_DIR)
   .filter((f) => /^\d{4}-.+\.md$/.test(f))
   .sort();
 
+// Evaluate every upstream ADR first; render afterwards. TTY: a single gradient
+// progress bar + only the problem lines (drift / missing) — the ✅ wall of text
+// added no information. Non-TTY (CI, pipes): the full per-ADR listing, unchanged.
+const reportLines = []; // { line, ok }
+
 for (const f of upstreamFiles) {
   const base = f.replace(/\.md$/, "");
   const num = base.slice(0, 4);
@@ -255,6 +260,7 @@ for (const f of upstreamFiles) {
   const refMatch = downFiles.find((d) => refRe.test(d.content));
 
   let line;
+  let ok = true;
   if (copyMatch) {
     // hash stamp comparison (ADR-0021): the upstream hash recorded in the copy vs the upstream
     // file's current hash
@@ -267,6 +273,7 @@ for (const f of upstreamFiles) {
       } else {
         line = `  ${YELLOW}⚠️  ADR-${num}${RESET} ${slug} ${YELLOW}upstream has been revised${RESET} ${DIM}(copy: ${copyMatch.name}, manual diff or re-copy)${RESET}`;
         driftCount++;
+        ok = false;
       }
     } else {
       line = `  ${GREEN}✅ ADR-${num}${RESET} ${slug} ${DIM}(copy: ${copyMatch.name}, no stamp)${RESET}`;
@@ -279,9 +286,20 @@ for (const f of upstreamFiles) {
   } else {
     line = `  ${YELLOW}✖ ADR-${num}${RESET} ${slug}`;
     missingCount++;
+    ok = false;
   }
-  stdout.write(line + "\n");
-  if (tui.isTTY) await tui.sleep(12); // staggered reveal (ADR-0035); instant when piped
+  reportLines.push({ line, ok });
+}
+
+if (tui.isTTY) {
+  // presentational bar over the already-computed results (ADR-0035: animations never do work)
+  await tui.progress("ADR sync check", upstreamFiles, () => {}, {
+    perItemMs: 24,
+    doneNote: `${syncedCount}/${upstreamFiles.length} synced`,
+  });
+  for (const r of reportLines) if (!r.ok) stdout.write(r.line + "\n");
+} else {
+  for (const r of reportLines) stdout.write(r.line + "\n");
 }
 
 console.log("");
