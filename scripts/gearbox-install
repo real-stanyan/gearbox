@@ -26,9 +26,11 @@
 //
 // What it doesn't do:
 //   - Doesn't copy pull_request_template.md (the downstream-backfill vehicle, Gearbox-specific), scripts/, README.md
-//   - Doesn't overwrite an existing AGENTS.md, whoever wrote it (ADR-0038): a Gearbox-made one
-//     means "use gearbox-update to backfill"; a hand-written one gets the back-up-and-merge path
-//     (the user's AGENTS.md stays the single entry point — Gearbox content merges into it)
+//   - Doesn't overwrite or delete an existing AGENTS.md (ADR-0038/0039): a Gearbox-made one
+//     means "use gearbox-update to backfill" (refusal); a hand-written one is preserved as
+//     AGENTS-backup.md and the install proceeds, ending with a merge-it-back reminder
+//     (the user's AGENTS.md stays the single entry point — Gearbox content merges into it);
+//     an existing AGENTS-backup.md is never overwritten (refusal — unfinished adoption)
 //   - Doesn't auto-commit (after install, review by hand + make the first commit)
 //
 // Every transform anchors to known text in the upstream AGENTS.md; if an anchor isn't found, it errors
@@ -40,6 +42,7 @@ import {
   existsSync,
   readdirSync,
   mkdirSync,
+  renameSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
@@ -108,12 +111,15 @@ if (!existsSync(GEARBOX_ADR_DIR))
     "set the GEARBOX_DIR env var to change the path, or make sure Gearbox is at ~/Github/gearbox/",
   );
 if (!existsSync(targetDir)) die(`Target directory does not exist: ${targetDir}`);
+let backupAgents = false; // hand-written AGENTS.md found — rename it in the write phase (ADR-0039)
 if (existsSync(join(targetDir, "AGENTS.md"))) {
   // Split on provenance (ADR-0038): AGENTS.md is an industry convention, so the
-  // existing file may be hand-written rather than Gearbox-made — and the two need
-  // opposite advice (update vs. back-up-and-merge). Fingerprint = the Working
-  // agreement anchor (present in every Gearbox-generated AGENTS.md, guarded by
-  // check-gearbox.js upstream) or the tool-written companions next to it.
+  // existing file may be hand-written rather than Gearbox-made. Fingerprint = the
+  // Working agreement anchor (present in every Gearbox-generated AGENTS.md, guarded
+  // by check-gearbox.js upstream) or the tool-written companions next to it.
+  // Gearbox-made → refuse (that's an update, not an install). Hand-written → back it
+  // up as AGENTS-backup.md and proceed (ADR-0039): the rename is non-destructive,
+  // and the merge reminder becomes the first Next step.
   const existing = readFileSync(join(targetDir, "AGENTS.md"), "utf8");
   const gearboxMade =
     existing.includes("## Working agreement (multi-agent)") ||
@@ -125,18 +131,13 @@ if (existsSync(join(targetDir, "AGENTS.md"))) {
       "onboarded projects use gearbox-update to backfill ADRs — don't reinstall with this tool",
     );
   }
-  die(
-    `Target has its own AGENTS.md (not written by Gearbox): ${targetDir}`,
-    [
-      "this file is your project's asset — this tool will never touch it.",
-      "To adopt Gearbox alongside it:",
-      "  1. mv AGENTS.md AGENTS.md.bak",
-      "  2. re-run this install",
-      "  3. merge your rules from AGENTS.md.bak into the generated Hard rules /",
-      "     Tech stack sections (your AGENTS.md stays the single entry point —",
-      "     Gearbox content merges into it, never a parallel rule file)",
-    ].join("\n  "),
-  );
+  if (existsSync(join(targetDir, "AGENTS-backup.md"))) {
+    die(
+      `Target already has an AGENTS-backup.md: ${targetDir}`,
+      "a previous adoption is unfinished — merge its rules into AGENTS.md (then delete the\n  backup) or remove it first; this tool never overwrites a backup (ADR-0039)",
+    );
+  }
+  backupAgents = true;
 }
 
 const agentsSrc = readFileSync(join(GEARBOX_DIR, "AGENTS.md"), "utf8");
@@ -508,6 +509,26 @@ console.log(`${C.dim("Directory:")}  ${targetDir}`);
 console.log(`${C.dim("Upstream:")}   ${GEARBOX_DIR}`);
 console.log("");
 
+if (backupAgents) {
+  await tui.step("AGENTS-backup.md", "(your hand-written AGENTS.md, preserved — merge it back, ADR-0039)", {
+    minMs: 250,
+    work: () => renameSync(join(targetDir, "AGENTS.md"), join(targetDir, "AGENTS-backup.md")),
+  });
+  // In-file merge notice (ADR-0039): the terminal Next-steps output is ephemeral, but
+  // AGENTS.md is auto-loaded by every agent tool — so the merge task rides at the top of
+  // the file itself. The install is defined as complete when the merge is done and this
+  // notice (plus the backup) is deleted.
+  agents =
+    [
+      "> ⚠️ **Unfinished adoption — merge required (ADR-0039).** This project's original",
+      "> rules were preserved in `AGENTS-backup.md` when Gearbox was installed over them.",
+      "> Whoever works here next (human or agent): merge those rules into the Hard rules /",
+      "> Tech stack sections below, delete `AGENTS-backup.md`, then delete this notice.",
+      "> The Gearbox install is not complete until this notice is gone.",
+      "",
+      "",
+    ].join("\n") + agents;
+}
 await tui.step(
   "AGENTS.md",
   `(maintainer: ${maintainer || "<maintainer> placeholder"}; Gate: ${gateCmd || "placeholder"})`,
@@ -573,6 +594,10 @@ if (!existsSync(join(targetDir, ".git"))) {
 console.log("");
 console.log(tui.isTTY ? tui.rule("Next steps") : C.bold("Next steps:"));
 let step = 1;
+if (backupAgents)
+  await tui.typeLine(
+    `  ${step++}. ${C.yellow("Merge your rules")} from ${C.cyan("AGENTS-backup.md")} into the generated Hard rules / Tech stack sections, then delete the backup and the ⚠️ notice at the top of AGENTS.md ${C.dim("(the notice repeats this task in-file so the next agent can't miss it; install is complete when it's gone, ADR-0039)")}`,
+  );
 const placeholderHint =
   "(intro / Hard rules / Tech stack" +
   (maintainer ? "" : " / <maintainer>") +

@@ -41,7 +41,7 @@ npx gearbox-agents update     # copy missing upstream ADRs into this repo, produ
 
 If a user pointed you at this repo and asked you to "install Gearbox" into their project, do this:
 
-1. **Check the target first**: if the project root already has an `AGENTS.md`, do **not** install. A Gearbox-made one (it has a `## Working agreement (multi-agent)` section) means the project is already onboarded — run `npx gearbox-agents update` instead to backfill protocol updates. A hand-written one is the user's own asset — never overwrite it; ask the user whether to adopt Gearbox via the back-up-and-merge path (`mv AGENTS.md AGENTS.md.bak`, install, then merge their rules into the generated sections; the install guard prints the same steps, ADR-0038).
+1. **Check the target first**: if the project root already has a Gearbox-made `AGENTS.md` (it has a `## Working agreement (multi-agent)` section), do **not** install — the project is already onboarded; run `npx gearbox-agents update` instead to backfill protocol updates. A hand-written `AGENTS.md` is the user's own asset: the install preserves it as `AGENTS-backup.md` and proceeds (ADR-0038/0039), but **ask the user before running install over their file** — after install, merge their rules from the backup into the generated Hard rules / Tech stack sections, then delete the backup and the ⚠️ merge notice the install put at the top of the new `AGENTS.md` (the install isn't complete until that notice is gone).
 2. **Run the install** from the project root:
 
    ```bash
