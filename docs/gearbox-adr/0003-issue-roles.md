@@ -10,7 +10,7 @@ The core of this repo's protocol is "the only shared memory between sessions is 
 Three concrete problems came up:
 
 1. The issue #2 comment (an acceptance report Claude Code left behind) was good practice, but **without codifying it, it would be lost** — the next agent wouldn't automatically inherit that handoff format.
-2. When Claude Code hit "no agreed merge strategy," it opened issue #3 on the strength of issue #2's **ad-hoc authorization**, not a protocol rule. A different context could easily have led to a silent judgment call instead.
+2. When Claude Code hit "no agreed merge strategy," it opened issue #3 on the strength of issue #2's **ad hoc authorization**, not a protocol rule. A different context could easily have led to a silent judgment call instead.
 3. "Why we don't use HANDOFF.md" was only written in README.md (for template users), not in AGENTS.md (the protocol itself).
 
 Candidate approaches:

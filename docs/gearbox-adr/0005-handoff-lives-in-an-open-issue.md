@@ -6,7 +6,7 @@
 
 ## Context
 
-ADR-0003 specifies that the end-of-shift Memory comment goes on "the comment of the corresponding issue." Path A's third round hit a problem: **the "corresponding issue" is usually the Task issue that was just closed, but the next shift's start-of-shift routine scans open issues — it never sees Memory sitting in a closed Task.**
+ADR-0003 specifies that the end-of-shift Memory comment goes on "the comment of the corresponding issue." Path A's third round hit a problem: **the "corresponding issue" is usually the Task issue that was just closed, but the next shift's three start-of-shift steps scan open issues — it never sees Memory sitting in a closed Task.**
 
 Concretely: Memory sinks into a closed issue, and the next shift entering the repo has no way to know which issue to read — it has to be pointed there by a person ("go look at the comment on #1"). **This breaks "the repo is the only shared memory" — the memory exists, but there's no entry point to it.**
 

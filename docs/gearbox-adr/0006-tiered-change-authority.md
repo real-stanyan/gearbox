@@ -26,7 +26,7 @@ The after-the-fact revert brake is adequate for frequent small changes, but not 
 
 | Tier | Content | Process |
 |---|---|---|
-| **L1 strict tier** | Hard rules / Gate commands / Tech stack / the "Changing the protocol itself" section itself | issue + ADR + PR, **and the agent may only merge after `<maintainer>` (rename this after copying the scaffold to your own project maintainer's name) explicitly agrees, in-session or in a PR comment** |
+| **L1 strict tier** | Hard rules / Gate commands / Tech stack / the "Changing the protocol itself" section itself | issue + ADR + PR, **and the agent may only merge after `<maintainer>` (after copying the scaffold, replace this placeholder with your project's maintainer name) explicitly agrees, in-session or in a PR comment** |
 | **L2 autonomous tier** | Working agreement (excluding Gate) / index (Where to find things) | issue + ADR + PR, agent may self-merge |
 
 **Weak-b form**: "explicit agreement" means the maintainer says "agreed" in a session, or writes "agreed" in a PR comment — that's enough, and the agent clicks the merge button itself. **GitHub's approve button is not required.** The cost is that the maintainer becomes the L1 bottleneck — that cost is accepted, in exchange for L2 continuing to validate agent autonomy.

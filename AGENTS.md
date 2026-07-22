@@ -138,7 +138,7 @@ Dry-run by default — deletes nothing; a whitelist protects the current branch 
 Division of labor is a project-level property; the template doesn't presume one (ADR-0008). When you copy this, pick one of three:
 
 1. **Fill it in**: which kind of task goes to which agent (split by capability, not tied to a specific tool). <Unvalidated candidate example: mechanical bulk edits, filling in tests → an agent good at bulk execution; architectural design, hard bugs → an agent good at deep reasoning>
-2. **Leave it blank**: the default rule = **Task-issue claim system** — whoever claims a task sees it through start to finish (see While working); tasks aren't routed by agent specialty.
+2. **Leave it blank**: the default rule = **Task-issue claim-based ownership** — whoever claims a task sees it through start to finish (see While working); tasks aren't routed by agent specialty.
 3. **Single-agent project**: delete this whole section (it's not a gate anchor, so deleting it won't break `check-gearbox.js`).
 
 ## Where to find things
