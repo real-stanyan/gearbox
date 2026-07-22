@@ -52,6 +52,7 @@ import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
+import * as tui from "./lib/tui.js";
 
 // ============== Config ==============
 
@@ -722,8 +723,9 @@ by gearbox-update tool.`;
 
 // ============== main flow ==============
 
-function main() {
-  stdout.write(C.bold(C.cyan("\n⟳ gearbox-update\n")));
+async function main() {
+  await tui.logo();
+  if (!tui.isTTY) stdout.write(C.bold(C.cyan("\n⟳ gearbox-update\n")));
   stdout.write(C.dim("  aggressive downstream ADR sync tool\n\n"));
 
   resolveUpstream(); // upstream addressing (local/remote), overwrites GEARBOX_DIR (ADR-0027)
@@ -823,14 +825,27 @@ function main() {
   // copy (number is 1:1 with upstream, no more assignment/renumbering)
   if (toCopy.length > 0) {
     stdout.write(C.bold("Copying:\n"));
-    for (const action of toCopy) {
-      const gearboxAdr = action.gearbox;
-      const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
-      const transformed = transformAdrContent(gearboxAdr);
-      writeFileSync(dstPath, transformed);
-      stdout.write(
-        `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")}\n`,
+    if (tui.isTTY) {
+      await tui.progress(
+        "backfill",
+        toCopy.map((a) => `${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`),
+        (name, i) => {
+          const gearboxAdr = toCopy[i].gearbox;
+          const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
+          writeFileSync(dstPath, transformAdrContent(gearboxAdr));
+        },
+        { perItemMs: 60, doneNote: `(${toCopy.length} ADRs copied under their upstream numbers)` },
       );
+    } else {
+      for (const action of toCopy) {
+        const gearboxAdr = action.gearbox;
+        const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
+        const transformed = transformAdrContent(gearboxAdr);
+        writeFileSync(dstPath, transformed);
+        stdout.write(
+          `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")}\n`,
+        );
+      }
     }
     stdout.write("\n");
   }
@@ -966,7 +981,7 @@ function main() {
     ),
   );
 
-  stdout.write(C.bold(C.green("✓ done\n")));
+  stdout.write(tui.isTTY ? "  " + tui.grad("⚙ downstream in sync") + "\n" : C.bold(C.green("✓ done\n")));
   stdout.write("\n");
   stdout.write(C.bold("Next steps:\n"));
   stdout.write(
@@ -981,4 +996,4 @@ function main() {
   );
 }
 
-main();
+await main();
