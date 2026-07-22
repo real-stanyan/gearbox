@@ -1,36 +1,48 @@
 #!/usr/bin/env bash
-# gearbox-version — 查下游项目同步到了 Gearbox 的哪些 ADR
+# gearbox-version — check which Gearbox ADRs a downstream project has synced
 #
-# 用法: 在任何下游 repo 根目录跑 `gearbox-version`
-#       (建议 symlink 到 PATH: ln -sf ~/Github/gearbox/scripts/gearbox-version ~/.local/bin/)
+# Usage: run `gearbox-version` from any downstream repo's root
+#       (recommended: symlink onto PATH: ln -sf ~/Github/gearbox/scripts/gearbox-version ~/.local/bin/)
 #
-# 算法 (ADR-0016, 溯源优先——取代旧 scaffold-version 的纯文件名编号对比):
-# 上游 ADR-NNNN 视为「已同步」当且仅当:
-#   a) 下游存在**同 slug** 的 ADR 文件 (开局拷贝, 编号可以不同), 或
-#   b) 下游任一 ADR 文本引用了上游该编号:
-#      - 文字引用: "scaffold ADR-NNNN" / "Gearbox ADR-NNNN" (大小写不敏感)
-#      - URL 引用: agents-md-scaffold 或 gearbox repo 的 adr/NNNN- 链接
-# 这消掉旧脚本的已知误报: 下游自有 ADR 占了同号 (如 dryrun 0011 =
-# puppeteer ≠ 上游 0011 = subagent-system) 不再被当成"已同步"。
+# Algorithm (ADR-0016, provenance-first — replaces the old scaffold-version's plain
+# filename-number comparison):
+# An upstream ADR-NNNN counts as "synced" iff:
+#   a) the downstream has an ADR file with the **same slug** (scaffold-time copy, the
+#      number can differ), or
+#   b) any downstream ADR's text references that upstream number:
+#      - text reference: "scaffold ADR-NNNN" / "Gearbox ADR-NNNN" (case-insensitive)
+#      - URL reference: a link into the agents-md-scaffold or gearbox repo's adr/NNNN- path
+# This clears a known false positive from the old script: a downstream ADR that happens to
+# share the same number (e.g. dryrun's own 0011 = puppeteer ≠ upstream 0011 = subagent-system)
+# is no longer counted as "synced".
 #
-# hash 戳记 (ADR-0021): gearbox-update 拷贝时在溯源行记上游文件 sha256 前 12 位。
-# 本脚本对 slug 匹配的拷贝比对「记录的 hash vs 上游文件当前 hash」:
-#   一致 → ✅; 不一致 → ⚠️ 上游已修订 (drift); 无戳记 → ✅ 照旧, 汇总报 legacy 数。
+# Hash stamp (ADR-0021): gearbox-update records the upstream file's sha256 (first 12 chars)
+# in the provenance line when it copies a file. This script compares, for slug-matched
+# copies, "the recorded hash vs the upstream file's current hash":
+#   match → ✅; mismatch → ⚠️ upstream has been revised (drift); no stamp → ✅ as before,
+#   counted in the legacy summary.
 #
-# 版本摘要 (ADR-0023): 上游最新 tag vs 下游 .gearbox-version 戳记, 输出一行
-# 「上游 vX / 本地 vY (落后 段位)」。摘要非事实源——明细(逐条 ADR + hash)才是。
+# Version summary (ADR-0023): upstream's latest tag vs downstream's `.gearbox-version` stamp,
+# printed as one line — "upstream vX / local vY (behind by <segment>)". The summary isn't the
+# source of truth — the per-ADR detail (plus hashes) is.
 #
-# 诚实边界:
-# - 下游「已评估并拒绝回流」(关 issue 声明不采纳) 本脚本看不见, 仍报"未同步"。
-# - 权威状态以上游 DOWNSTREAM.md 的「当前同步到」列为准, 本脚本只是本地速查。
-# - hash 检测只报「上游变了」, 不判断变动是否值得回流; legacy 拷贝 (无戳记) 与
-#   溯源引用型同步 (非拷贝) 的漂移不可检测。
+# Honesty boundary:
+# - A downstream project that "evaluated and rejected a backfill" (closed an issue declining
+#   it) is invisible to this script — it's still reported as "not synced".
+#   Authoritative status is upstream DOWNSTREAM.md's "currently synced to" column; this script
+#   is only a local quick-check.
+# - Hash detection only reports "upstream changed" — it doesn't judge whether the change is
+#   worth backfilling; drift in legacy copies (no stamp) and provenance-reference-style syncs
+#   (not a copy) can't be detected.
 #
-# 上游寻址 (ADR-0027): env GEARBOX_DIR > 本地 ~/Github/gearbox > .gearbox-upstream
-# 远端缓存。本地路径只读、不写下游任何文件;远端路径会浅克隆上游到 ~/.cache/gearbox/
-# (缓存在 repo 之外, 不碰下游工作区)。离线且走远端 → ⚠ 跳过版本检查 + exit 0。
+# Upstream addressing (ADR-0027): env GEARBOX_DIR > local ~/Github/gearbox > .gearbox-upstream
+# remote cache. A local path is read-only and never writes anything to downstream; a remote
+# path shallow-clones upstream into ~/.cache/gearbox/ (cached outside the repo, never touches
+# the downstream working tree). Offline while on the remote path → ⚠ skip the version check,
+# exit 0.
 #
-# 不依赖: 纯 bash + grep + ls + git (远端寻址时)。不写下游 repo 任何文件。
+# No dependencies beyond: plain bash + grep + ls + git (for remote addressing). Never writes
+# any file in the downstream repo.
 
 set -euo pipefail
 
@@ -40,53 +52,53 @@ YELLOW=$'\033[33m'
 DIM=$'\033[2m'
 RESET=$'\033[0m'
 
-# ── 上游寻址 (ADR-0027): env > 本地默认 > .gearbox-upstream 远端缓存 ──
+# ── Upstream addressing (ADR-0027): env > local default > .gearbox-upstream remote cache ──
 DEFAULT_LOCAL="${GEARBOX_DIR:-$HOME/Github/gearbox}"
 UPSTREAM_URL=""
 [[ -f .gearbox-upstream ]] && UPSTREAM_URL=$(head -1 .gearbox-upstream | tr -d '[:space:]')
 UPSTREAM_IS_REMOTE=0
 
 if [[ -d "$DEFAULT_LOCAL/docs/gearbox-adr" ]]; then
-  GEARBOX_DIR="$DEFAULT_LOCAL"                       # 本地上游命中 (维护者舰队走这条)
+  GEARBOX_DIR="$DEFAULT_LOCAL"                       # local upstream hit (a maintainer's own fleet takes this path)
 elif [[ -n "$UPSTREAM_URL" ]]; then
-  UPSTREAM_IS_REMOTE=1                               # 陌生 fork: 浅克隆缓存
+  UPSTREAM_IS_REMOTE=1                               # unfamiliar fork: shallow-clone cache
   cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/gearbox"
   url_hash=$(printf '%s' "$UPSTREAM_URL" | shasum -a 256 | cut -c1-12)
   GEARBOX_DIR="$cache_root/$url_hash"
   if [[ -d "$GEARBOX_DIR/.git" ]]; then
     git -C "$GEARBOX_DIR" fetch -q --depth 1 origin 2>/dev/null \
       && git -C "$GEARBOX_DIR" reset -q --hard FETCH_HEAD 2>/dev/null \
-      || { echo "${YELLOW}⚠ 无法访问上游 ($UPSTREAM_URL),跳过版本检查 (离线? ADR-0027)${RESET}"; exit 0; }
+      || { echo "${YELLOW}⚠ can't reach upstream ($UPSTREAM_URL), skipping the version check (offline? ADR-0027)${RESET}"; exit 0; }
   else
     mkdir -p "$cache_root"
     git clone -q --depth 1 "$UPSTREAM_URL" "$GEARBOX_DIR" 2>/dev/null \
-      || { echo "${YELLOW}⚠ 无法克隆上游 ($UPSTREAM_URL),跳过版本检查 (离线? ADR-0027)${RESET}"; exit 0; }
+      || { echo "${YELLOW}⚠ can't clone upstream ($UPSTREAM_URL), skipping the version check (offline? ADR-0027)${RESET}"; exit 0; }
   fi
 else
-  echo "${RED}✗ 找不到 Gearbox 上游${RESET}"
-  echo "  本地无 $DEFAULT_LOCAL/docs/gearbox-adr, 且根目录无 .gearbox-upstream 配置"
-  echo "  设 GEARBOX_DIR 环境变量, 或在 .gearbox-upstream 写上游 git URL (ADR-0027)"
+  echo "${RED}✗ Gearbox upstream not found${RESET}"
+  echo "  no local $DEFAULT_LOCAL/docs/gearbox-adr, and no .gearbox-upstream config at the repo root"
+  echo "  set the GEARBOX_DIR env var, or put the upstream git URL in .gearbox-upstream (ADR-0027)"
   exit 1
 fi
 UPSTREAM_ADR_DIR="$GEARBOX_DIR/docs/gearbox-adr"
 
 if [[ ! -d "$UPSTREAM_ADR_DIR" ]]; then
-  echo "${RED}✗ 上游 ADR 目录缺失: $UPSTREAM_ADR_DIR${RESET}"
+  echo "${RED}✗ Upstream ADR directory missing: $UPSTREAM_ADR_DIR${RESET}"
   exit 1
 fi
 
 DOWNSTREAM_ADR_DIR="docs/gearbox-adr"
 if [[ ! -d "$DOWNSTREAM_ADR_DIR" ]]; then
-  echo "${RED}✗ 当前目录没有 docs/gearbox-adr/——请在下游 repo 根目录跑本命令${RESET}"
+  echo "${RED}✗ Current directory has no docs/gearbox-adr/ — run this from a downstream repo's root${RESET}"
   exit 1
 fi
 
 REPO_NAME=$(git remote get-url origin 2>/dev/null | sed 's|.*[:/]||; s|\.git$||' || basename "$PWD")
 [[ -z "$REPO_NAME" ]] && REPO_NAME=$(basename "$PWD")
 
-# 版本摘要 (ADR-0023): 上游最新 tag vs 本地 .gearbox-version 戳记
+# Version summary (ADR-0023): upstream's latest tag vs the local `.gearbox-version` stamp
 semver_lag() {
-  # $1=本地 $2=上游; 输出差在哪一段。非法格式输出 "?"
+  # $1=local $2=upstream; prints which segment differs. Prints "?" on an invalid format.
   local a=${1#v} b=${2#v}
   if [[ ! "$a" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ! "$b" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "?"
@@ -100,9 +112,10 @@ semver_lag() {
   else echo "patch"; fi
 }
 
-# 取最大版本 tag(v:refname 按 semver 排序;比 describe 稳——不受同 commit 多 tag 影响)
-# 优先级: env override(npx 包传 package.json 版本, ADR-0028) > 远端 ls-remote(ADR-0027,
-# 浅克隆不保证带全 tag) > 本地 git tag。
+# Take the highest version tag (sorted by v:refname — more stable than `describe`, unaffected
+# by multiple tags on the same commit). Priority: env override (the npx package passes
+# package.json's version, ADR-0028) > remote ls-remote (ADR-0027, a shallow clone isn't
+# guaranteed to carry every tag) > local git tag.
 if [[ -n "${GEARBOX_UPSTREAM_VERSION:-}" ]]; then
   upstream_version="$GEARBOX_UPSTREAM_VERSION"
 elif [[ "$UPSTREAM_IS_REMOTE" -eq 1 ]]; then
@@ -115,20 +128,20 @@ local_version=""
 [[ -f .gearbox-version ]] && local_version=$(head -1 .gearbox-version | tr -d '[:space:]')
 
 echo ""
-echo "${DIM}repo:${RESET}     $REPO_NAME"
+echo "${DIM}repo:${RESET}      $REPO_NAME"
 if [[ "$UPSTREAM_IS_REMOTE" -eq 1 ]]; then
-  echo "${DIM}上游:${RESET}     $UPSTREAM_URL ${DIM}(远端缓存 $GEARBOX_DIR, ADR-0027)${RESET}"
+  echo "${DIM}upstream:${RESET}  $UPSTREAM_URL ${DIM}(remote cache $GEARBOX_DIR, ADR-0027)${RESET}"
 else
-  echo "${DIM}上游:${RESET}     $GEARBOX_DIR"
+  echo "${DIM}upstream:${RESET}  $GEARBOX_DIR"
 fi
 if [[ -n "$upstream_version" ]]; then
   if [[ -z "$local_version" ]]; then
-    echo "${DIM}版本:${RESET}     上游 $upstream_version / 本地 ${DIM}无戳记 (下次 gearbox-update 回流自动写入, ADR-0023)${RESET}"
+    echo "${DIM}version:${RESET}   upstream $upstream_version / local ${DIM}no stamp (the next gearbox-update backfill writes it automatically, ADR-0023)${RESET}"
   elif [[ "$local_version" == "$upstream_version" ]]; then
-    echo "${DIM}版本:${RESET}     ${GREEN}上游 $upstream_version / 本地 $local_version (一致)${RESET}"
+    echo "${DIM}version:${RESET}   ${GREEN}upstream $upstream_version / local $local_version (in sync)${RESET}"
   else
     lag=$(semver_lag "$local_version" "$upstream_version")
-    echo "${DIM}版本:${RESET}     ${YELLOW}上游 $upstream_version / 本地 $local_version (落后 $lag)${RESET}"
+    echo "${DIM}version:${RESET}   ${YELLOW}upstream $upstream_version / local $local_version (behind by $lag)${RESET}"
   fi
 fi
 echo ""
@@ -143,32 +156,37 @@ for upstream_file in "$UPSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-*.md; do
   num=${base:0:4}
   slug=${base:5}
 
-  # a) 同 slug 拷贝 (下游编号可不同)
+  # a) same-slug copy (downstream number can differ)
   copy_match=$(ls "$DOWNSTREAM_ADR_DIR"/[0-9][0-9][0-9][0-9]-"$slug".md 2>/dev/null | head -1 || true)
 
-  # b) 溯源引用: 文字 "scaffold|gearbox ADR-NNNN" 或 repo URL 的 adr/NNNN-
+  # b) provenance reference: literal "scaffold|gearbox ADR-NNNN" text, or a repo URL's adr/NNNN-
+  # path. This also matches the English `- Provenance: copied/backfilled from [gearbox ADR-NNNN]`
+  # stamp line written by gearbox-install/gearbox-update — the stamp always embeds the literal
+  # "gearbox ADR-NNNN" token, so no separate "Provenance:" anchor is needed here; keeping the
+  # match broad also still catches a plain prose reference outside the provenance field.
   ref_match=$(grep -lriE "((scaffold|gearbox)[[:space:]]+ADR-${num})|((agents-md-scaffold|gearbox)/blob/[^ )]*adr/${num}-)" \
     "$DOWNSTREAM_ADR_DIR" 2>/dev/null | head -1 || true)
 
   if [[ -n "$copy_match" ]]; then
-    # hash 戳记比对 (ADR-0021): 拷贝里记录的上游 hash vs 上游文件当前 hash
+    # hash stamp comparison (ADR-0021): the upstream hash recorded in the copy vs the upstream
+    # file's current hash
     recorded_hash=$(grep -oE 'sha256:[0-9a-f]{12}' "$copy_match" 2>/dev/null | head -1 | cut -d: -f2 || true)
     if [[ -n "$recorded_hash" ]]; then
       current_hash=$(shasum -a 256 "$upstream_file" | cut -c1-12)
       if [[ "$recorded_hash" == "$current_hash" ]]; then
-        echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(拷贝: $(basename "$copy_match"))${RESET}"
+        echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(copy: $(basename "$copy_match"))${RESET}"
         synced_count=$((synced_count + 1))
       else
-        echo "  ${YELLOW}⚠️  ADR-${num}${RESET} $slug ${YELLOW}上游已修订${RESET} ${DIM}(拷贝: $(basename "$copy_match"), 人工 diff 或重拷)${RESET}"
+        echo "  ${YELLOW}⚠️  ADR-${num}${RESET} $slug ${YELLOW}upstream has been revised${RESET} ${DIM}(copy: $(basename "$copy_match"), manual diff or re-copy)${RESET}"
         drift_count=$((drift_count + 1))
       fi
     else
-      echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(拷贝: $(basename "$copy_match"), 无戳记)${RESET}"
+      echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(copy: $(basename "$copy_match"), no stamp)${RESET}"
       synced_count=$((synced_count + 1))
       legacy_count=$((legacy_count + 1))
     fi
   elif [[ -n "$ref_match" ]]; then
-    echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(回流: $(basename "$ref_match"))${RESET}"
+    echo "  ${GREEN}✅ ADR-${num}${RESET} $slug ${DIM}(backfilled: $(basename "$ref_match"))${RESET}"
     synced_count=$((synced_count + 1))
   else
     echo "  ${YELLOW}✖ ADR-${num}${RESET} $slug"
@@ -178,14 +196,15 @@ done
 
 echo ""
 if [[ "$missing_count" -eq 0 && "$drift_count" -eq 0 ]]; then
-  echo "${DIM}状态:${RESET}     ${GREEN}✅ 全同步 (${synced_count} 项)${RESET}"
+  echo "${DIM}status:${RESET}    ${GREEN}✅ fully synced (${synced_count})${RESET}"
 else
-  echo "${DIM}状态:${RESET}     ${YELLOW}⚠️  ${missing_count} 项未同步, ${drift_count} 项上游已修订${RESET} ${DIM}(已同步 ${synced_count})${RESET}"
+  echo "${DIM}status:${RESET}    ${YELLOW}⚠️  ${missing_count} not synced, ${drift_count} revised upstream${RESET} ${DIM}(${synced_count} synced)${RESET}"
   echo ""
-  echo "${DIM}注: 「未同步」含下游已评估并拒绝回流的情况 (脚本看不见 issue 结论)。${RESET}"
-  echo "${DIM}    权威状态以上游 DOWNSTREAM.md 为准。回流流程见 Gearbox ADR-0013 (B-3)。${RESET}"
+  echo "${DIM}note: \"not synced\" includes cases the downstream evaluated and declined to backfill${RESET}"
+  echo "${DIM}      (this script can't see the issue's conclusion). Authoritative status is upstream${RESET}"
+  echo "${DIM}      DOWNSTREAM.md. See Gearbox ADR-0013 (B-3) for the backfill flow.${RESET}"
 fi
 if [[ "$legacy_count" -gt 0 ]]; then
-  echo "${DIM}legacy:   ${legacy_count} 项拷贝无 hash 戳记, 漂移不可检测 (ADR-0021; 戳记随未来回流自然出现)${RESET}"
+  echo "${DIM}legacy:    ${legacy_count} copies have no hash stamp, drift can't be detected (ADR-0021; stamps appear naturally on future backfills)${RESET}"
 fi
 echo ""
