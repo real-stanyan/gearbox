@@ -8,7 +8,7 @@
 
 1. 根目录有 `AGENTS.md`,内容含 `### Issue & PR 的角色`(证明是 Gearbox 协议,不是同名文件)
 2. 根目录有 `CLAUDE.md` = `@AGENTS.md`(空壳契约)
-3. 有 `docs/adr/` 目录
+3. 有 `docs/gearbox-adr/` 目录（协议 ADR 落点）
 
 ## 已接入项目
 
