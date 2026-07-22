@@ -3,8 +3,10 @@
 //
 // Usage: run `gearbox-install` from the target project's root, or `gearbox-install <target-dir>`
 //   --name <project-name>   AGENTS.md title (default: the target directory's name)
-//   --maintainer <github-username>  replace the <maintainer> placeholder in the protocol (default: keep the
-//                           placeholder). Use a GitHub username — async L1 approval is checked against it (ADR-0034)
+//   --maintainer <github-username>  replace the <maintainer> placeholder in the protocol (default: on an
+//                           interactive terminal, offer to bind one — gh-detected default + public-API
+//                           existence check, Enter skips (ADR-0036); non-TTY keeps the placeholder).
+//                           Use a GitHub username — async L1 approval is checked against it (ADR-0034)
 //   --gate "<command>"      the Gate command (default: leave a placeholder, generated in sync with CI)
 //
 // What it does (automates every manual-copy adjustment step from the README, ADR-0022):
@@ -39,8 +41,9 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
+import { createInterface } from "node:readline/promises";
 import { join, resolve, basename } from "node:path";
-import { env, argv, exit, cwd } from "node:process";
+import { env, argv, exit, cwd, stdin, stdout } from "node:process";
 import * as tui from "./lib/tui.js";
 
 // ============== Config ==============
@@ -111,6 +114,95 @@ if (existsSync(join(targetDir, "AGENTS.md")))
 
 const agentsSrc = readFileSync(join(GEARBOX_DIR, "AGENTS.md"), "utf8");
 const contextSrc = readFileSync(join(GEARBOX_DIR, "CONTEXT.md"), "utf8");
+
+// ============== Interactive maintainer binding (TTY only, ADR-0036) ==============
+//
+// Why bind at install time: async L1 approval is verified against the maintainer's GitHub
+// account (ADR-0034) — an unfilled <maintainer> placeholder matches no account, so L1 stays
+// silently dead until someone notices. Unlike the Gate placeholder (backstopped by a
+// deliberately-red ci.yml), the placeholder here has no hard check, so the install prompt is
+// the best moment to catch it. Binding stays optional: Enter skips, same end state as before.
+//
+// Deliberately NOT an OAuth flow: install-time identity proof has no consumer — the
+// enforcement point is the PR-comment author check, which GitHub itself guarantees. All we
+// need is a username string; the existence check below only catches typos.
+
+// gh-detected default: the account gh CLI is logged in as (token-backed, so it's almost
+// always the operator). Silent null when gh is missing or logged out.
+function detectGithubLogin() {
+  try {
+    return (
+      execSync("gh api user --jq .login", {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 4000,
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+// Public users endpoint, no auth needed. Only a 404 disproves the name; rate-limits and
+// other statuses pass, and network failure returns null → accept with a warning instead of
+// blocking install (offline-tolerant, same spirit as ADR-0027).
+async function githubUserExists(name) {
+  try {
+    const res = await fetch(`https://api.github.com/users/${encodeURIComponent(name)}`, {
+      signal: AbortSignal.timeout(4000),
+      headers: { "user-agent": "gearbox-install" },
+    });
+    return res.status === 404 ? false : true;
+  } catch {
+    return null;
+  }
+}
+
+async function promptMaintainer() {
+  const detected = detectGithubLogin();
+  console.log("");
+  console.log(
+    `${C.bold("Bind a maintainer?")} ${C.dim("L1 approvals are verified against this GitHub account (ADR-0034).")}`,
+  );
+  const hint = detected
+    ? `${C.dim("(Enter =")} ${C.cyan(detected)}${C.dim(', "-" = skip)')}`
+    : C.dim("(Enter = skip)");
+  const rl = createInterface({ input: stdin, output: stdout });
+  rl.on("SIGINT", () => {
+    // Ctrl-C at the prompt aborts the whole install — nothing has been written yet.
+    rl.close();
+    stdout.write("\n");
+    exit(130);
+  });
+  try {
+    for (;;) {
+      let answer;
+      try {
+        answer = (await rl.question(`  GitHub username ${hint}: `)).trim();
+      } catch {
+        return null; // Ctrl-D / closed stdin = skip, same as Enter-with-no-default
+      }
+      if (answer === "-" || (!answer && !detected)) return null;
+      const name = answer || detected;
+      const exists = await githubUserExists(name);
+      if (exists === false) {
+        console.log(`  ${C.yellow("⚠")} ${C.bold(name)} not found on GitHub — check the spelling`);
+        continue;
+      }
+      if (exists === null)
+        console.log(
+          `  ${C.yellow("⚠")} couldn't reach api.github.com — accepting ${C.bold(name)} unverified (offline?)`,
+        );
+      return name;
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+// Only prompt on a real interactive terminal and only when --maintainer wasn't given.
+// Non-TTY (CI, agent shells, pipes) never prompts — behavior there is unchanged.
+if (!maintainer && stdin.isTTY && stdout.isTTY) maintainer = await promptMaintainer();
 
 // Anchor-based transform: the anchor must appear exactly once in the text, otherwise the
 // upstream template changed and this tool hasn't caught up → error out.
