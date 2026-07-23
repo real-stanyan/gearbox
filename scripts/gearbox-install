@@ -144,6 +144,7 @@ const backupPlan = [
   { src: "CLAUDE.md", bak: "CLAUDE-backup.md", merge: "its content belongs in AGENTS.md (CLAUDE.md stays the @AGENTS.md shell)" },
   { src: "CONTEXT.md", bak: "CONTEXT-backup.md", merge: "its glossary entries go below the protocol entries in the new CONTEXT.md" },
   { src: ".github/workflows/ci.yml", bak: ".github/workflows/ci.yml.bak", merge: "re-add its jobs alongside the gate job in the new ci.yml" },
+  { src: ".github/workflows/gearbox-sync.yml", bak: ".github/workflows/gearbox-sync.yml.bak", merge: "re-apply its customizations (cron cadence etc.) onto the regenerated gearbox-sync.yml" },
 ].filter(({ src }) => {
   if (!existsSync(join(targetDir, src))) return false;
   if (src === "CLAUDE.md" && readFileSync(join(targetDir, src), "utf8").trim() === "@AGENTS.md") return false;
@@ -470,6 +471,77 @@ jobs:
       - run: ${gateCmd || "echo '<fill in the Gate command, byte-identical to the Gate section in AGENTS.md>' && exit 1"}
 `;
 
+// Scheduled protocol sync (ADR-0049): Dependabot-for-protocol. Weekly check via the npm
+// package; when gearbox moved, gearbox-update prepares a backfill branch and this workflow
+// opens the PR with the report (incl. the AGENTS.md hand-edit checklist) as the body.
+// Automation ends at "PR opened" — tooling never touches AGENTS.md, merge rights stay here.
+const syncYml = `name: gearbox-sync
+
+# Scheduled protocol auto-update (gearbox ADR-0049).
+# Weekly: checks the gearbox npm package, and when the protocol moved, opens a
+# backfill PR (docs/gearbox-backfill-*) carrying the update report — including the
+# AGENTS.md hand-edit checklist. Tooling never modifies AGENTS.md; merging stays
+# a human/agent decision in this repo.
+# Opt out by deleting this file — the shift-start self-check (gearbox-version)
+# keeps working without it.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if a backfill PR is already open
+        id: guard
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          OPEN=\$(gh pr list --repo "\$GITHUB_REPOSITORY" --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("docs/gearbox-backfill-"))] | length')
+          if [ "\$OPEN" != "0" ]; then
+            echo "Previous backfill PR still open — merge it first. Skipping."
+            echo "skip=true" >> "\$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "\$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.skip == 'false'
+        with:
+          node-version: 24
+      - name: Git identity for backfill commits
+        if: steps.guard.outputs.skip == 'false'
+        run: |
+          git config user.name "gearbox-sync[bot]"
+          git config user.email "gearbox-sync-bot@users.noreply.github.com"
+      - name: Run gearbox-update
+        if: steps.guard.outputs.skip == 'false'
+        run: npx -y gearbox-agents@latest update --refresh-drift
+      - name: Open the backfill PR
+        if: steps.guard.outputs.skip == 'false'
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          BRANCH=\$(git for-each-ref --format='%(refname:short)' 'refs/heads/docs/gearbox-backfill-*' | tail -1)
+          if [ -z "\$BRANCH" ]; then
+            echo "Nothing to sync — protocol is current."
+            exit 0
+          fi
+          gh pr create --head "\$BRANCH" \\
+            --title "gearbox: protocol backfill (\$BRANCH)" \\
+            --body-file gearbox-update-report.md \\
+            || echo "PR creation failed — if the log above says GitHub Actions may not create pull requests, enable it in Settings → Actions → General → Workflow permissions. The sync branch is already pushed."
+`;
+
 // ============== Resolve upstream version + URL (pure reads, before the write phase) ==============
 
 // .gearbox-version stamp (ADR-0023): records the upstream version at onboarding time;
@@ -583,6 +655,13 @@ await tui.step(
     },
   },
 );
+await tui.step("gearbox-sync.yml", "(weekly protocol auto-update PRs, ADR-0049 — delete the file to opt out)", {
+  minMs: 200,
+  work: () => {
+    mkdirSync(join(targetDir, ".github/workflows"), { recursive: true });
+    writeFileSync(join(targetDir, ".github/workflows/gearbox-sync.yml"), syncYml);
+  },
+});
 if (upstreamVersion)
   await tui.step(".gearbox-version", `(${upstreamVersion}, ADR-0023 version stamp)`, {
     minMs: 180,
