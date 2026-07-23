@@ -11,3 +11,10 @@
 /.github/           @real-stanyan
 /scripts/           @real-stanyan
 /.gearbox-version   @real-stanyan
+
+# Publish surface (#124): these ship in the npm package (`files`) or execute at publish
+# time — an unreviewed change here reaches every downstream on the maintainer's next
+# `npm publish` (bin/ is the npx dispatcher; package.json carries the bin mapping and
+# npm lifecycle scripts, i.e. code execution).
+/bin/               @real-stanyan
+/package.json       @real-stanyan
