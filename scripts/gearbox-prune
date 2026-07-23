@@ -5,13 +5,16 @@
 //   (default)          dry-run: list what would be cleaned up + settings check, deletes nothing
 //   --apply-local     execute local merged-branch cleanup via `git branch -d` + `git fetch --prune`
 //   --apply-remote    execute remote merged-branch cleanup via `git push origin --delete` (prints list + interactive confirm)
+//   --apply-worktrees execute merged+clean linked-worktree cleanup via `git worktree remove` + `git worktree prune` (ADR-0043)
 //   --yes             skip the --apply-remote interactive confirm (non-TTY / CI scenarios)
 //   --check-settings  only check the `delete_branch_on_merge` repo setting (needs the gh CLI)
 //
-// Hard constraints (ADR-0030, must not be relaxed):
+// Hard constraints (ADR-0030/0043, must not be relaxed):
 //   - force-delete (-D) is forever forbidden — force-delete discards unmerged work
-//   - only touches merged branches; unmerged branches are never touched, even if the name looks stale (protects in-progress task branches)
-//   - allowlist protection: current branch / default branch (main/master) / `gearbox-backfill-*` prefix
+//   - `git worktree remove --force` is likewise forbidden — git's own refusal on dirty/locked worktrees is the second safety layer
+//   - only touches merged branches/worktrees; unmerged ones are never touched, even if the name looks stale (protects in-progress task branches)
+//   - merged-but-dirty worktrees are reported, never removed (uncommitted work might matter)
+//   - allowlist protection: current branch / default branch (main/master) / `gearbox-backfill-*` prefix; the main worktree and the worktree the process runs in are never removed
 //   - never auto-changes GitHub repo settings — `delete_branch_on_merge` is only read + suggested as an opt-in command
 //   - not a git repo / no origin → fail loudly and exit, never silently
 //   - `gh` not installed/not authenticated → degrade only the settings-check part; branch cleanup proceeds as normal (branch operations are plain git)
@@ -55,6 +58,7 @@ const args = argv.slice(2);
 const FLAGS = new Set([
   "--apply-local",
   "--apply-remote",
+  "--apply-worktrees",
   "--yes",
   "--check-settings",
   "-h",
@@ -65,6 +69,7 @@ for (const a of args) {
 }
 const applyLocal = args.includes("--apply-local");
 const applyRemote = args.includes("--apply-remote");
+const applyWorktrees = args.includes("--apply-worktrees");
 const yes = args.includes("--yes");
 const settingsOnly = args.includes("--check-settings");
 
@@ -74,11 +79,14 @@ if (args.includes("-h") || args.includes("--help")) {
   (default)          dry-run: list what would be deleted, deletes nothing
   --apply-local     delete local merged branches (git branch -d) + git fetch --prune
   --apply-remote    delete remote merged branches (git push origin --delete), prints the list then asks for interactive confirmation
+  --apply-worktrees remove merged + clean linked worktrees (git worktree remove) + git worktree prune
   --yes             skip the --apply-remote confirmation (for CI / non-TTY use)
   --check-settings  only check the delete_branch_on_merge repo setting (needs the gh CLI)
 
-Allowlist protection: current branch / default branch / gearbox-backfill-* prefix. Force-delete (-D) is never used.
-Only deletes merged branches; unmerged branches are never touched.`);
+Allowlist protection: current branch / default branch / gearbox-backfill-* prefix; the main worktree and
+the worktree you run from are never removed. Force flags (-D, worktree remove --force) are never used.
+Only deletes merged branches/worktrees; unmerged ones are never touched. Merged-but-dirty worktrees are
+reported, never removed.`);
   exit(0);
 }
 
@@ -192,7 +200,63 @@ function remoteMergedBranches() {
   return merged;
 }
 
-// 4. delete_branch_on_merge setting (read-only; gh not installed → degrade with a hint)
+// 4. Linked worktrees (ADR-0043): agent tools open a worktree per session and rarely tear it
+//    down. A leftover worktree also blocks `git branch -d` on its branch, so the worktree pass
+//    must run before the local-branch pass. Detached HEADs are common (agent harnesses often
+//    check out a bare commit), so the merged-check uses the HEAD sha, which covers both cases.
+function listWorktrees() {
+  const out = tryGit(["worktree", "list", "--porcelain"]);
+  if (out === null) return [];
+  const wts = [];
+  let cur = null;
+  for (const line of out.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      cur = { path: line.slice("worktree ".length), head: null, branch: null, locked: false };
+      wts.push(cur);
+    } else if (!cur) {
+      continue;
+    } else if (line.startsWith("HEAD ")) {
+      cur.head = line.slice("HEAD ".length);
+    } else if (line.startsWith("branch ")) {
+      cur.branch = line.slice("branch ".length).replace(/^refs\/heads\//, "");
+    } else if (line === "locked" || line.startsWith("locked ")) {
+      cur.locked = true;
+    }
+  }
+  return wts;
+}
+
+// Classify linked worktrees: removable (merged + clean) / dirty (merged but has changes,
+// report only) / everything else untouched. The main worktree (first entry), the worktree
+// the process runs in, locked worktrees, and allowlisted branches are never candidates.
+function classifyWorktrees() {
+  const wts = listWorktrees();
+  const removable = [];
+  const dirty = [];
+  const cwd = process.cwd();
+  for (const wt of wts.slice(1)) {
+    // never the main worktree
+    if (wt.locked) continue;
+    if (cwd === wt.path || cwd.startsWith(wt.path + "/")) continue; // never saw off the branch we sit on
+    if (wt.branch && isProtected(wt.branch)) continue;
+    if (!wt.head) continue;
+    try {
+      execFileSync("git", ["merge-base", "--is-ancestor", wt.head, `origin/${defaultBranch}`], {
+        stdio: "ignore",
+      });
+    } catch {
+      continue; // not merged → leave it alone, don't even list it
+    }
+    // status --porcelain includes untracked files, so anything uncommitted counts as dirty
+    const status = tryGit(["-C", wt.path, "status", "--porcelain"]);
+    if (status === null) continue; // unreadable (missing dir etc.) → `git worktree prune` territory, skip
+    if (status === "") removable.push(wt);
+    else dirty.push(wt);
+  }
+  return { removable, dirty };
+}
+
+// 5. delete_branch_on_merge setting (read-only; gh not installed → degrade with a hint)
 function checkSettings() {
   if (!hasGh) {
     console.log(
@@ -262,9 +326,34 @@ async function main() {
     });
   }
 
-  const localMerged = localMergedBranches();
+  const { removable: wtRemovable, dirty: wtDirty } = classifyWorktrees();
   const stale = staleTrackingRefs();
   const remoteMerged = remoteMergedBranches();
+
+  // --- Worktrees (before the local pass: a worktree checkout blocks `git branch -d`) ---
+  console.log(C.bold("Merged + clean linked worktrees (safe to remove via git worktree remove):"));
+  listOrNone(wtRemovable.map((w) => `${w.path}${w.branch ? C.dim(` [${w.branch}]`) : C.dim(" (detached)")}`));
+  if (wtDirty.length > 0) {
+    console.log(C.bold("Merged but dirty worktrees (uncommitted changes — inspect by hand, never auto-removed):"));
+    listOrNone(wtDirty.map((w) => w.path), C.red);
+  }
+  console.log("");
+
+  if (applyWorktrees) {
+    for (const wt of wtRemovable) {
+      // no --force, ever: git itself refuses dirty/locked worktrees — second safety layer
+      execFileSync("git", ["worktree", "remove", wt.path], {
+        stdio: ["ignore", "pipe", "inherit"],
+      });
+      console.log(C.green(`✓ Removed worktree ${wt.path}`));
+    }
+    execFileSync("git", ["worktree", "prune"], { stdio: ["ignore", "ignore", "inherit"] });
+    console.log(C.green("✓ git worktree prune done"));
+    console.log("");
+  }
+
+  // collected after the worktree pass: branches freed above become deletable in the same run
+  const localMerged = localMergedBranches();
 
   // --- Local ---
   console.log(C.bold(`Local merged branches (safe to delete via git branch -d):`));
@@ -317,10 +406,10 @@ async function main() {
   // --- Settings check ---
   checkSettings();
 
-  if (!applyLocal && !applyRemote) {
+  if (!applyLocal && !applyRemote && !applyWorktrees) {
     console.log("");
     console.log(
-      C.dim("dry-run finished, nothing was deleted. --apply-local deletes local branches, --apply-remote deletes remote branches (needs confirmation)."),
+      C.dim("dry-run finished, nothing was deleted. --apply-local deletes local branches, --apply-remote deletes remote branches (needs confirmation), --apply-worktrees removes merged+clean worktrees."),
     );
   }
 }

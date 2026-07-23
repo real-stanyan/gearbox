@@ -1,6 +1,6 @@
 {
   "name": "gearbox-agents",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Gearbox — single-source-of-truth AGENTS.md protocol for multi-agent (Claude Code + Z Code) projects. Scaffold + downstream sync tools.",
   "type": "module",
   "bin": {

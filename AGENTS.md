@@ -125,13 +125,14 @@ CI (`.github/workflows/ci.yml`) runs the same set of commands; if it's red, merg
 
 ### Branch hygiene (optional)
 
-Before shift-end (or when you hit stale refs at shift-start), run `npx gearbox-agents prune` (in this repo you can run `node scripts/gearbox-prune` directly). It cleans up three things (ADR-0030):
+Before shift-end (or when you hit stale refs at shift-start), run `npx gearbox-agents prune` (in this repo you can run `node scripts/gearbox-prune` directly). It cleans up four things (ADR-0030/0043):
 
+- Leftover linked worktrees from agent sessions (`--apply-worktrees`, `git worktree remove` on merged + clean ones only — dirty or locked worktrees are reported, never removed; runs before the branch pass because a worktree checkout blocks `git branch -d`)
 - Locally merged branches (`git branch -d` safe-deletes, fails loudly)
 - stale remote-tracking refs (`git fetch --prune`)
 - Remote merged branches (`--apply-remote`, prints the list + asks for confirmation before deleting)
 
-Dry-run by default — deletes nothing; a whitelist protects the current branch / the default branch / `gearbox-backfill-*`; never force-deletes (`-D`). This doesn't replace GitHub's `delete_branch_on_merge` setting — turning that on is the recommended root fix for repo owners; the tool is a backstop (`--check-settings` checks it and prints the command to enable it, without changing it automatically).
+Dry-run by default — deletes nothing; a whitelist protects the current branch / the default branch / `gearbox-backfill-*` / the main worktree and the worktree you run from; never force-deletes (`-D`, `worktree remove --force`). This doesn't replace GitHub's `delete_branch_on_merge` setting — turning that on is the recommended root fix for repo owners; the tool is a backstop (`--check-settings` checks it and prints the command to enable it, without changing it automatically).
 
 ### Division of labor (optional, fill in as needed)
 
