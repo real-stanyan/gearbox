@@ -136,7 +136,10 @@ function isProtected(branch) {
     branch === defaultBranch ||
     branch === "main" ||
     branch === "master" ||
-    branch.startsWith("gearbox-backfill-")
+    branch.startsWith("gearbox-backfill-") ||
+    // gearbox-update's actual branch names carry a docs/ prefix — the bare prefix above
+    // never matched them (#126); both are protected now
+    branch.startsWith("docs/gearbox-backfill-")
   );
 }
 

@@ -587,6 +587,7 @@ const AGENTS_MD_IMPACT = {
     section: "## Working agreement (multi-agent)",
     note: "Add the \"Parallel shifts (multi-human repos)\" subsection (lanes, per-lane handoffs, repo-level terminals, merge-time serialization of protocol PRs) + its touch-points: start-of-shift step 2 reads all open handoff issues and takes over at most one lane; shift-end rule 4 lists the lane's owned Task issues or marks \"context only\"; the PR-disposition review bullet's premise mentions parallel lanes. Serial single-human repos may skip the subsection. See the same-named subsection in gearbox AGENTS.md for reference.",
   },
+  49: null, // scheduled sync Action (gearbox-sync.yml) — a scaffold/tooling file, doesn't touch downstream AGENTS.md; existing downstreams can copy it from a fresh install if they want scheduled sync
 };
 
 function generateReport({
