@@ -8,7 +8,7 @@
 //
 // Exit non-zero on any violation. Keep assertions structural, not stylistic.
 
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 
@@ -196,6 +196,29 @@ check(
   "HANDOFF.md must not exist (progress lives in Issues/PRs — see README)",
   !existsSync(join(root, "HANDOFF.md")),
 );
+
+// 9. gearbox-update's AGENTS_MD_IMPACT map keeps pace with the ADR directory (#119).
+//    The map's maintenance contract ("every new ADR adds a line, null explicitly")
+//    lived only in a comment and silently rotted from 0031 to 0048 — the whole
+//    multi-human arc shipped with no downstream hand-edit prompts. Same drift class
+//    as the Gate-command sameness this script already guards, so guard it the same
+//    way. Upstream-only: install doesn't copy scripts/, downstream gates never run this.
+if (existsSync(join(root, "scripts", "gearbox-update")) && existsSync(join(root, "docs", "gearbox-adr"))) {
+  const updateSrc = readFile("scripts/gearbox-update");
+  const mapKeys = new Set(
+    [...updateSrc.matchAll(/^  (\d+): (?:null|\{)/gm)].map((m) => Number(m[1])),
+  );
+  const adrNums = readdirSync(join(root, "docs", "gearbox-adr"))
+    .filter((f) => /^\d{4}-.+\.md$/.test(f))
+    .map((f) => Number(f.slice(0, 4)))
+    // The map starts at 11 (earlier ADRs predate gearbox-update and are baked into install's template copy)
+    .filter((n) => n >= 11);
+  const missing = adrNums.filter((n) => !mapKeys.has(n));
+  check(
+    `gearbox-update AGENTS_MD_IMPACT is missing entries for ADR(s): ${missing.join(", ")} — add a line per ADR (null if it doesn't touch downstream AGENTS.md)`,
+    missing.length === 0,
+  );
+}
 
 // Report
 if (failures.length > 0) {

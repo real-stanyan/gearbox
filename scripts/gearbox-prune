@@ -151,11 +151,29 @@ const hasGh = (() => {
 
 // ============== Collect the lists ==============
 
-// 1. Local merged branches (relative to origin/<default>)
+// 1. Local merged branches (relative to origin/<default>).
+//    Branches checked out in a worktree are split out: `git branch -d` refuses them
+//    (a mid-loop throw would skip the remaining branches + the fetch --prune), and
+//    listing them as "safe to delete" in the dry-run would be a lie (#119). They free
+//    up via --apply-worktrees, whose pass runs first.
 function localMergedBranches() {
-  const out = tryGit(["branch", "--merged", `origin/${defaultBranch}`, "--format=%(refname:short)"]);
-  if (out === null) return [];
-  return out.split("\n").filter((b) => b && !isProtected(b));
+  const out = tryGit([
+    "branch",
+    "--merged",
+    `origin/${defaultBranch}`,
+    "--format=%(refname:short)\t%(worktreepath)",
+  ]);
+  if (out === null) return { deletable: [], blocked: [] };
+  const deletable = [];
+  const blocked = [];
+  for (const line of out.split("\n")) {
+    if (!line) continue;
+    const [b, wtPath] = line.split("\t");
+    if (!b || isProtected(b)) continue;
+    if (wtPath) blocked.push({ branch: b, worktree: wtPath });
+    else deletable.push(b);
+  }
+  return { deletable, blocked };
 }
 
 // 2. Stale remote-tracking refs (deleted on origin, local tracking ref still around)
@@ -353,11 +371,15 @@ async function main() {
   }
 
   // collected after the worktree pass: branches freed above become deletable in the same run
-  const localMerged = localMergedBranches();
+  const { deletable: localMerged, blocked: localBlocked } = localMergedBranches();
 
   // --- Local ---
   console.log(C.bold(`Local merged branches (safe to delete via git branch -d):`));
   listOrNone(localMerged);
+  if (localBlocked.length > 0) {
+    console.log(C.bold("Merged branches checked out in a worktree (git branch -d refuses these — freed by --apply-worktrees if the worktree is merged+clean):"));
+    listOrNone(localBlocked.map((b) => `${b.branch}${C.dim(` @ ${b.worktree}`)}`));
+  }
   console.log("");
   console.log(C.bold("Stale remote-tracking refs (cleaned by git fetch --prune):"));
   if (stale === null) console.log(C.dim("  (fetch failed — offline? unknown)"));
