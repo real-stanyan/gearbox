@@ -225,7 +225,10 @@ function parseAdrFile(filePath) {
       ? parseInt(provenanceMatch[1], 10)
       : null,
     revises: revisesMatch ? parseInt(revisesMatch[1], 10) : null,
-    hasProvenanceField: /- Provenance:/.test(headerText),
+    // Only a *copy stamp* counts (same tight pattern as provenanceMatch above): ADR-0004/0005/0006
+    // carry an origin-provenance line and ADR-0031's prose mentions the stamp — the loose
+    // /- Provenance:/ check made transformAdrContent skip stamping all four (#119).
+    hasProvenanceField: /- Provenance:\s*(?:copied|backfilled) from\s*\[?(?:scaffold|gearbox)\s+ADR-/i.test(headerText),
   };
 }
 
@@ -532,6 +535,57 @@ const AGENTS_MD_IMPACT = {
   30: {
     section: "## Working agreement (multi-agent)",
     note: "Optionally add a \"Branch hygiene\" subsection (run npx gearbox-agents prune before ending a shift; a soft rule, not a Hard rule). New downstream installs get this from AGENTS.md as-is (install passes it through verbatim); existing downstream projects decide for themselves whether to adopt it. See the same-named subsection in gearbox AGENTS.md for reference.",
+  },
+  31: {
+    section: "## Where to find things",
+    note: "Protocol ADRs move to their own docs/gearbox-adr/ directory (project ADRs keep docs/adr/, numbering independently from 0001). gearbox-update performs the file moves itself; the hand-edit is the index: list both directories in \"Where to find things\" and note that docs/gearbox-adr/ is tool-managed. See the same section in gearbox AGENTS.md for reference.",
+  },
+  32: null, // English as the protocol language — governs how upstream writes protocol files; downstream AGENTS.md text arrives already in English, no separate hand-edit
+  33: {
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: "In the \"Downstream backfill\" paragraph, drop any mention of the DOWNSTREAM.md fleet dashboard (retired — fleet notes live outside the template; maintainer notification issues become optional). See the same paragraph in gearbox AGENTS.md for reference.",
+  },
+  34: {
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: "The <maintainer> placeholder must anchor a GitHub username (a team = a GitHub team handle), and the PR-comment approval path only counts when the comment author is that account. Update the blockquote under the tier table + the weak-b paragraph. See the same text in gearbox AGENTS.md for reference.",
+  },
+  35: null, // shared TUI animation layer (scripts/lib/tui.js) — tool-internal, doesn't touch downstream AGENTS.md
+  36: null, // install's interactive maintainer prompt — install-time behavior, doesn't touch downstream AGENTS.md
+  37: {
+    section: "### While working",
+    note: "Add the \"Protocol files stay committed — never add them to .gitignore\" bullet (an ignored protocol file exists locally but never reaches the next shift's clone). See the same bullet in gearbox AGENTS.md for reference.",
+  },
+  38: null, // install's provenance-split guard — install-time behavior, doesn't touch downstream AGENTS.md
+  39: null, // install auto-backs-up handwritten AGENTS.md — install-time behavior
+  40: null, // install backs up every handwritten file — install-time behavior
+  41: null, // TTY output budget — tool output styling, doesn't touch downstream AGENTS.md
+  42: {
+    section: "### Changing the protocol itself (rules for changing this file)",
+    note: "In the weak-b paragraph: with more than one human collaborator, only the PR-comment path (authored by the <maintainer> GitHub account) is valid L1 approval — in-session agreement stops counting, including in the maintainer's own session. Single-human repos keep both paths. See the same paragraph in gearbox AGENTS.md for reference.",
+  },
+  43: {
+    section: "## Working agreement (multi-agent)",
+    note: "Branch hygiene grows from three cleanup targets to four: leftover agent worktrees (--apply-worktrees, merged + clean only, runs before the branch pass) join the list, and the allowlist now names the main worktree + the worktree you run from. Only applies if the project adopted the optional Branch hygiene subsection (ADR-0030). See the same subsection in gearbox AGENTS.md for reference.",
+  },
+  44: {
+    section: "### Roles of issues & PRs",
+    note: "Add the \"Task ordering (blocking edges)\" note: dependent Task issues declare literal `Blocked by: #N` lines; shifts claim only frontier tasks (no open blockers). A hygiene convention outside the hard-rule markings. See the same note in gearbox AGENTS.md for reference.",
+  },
+  45: {
+    section: "### Roles of issues & PRs",
+    note: "Append to the Memory five-part hard-rule bullet: content already captured in a durable artifact (ADR / issue / PR / commit / diff) is referenced by number or path, not restated; inline belongs only what no artifact carries. This edits a hard-rule bullet — an L1 hand-edit. See the same bullet in gearbox AGENTS.md for reference.",
+  },
+  46: {
+    section: "### On starting a shift (the three start-of-shift steps)",
+    note: "Step 1 gains a sync prefix: git fetch origin + fast-forward the local default branch before reading history; fast-forward impossible = diverged default branch — stop and open an issue. See step 1 in gearbox AGENTS.md for reference.",
+  },
+  47: {
+    section: "### Roles of issues & PRs",
+    note: "Add the \"Claiming\" note under Task ordering: claim = self-assignment on the Task issue (first wins, comment fallback without triage permission); release/carry declared in the shift-end progress comment; single-human repos may skip. See the same note in gearbox AGENTS.md for reference.",
+  },
+  48: {
+    section: "## Working agreement (multi-agent)",
+    note: "Add the \"Parallel shifts (multi-human repos)\" subsection (lanes, per-lane handoffs, repo-level terminals, merge-time serialization of protocol PRs) + its touch-points: start-of-shift step 2 reads all open handoff issues and takes over at most one lane; shift-end rule 4 lists the lane's owned Task issues or marks \"context only\"; the PR-disposition review bullet's premise mentions parallel lanes. Serial single-human repos may skip the subsection. See the same-named subsection in gearbox AGENTS.md for reference.",
   },
 };
 

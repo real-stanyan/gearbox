@@ -404,9 +404,12 @@ let stamped = 0;
 const adrOutputs = [];
 for (const f of adrFiles) {
   let content = readFileSync(join(GEARBOX_ADR_DIR, f), "utf8");
-  // Provenance line + hash stamp (ADR-0021 contract: first 12 chars of sha256). Skip files that
-  // already have a provenance field.
-  if (!/- Provenance:/.test(content.split("\n").slice(0, 15).join("\n"))) {
+  // Provenance line + hash stamp (ADR-0021 contract: first 12 chars of sha256). Skip only files
+  // that already carry a *copy stamp* — match the stamp's own wording, not any "- Provenance:"
+  // substring: ADR-0004/0005/0006 carry a legitimate origin-provenance line ("originated in the
+  // date-cli experiment") and ADR-0031's prose mentions the stamp; the loose check shipped all
+  // four downstream unstamped, with no sha256 for drift detection (#119).
+  if (!/- Provenance:\s*(?:copied|backfilled) from\s*\[?(?:scaffold|gearbox)\s+ADR-/.test(content.split("\n").slice(0, 15).join("\n"))) {
     const hash = createHash("sha256").update(content).digest("hex").slice(0, 12);
     const num = f.slice(0, 4);
     const provenanceLine = `- Provenance: copied from [gearbox ADR-${num}](${GEARBOX_GITHUB_BASE}/${f}) (gearbox-install init, upstream sha256:${hash})`;
