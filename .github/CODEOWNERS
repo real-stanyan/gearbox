@@ -1,0 +1,13 @@
+# Protocol-surface code owners (ADR-0042 companion hardening).
+# With branch protection's "require review from Code Owners" on (enforce_admins off),
+# a non-admin collaborator's PR touching these paths needs the maintainer's review.
+# The maintainer (admin) and their agents are unaffected — agent self-merge stays intact.
+# Mapping is by file path, deliberately one notch coarser than the L1/L2 semantic boundary.
+
+/AGENTS.md          @real-stanyan
+/CLAUDE.md          @real-stanyan
+/CONTEXT.md         @real-stanyan
+/docs/gearbox-adr/  @real-stanyan
+/.github/           @real-stanyan
+/scripts/           @real-stanyan
+/.gearbox-version   @real-stanyan
