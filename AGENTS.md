@@ -21,7 +21,7 @@ A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the si
 
 ### On starting a shift (the three start-of-shift steps)
 
-1. `git log --oneline -10` — see what happened recently
+1. **Sync, then read**: `git fetch origin` + fast-forward the local default branch (`git pull --ff-only` while on it) — the repo is the only shared memory, and an unfetched clone is somebody's stale cache of it (a stale clone even means stale *rules*: this very file is version-controlled). Fast-forward impossible = the local default branch has diverged: stop, open an issue, don't build on a forked base (ADR-0046). Then `git log --oneline -10` — see what happened recently
 2. Check GitHub Issues — **first look for an open handoff issue** (the previous shift's Memory is in there; reading it and closing it = taking over, see ADR-0005. If none found → check whether the most recently closed issue has a "no next shift" terminal declaration: if yes = a compliant terminal shift (ADR-0009), start work normally; if no = the previous shift ended out of compliance, open a Protocol gap issue to record it — either way, rebuild context from git log + open issues), then check other open tasks and notes
 3. Run the gate command (see below) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline
 
