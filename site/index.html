@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gearbox — Many agents. One source of truth.</title>
+<meta name="description" content="A scaffold for multi-agent collaboration projects — AGENTS.md as the single source of truth, ADRs, and a CI hard gate. For Claude Code, Z Code, Cursor, and any agent coding tool.">
+<meta property="og:title" content="Gearbox">
+<meta property="og:description" content="Many agents. One source of truth. AGENTS.md + ADRs + a CI hard gate.">
+<link rel="icon" type="image/png" href="gearbox-logo.png">
+<style>
+  :root {
+    --bg: #faf9f7;
+    --bg-elevated: #ffffff;
+    --text: #1d1d1f;
+    --text-secondary: #57544e;
+    --text-tertiary: #8a8781;
+    --accent: #ef9f27;
+    --accent-deep: #c97f10;
+    --bone: #dbd7cb;
+    --hairline: rgba(29, 29, 31, 0.08);
+    --card: #ffffff;
+    --card-border: rgba(29, 29, 31, 0.06);
+    --card-shadow: 0 1px 2px rgba(29, 29, 31, 0.04), 0 8px 24px rgba(29, 29, 31, 0.05);
+    --terminal-bg: #17150f;
+    --terminal-text: #dbd7cb;
+    --nav-bg: rgba(250, 249, 247, 0.72);
+    --pill-bg: #17150f;
+    --pill-text: #dbd7cb;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0c0a;
+      --bg-elevated: #17150f;
+      --text: #f3f1ec;
+      --text-secondary: #b3afa5;
+      --text-tertiary: #7c786e;
+      --accent: #f5ab3d;
+      --accent-deep: #ef9f27;
+      --hairline: rgba(243, 241, 236, 0.09);
+      --card: #16140f;
+      --card-border: rgba(243, 241, 236, 0.07);
+      --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+      --terminal-bg: #100e0a;
+      --terminal-text: #dbd7cb;
+      --nav-bg: rgba(13, 12, 10, 0.65);
+      --pill-bg: #f3f1ec;
+      --pill-text: #17150f;
+    }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+  body {
+    font-family: system-ui, -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  code, pre, .mono {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  ::selection { background: rgba(239, 159, 39, 0.28); }
+
+  /* ---------- Nav ---------- */
+  .nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: var(--nav-bg);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 1px solid transparent;
+    transition: border-color 300ms ease;
+  }
+  .nav.scrolled { border-bottom-color: var(--hairline); }
+  @media (prefers-reduced-transparency: reduce) {
+    .nav { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  }
+  .nav-inner {
+    max-width: 1024px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .nav-logo {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    display: block;
+  }
+  .nav-name {
+    font-weight: 600;
+    font-size: 1rem;
+    letter-spacing: -0.01em;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .nav-links {
+    margin-left: auto;
+    display: flex;
+    gap: 1.6rem;
+    align-items: center;
+  }
+  .nav-links a {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+  .nav-links a:hover { color: var(--text); }
+  .nav-links a.nav-cta {
+    color: var(--accent-deep);
+    font-weight: 500;
+  }
+  @media (max-width: 560px) {
+    .nav-links a:not(.nav-cta) { display: none; }
+  }
+
+  /* ---------- Layout ---------- */
+  .container { max-width: 1024px; margin: 0 auto; padding: 0 1.5rem; }
+  section { padding: 6.5rem 0; }
+  @media (max-width: 720px) { section { padding: 4.5rem 0; } }
+
+  .eyebrow {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent-deep);
+    margin-bottom: 0.9rem;
+  }
+  .section-title {
+    font-size: clamp(1.7rem, 4vw, 2.6rem);
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    line-height: 1.12;
+    margin-bottom: 0.9rem;
+  }
+  .section-sub {
+    font-size: 1.06rem;
+    color: var(--text-secondary);
+    max-width: 42rem;
+    margin-bottom: 3rem;
+  }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    padding: 9.5rem 0 6.5rem;
+    text-align: center;
+  }
+  .hero-logo {
+    width: 92px; height: 92px;
+    border-radius: 22px;
+    box-shadow: 0 2px 8px rgba(23, 21, 15, 0.18), 0 12px 36px rgba(23, 21, 15, 0.22);
+    margin-bottom: 2.2rem;
+  }
+  .hero h1 {
+    font-size: clamp(2.6rem, 7vw, 4.6rem);
+    font-weight: 700;
+    letter-spacing: -0.028em;
+    line-height: 1.04;
+    margin-bottom: 1.3rem;
+  }
+  .hero h1 .accent { color: var(--accent-deep); }
+  .hero-sub {
+    font-size: clamp(1.05rem, 2vw, 1.28rem);
+    color: var(--text-secondary);
+    max-width: 38rem;
+    margin: 0 auto 2.6rem;
+    line-height: 1.55;
+  }
+  .hero-sub code {
+    font-size: 0.92em;
+    background: var(--hairline);
+    padding: 0.1em 0.35em;
+    border-radius: 5px;
+  }
+
+  .install-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.9rem;
+    background: var(--pill-bg);
+    color: var(--pill-text);
+    border: none;
+    border-radius: 980px;
+    padding: 0.85rem 1.1rem 0.85rem 1.4rem;
+    font-size: 0.92rem;
+    cursor: pointer;
+    transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+    box-shadow: 0 1px 3px rgba(23, 21, 15, 0.2);
+  }
+  .install-pill:hover { box-shadow: 0 2px 10px rgba(23, 21, 15, 0.25); }
+  .install-pill:active { transform: scale(0.97); }
+  .install-pill .prompt { color: var(--accent); user-select: none; }
+  .install-pill .copy-icon {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.12);
+    flex: none;
+  }
+  @media (prefers-color-scheme: dark) {
+    .install-pill .copy-icon { background: rgba(0, 0, 0, 0.1); }
+  }
+  .install-pill svg { width: 13px; height: 13px; stroke: currentColor; }
+  .install-pill .icon-check { display: none; }
+  .install-pill.copied .icon-copy { display: none; }
+  .install-pill.copied .icon-check { display: block; }
+
+  .hero-links {
+    margin-top: 1.6rem;
+    display: flex;
+    gap: 1.8rem;
+    justify-content: center;
+  }
+  .hero-links a {
+    font-size: 0.95rem;
+    color: var(--accent-deep);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .hero-links a:hover { text-decoration: underline; }
+
+  @media (max-width: 560px) {
+    .install-pill { font-size: 0.78rem; padding-left: 1.1rem; }
+  }
+
+  /* ---------- Shift loop ---------- */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    counter-reset: step;
+  }
+  @media (max-width: 860px) { .steps { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
+  .step {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    padding: 1.6rem 1.4rem;
+    box-shadow: var(--card-shadow);
+  }
+  .step-num {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #17150f;
+    font-weight: 700;
+    font-size: 0.88rem;
+    display: grid;
+    place-items: center;
+    margin-bottom: 1rem;
+  }
+  .step h3 {
+    font-size: 1.02rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.45rem;
+  }
+  .step p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+  .step p code { font-size: 0.85em; }
+
+  /* ---------- Architecture ---------- */
+  .arch { background: var(--bg-elevated); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .arch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+  @media (max-width: 860px) { .arch-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 520px) { .arch-grid { grid-template-columns: 1fr; } }
+  .arch-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    padding: 1.5rem 1.4rem;
+    box-shadow: var(--card-shadow);
+  }
+  .arch-card .file {
+    display: inline-block;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background: rgba(239, 159, 39, 0.14);
+    color: var(--accent-deep);
+    border-radius: 7px;
+    padding: 0.25em 0.55em;
+    margin-bottom: 0.85rem;
+  }
+  .arch-card p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+  .arch-note {
+    margin-top: 2.2rem;
+    font-size: 0.92rem;
+    color: var(--text-tertiary);
+    max-width: 44rem;
+  }
+  .arch-note strong { color: var(--text-secondary); font-weight: 600; }
+
+  /* ---------- Protocol features ---------- */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+  @media (max-width: 720px) { .features-grid { grid-template-columns: 1fr; } }
+  .feature {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    padding: 1.7rem 1.6rem;
+    box-shadow: var(--card-shadow);
+  }
+  .feature h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.5rem;
+  }
+  .feature p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+  .feature p + p { margin-top: 0.5rem; }
+  .feature .tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    border-radius: 6px;
+    padding: 0.18em 0.5em;
+    margin-right: 0.4em;
+  }
+  .tag-l1 { background: rgba(239, 159, 39, 0.16); color: var(--accent-deep); }
+  .tag-l2 { background: var(--hairline); color: var(--text-secondary); }
+
+  /* ---------- Terminal ---------- */
+  .terminal-section { background: var(--bg-elevated); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+  .terminal-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 3rem;
+    align-items: center;
+  }
+  @media (max-width: 860px) { .terminal-wrap { grid-template-columns: 1fr; gap: 2rem; } }
+  .tools-list { list-style: none; }
+  .tools-list li {
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .tools-list li:last-child { border-bottom: none; }
+  .tools-list .cmd {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--accent-deep);
+  }
+  .tools-list p {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+  }
+  .terminal {
+    background: var(--terminal-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 20px 50px rgba(0,0,0,0.28);
+    border: 1px solid rgba(219, 215, 203, 0.08);
+  }
+  .terminal-bar {
+    display: flex;
+    gap: 7px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(219, 215, 203, 0.07);
+  }
+  .terminal-bar span {
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    background: rgba(219, 215, 203, 0.16);
+  }
+  .terminal-body {
+    padding: 1.1rem 1.2rem 1.3rem;
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.75;
+    color: var(--terminal-text);
+    overflow-x: auto;
+  }
+  .terminal-body .line { white-space: pre; display: block; }
+  .terminal-body .p { color: #f5ab3d; }
+  .terminal-body .ok { color: #8fbf6f; }
+  .terminal-body .dim { color: #7c786e; }
+
+  /* ---------- Validation ---------- */
+  .honest-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+  @media (max-width: 720px) { .honest-grid { grid-template-columns: 1fr; } }
+  .honest-col {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 18px;
+    padding: 1.7rem 1.6rem;
+    box-shadow: var(--card-shadow);
+  }
+  .honest-col h3 {
+    font-size: 0.98rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    letter-spacing: -0.01em;
+  }
+  .honest-col ul { list-style: none; }
+  .honest-col li {
+    font-size: 0.88rem;
+    color: var(--text-secondary);
+    padding-left: 1.5rem;
+    position: relative;
+    margin-bottom: 0.65rem;
+    line-height: 1.5;
+  }
+  .honest-col li::before {
+    position: absolute;
+    left: 0;
+    font-size: 0.82rem;
+  }
+  .honest-yes li::before { content: "✓"; color: #5a9e3d; font-weight: 700; }
+  .honest-no li::before { content: "—"; color: var(--text-tertiary); font-weight: 700; }
+
+  /* ---------- CTA / Footer ---------- */
+  .cta {
+    text-align: center;
+    padding: 7rem 0;
+  }
+  .cta h2 {
+    font-size: clamp(1.9rem, 5vw, 3rem);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    margin-bottom: 2.2rem;
+  }
+  footer {
+    border-top: 1px solid var(--hairline);
+    padding: 2.5rem 0 3rem;
+  }
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+  .footer-inner img { width: 22px; height: 22px; border-radius: 6px; }
+  .footer-inner .name { font-weight: 600; font-size: 0.9rem; }
+  .footer-links {
+    margin-left: auto;
+    display: flex;
+    gap: 1.4rem;
+  }
+  .footer-links a {
+    font-size: 0.82rem;
+    color: var(--text-tertiary);
+    text-decoration: none;
+  }
+  .footer-links a:hover { color: var(--text); }
+  .footer-note {
+    margin-top: 1rem;
+    font-size: 0.78rem;
+    color: var(--text-tertiary);
+  }
+
+  /* ---------- Reveal on scroll ---------- */
+  .reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 550ms var(--ease-out), transform 550ms var(--ease-out);
+    transition-delay: var(--d, 0ms);
+  }
+  .reveal.in {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      transform: none;
+      transition: opacity 200ms ease;
+    }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <img class="nav-logo" src="gearbox-logo.png" alt="">
+    <a class="nav-name" href="#">Gearbox</a>
+    <div class="nav-links">
+      <a href="#shift">Protocol</a>
+      <a href="#tools">Tools</a>
+      <a href="https://www.npmjs.com/package/gearbox-agents">npm</a>
+      <a class="nav-cta" href="https://github.com/real-stanyan/gearbox">GitHub&nbsp;↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero container">
+  <img class="hero-logo reveal" src="gearbox-logo.png" alt="Gearbox logo — pixel gear G" width="92" height="92">
+  <h1 class="reveal" style="--d: 60ms">Many agents.<br><span class="accent">One source of truth.</span></h1>
+  <p class="hero-sub reveal" style="--d: 120ms">Gearbox is a scaffold for multi-agent collaboration projects — <code>AGENTS.md</code> as the single source of truth, decision records, and a CI hard gate. So Claude&nbsp;Code, Z&nbsp;Code, Cursor, or any coding agent can take turns in the same repo without stepping on each other.</p>
+  <button class="install-pill reveal" style="--d: 180ms" id="copyBtn" aria-label="Copy install command">
+    <span class="prompt">$</span>
+    <span class="mono">npx gearbox-agents install</span>
+    <span class="copy-icon">
+      <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3.5v5A1.5 1.5 0 0 0 4 10h1.5"/></svg>
+      <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>
+    </span>
+  </button>
+  <div class="hero-links reveal" style="--d: 240ms">
+    <a href="https://github.com/real-stanyan/gearbox">View on GitHub</a>
+    <a href="https://github.com/real-stanyan/gearbox#quick-start-zero-config-adr-0028">Quick start</a>
+  </div>
+</header>
+
+<section id="shift" class="container">
+  <p class="eyebrow reveal">The shift protocol</p>
+  <h2 class="section-title reveal">Handoffs with nothing<br>left to guesswork.</h2>
+  <p class="section-sub reveal">One agent works at a time. The repo — git history, issues, PRs — is the only shared memory between shifts. Every shift follows the same loop:</p>
+  <div class="steps">
+    <div class="step reveal" style="--d: 0ms">
+      <div class="step-num">1</div>
+      <h3>Sync, then read</h3>
+      <p>Fetch and fast-forward, read recent commits, then find the open handoff issue — the previous shift's memory lives there.</p>
+    </div>
+    <div class="step reveal" style="--d: 60ms">
+      <div class="step-num">2</div>
+      <h3>Claim &amp; work</h3>
+      <p>Claim a frontier task, see it through start to finish. Small commits that spell out the <em>why</em>. Non-trivial changes go through a branch + PR.</p>
+    </div>
+    <div class="step reveal" style="--d: 120ms">
+      <div class="step-num">3</div>
+      <h3>Gate green</h3>
+      <p>A hard gate — your own test/typecheck/lint command — must pass before shift-end. CI runs the same commands. Red means no merge.</p>
+    </div>
+    <div class="step reveal" style="--d: 180ms">
+      <div class="step-num">4</div>
+      <h3>Hand off</h3>
+      <p>Open a handoff issue with a five-part memory: done, blocked, next, closures, and the rationale behind every non-default decision.</p>
+    </div>
+  </div>
+</section>
+
+<section class="arch">
+  <div class="container">
+    <p class="eyebrow reveal">Architecture</p>
+    <h2 class="section-title reveal">Five files. Zero dependencies.</h2>
+    <p class="section-sub reveal">Plain Markdown and one Node script — nothing to install in your runtime, nothing that rots.</p>
+    <div class="arch-grid">
+      <div class="arch-card reveal" style="--d: 0ms">
+        <span class="file mono">AGENTS.md</span>
+        <p>The single source of truth. Every agent reads it — rules live here and only here, never duplicated.</p>
+      </div>
+      <div class="arch-card reveal" style="--d: 50ms">
+        <span class="file mono">CLAUDE.md</span>
+        <p>An empty shell: one <code>@AGENTS.md</code> line. Tool-specific entry points stay pointers, not forks.</p>
+      </div>
+      <div class="arch-card reveal" style="--d: 100ms">
+        <span class="file mono">CONTEXT.md</span>
+        <p>Domain glossary. Keeps different agents from understanding the same business term differently.</p>
+      </div>
+      <div class="arch-card reveal" style="--d: 150ms">
+        <span class="file mono">docs/adr/</span>
+        <p>Architectural decision records — one decision per file. Protocol ADRs ship alongside, tool-managed.</p>
+      </div>
+      <div class="arch-card reveal" style="--d: 200ms">
+        <span class="file mono">ci.yml</span>
+        <p>The hard gate. The one constraint that doesn't depend on agent self-discipline.</p>
+      </div>
+      <div class="arch-card reveal" style="--d: 250ms">
+        <span class="file mono">.gearbox-version</span>
+        <p>Protocol version stamp, written and read by tooling. Downstream repos self-check and backfill upstream updates.</p>
+      </div>
+    </div>
+    <p class="arch-note reveal">Deliberately <strong>no HANDOFF.md</strong> — progress and handoffs run through GitHub Issues and PRs: append-only, timestamped, never goes stale.</p>
+  </div>
+</section>
+
+<section class="container">
+  <p class="eyebrow reveal">Guardrails</p>
+  <h2 class="section-title reveal">Agents can change the rules.<br>Within rules.</h2>
+  <p class="section-sub reveal">The protocol repairs and extends itself — but changes are tiered, and humans keep an after-the-fact veto.</p>
+  <div class="features-grid">
+    <div class="feature reveal" style="--d: 0ms">
+      <h3>Tiered authorization</h3>
+      <p><span class="tag tag-l1">L1</span>Hard rules, the gate, the tiering itself — an agent may only merge after the maintainer explicitly agrees, verified against their GitHub account.</p>
+      <p><span class="tag tag-l2">L2</span>Working-agreement refinements — agents merge autonomously. Every protocol change still needs an issue, an ADR, and a green PR.</p>
+    </div>
+    <div class="feature reveal" style="--d: 60ms">
+      <h3>Three roles for issues</h3>
+      <p><strong>Task</strong> — an actionable thing to do. <strong>Memory</strong> — the shift-end handoff comment. <strong>Protocol gap</strong> — a question the repo can't answer.</p>
+      <p>Hit a gap? Opening an issue is mandatory — silent judgment calls are not allowed. That's the protocol's self-repair loop.</p>
+    </div>
+    <div class="feature reveal" style="--d: 120ms">
+      <h3>Memory that doesn't decay</h3>
+      <p>Five-part handoff format: what's done, what's blocked, what's next, what closed — and the rationale behind every non-default decision, including what would overturn it.</p>
+    </div>
+    <div class="feature reveal" style="--d: 180ms">
+      <h3>Parallel lanes</h3>
+      <p>Multi-human repos run parallel shifts: a lane = one shift plus its claimed tasks. Claims are visible and timestamped; protocol changes serialize at merge time.</p>
+    </div>
+  </div>
+</section>
+
+<section id="tools" class="terminal-section">
+  <div class="container">
+    <p class="eyebrow reveal">Tooling</p>
+    <h2 class="section-title reveal">One command to start.<br>One to stay in sync.</h2>
+    <div class="terminal-wrap">
+      <ul class="tools-list">
+        <li class="reveal" style="--d: 0ms">
+          <span class="cmd mono">npx gearbox-agents install</span>
+          <p>Lay down the full scaffold — placeholders, gate, ADR provenance, hash stamps. Zero config.</p>
+        </li>
+        <li class="reveal" style="--d: 60ms">
+          <span class="cmd mono">npx gearbox-agents version</span>
+          <p>Check which upstream protocol version and ADRs this repo is synced to.</p>
+        </li>
+        <li class="reveal" style="--d: 120ms">
+          <span class="cmd mono">npx gearbox-agents update</span>
+          <p>Backfill missing upstream ADRs into a review-ready branch. Pull-triggered — no upstream registry of forks needed.</p>
+        </li>
+        <li class="reveal" style="--d: 180ms">
+          <span class="cmd mono">npx gearbox-agents prune</span>
+          <p>Branch hygiene: merged branches, stale refs, leftover worktrees. Dry-run by default, never force-deletes.</p>
+        </li>
+      </ul>
+      <div class="terminal reveal" style="--d: 100ms" aria-hidden="true">
+        <div class="terminal-bar"><span></span><span></span><span></span></div>
+        <div class="terminal-body">
+<span class="line"><span class="p">$</span> npx gearbox-agents install --maintainer stanyan \</span>
+<span class="line">      --gate "npx tsc --noEmit &amp;&amp; npx vitest run"</span>
+<span class="line">&nbsp;</span>
+<span class="line"><span class="ok">✓</span> AGENTS.md            <span class="dim">single source of truth</span></span>
+<span class="line"><span class="ok">✓</span> CLAUDE.md            <span class="dim">@AGENTS.md shell</span></span>
+<span class="line"><span class="ok">✓</span> CONTEXT.md           <span class="dim">domain glossary</span></span>
+<span class="line"><span class="ok">✓</span> docs/gearbox-adr/    <span class="dim">49 protocol ADRs</span></span>
+<span class="line"><span class="ok">✓</span> .github/workflows/ci.yml</span>
+<span class="line"><span class="ok">✓</span> .gearbox-version     <span class="dim">v1.15.0</span></span>
+<span class="line">&nbsp;</span>
+<span class="line"><span class="ok">Scaffold complete.</span> <span class="dim">Fill in the placeholders:</span></span>
+<span class="line"><span class="dim">  grep -n '&lt;' AGENTS.md</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="container">
+  <p class="eyebrow reveal">Validated in practice</p>
+  <h2 class="section-title reveal">Six rounds of dogfooding.<br>Honest about the limits.</h2>
+  <p class="section-sub reveal">The protocol ran four rounds of multi-agent validation in a real repo, then two more maintaining itself — every mechanism that emerged landed as an ADR.</p>
+  <div class="honest-grid">
+    <div class="honest-col honest-yes reveal" style="--d: 0ms">
+      <h3>What held up</h3>
+      <ul>
+        <li>Zero-verbal handoffs — three shifts of collaboration with nothing left to guesswork</li>
+        <li>The self-repair loop: find a gap, open an issue, fold it into the protocol</li>
+        <li>The protocol catching its own violations — and its own overreach — without anyone pointing the way</li>
+        <li>Async L1 approval running end-to-end, verified against a GitHub account</li>
+      </ul>
+    </div>
+    <div class="honest-col honest-no reveal" style="--d: 60ms">
+      <h3>What's unvalidated</h3>
+      <ul>
+        <li>Scale: n=1 user, two agents, a toy-sized codebase</li>
+        <li>An all-green gate ≠ correct — inherent to regression-style guarantees</li>
+        <li>L1 while the maintainer is offline — the bottleneck is accepted, never yet felt</li>
+        <li>Ceremony cost in high-frequency, small-task settings</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="cta container">
+  <h2 class="reveal">Give your agents<br>a working agreement.</h2>
+  <button class="install-pill reveal" style="--d: 60ms" id="copyBtn2" aria-label="Copy install command">
+    <span class="prompt">$</span>
+    <span class="mono">npx gearbox-agents install</span>
+    <span class="copy-icon">
+      <svg class="icon-copy" viewBox="0 0 16 16" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3.5v5A1.5 1.5 0 0 0 4 10h1.5"/></svg>
+      <svg class="icon-check" viewBox="0 0 16 16" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.5 3.5L13 5"/></svg>
+    </span>
+  </button>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <img src="gearbox-logo.png" alt="">
+      <span class="name">Gearbox</span>
+      <div class="footer-links">
+        <a href="https://github.com/real-stanyan/gearbox">GitHub</a>
+        <a href="https://www.npmjs.com/package/gearbox-agents">npm</a>
+        <a href="https://github.com/real-stanyan/gearbox/blob/main/LICENSE">MIT License</a>
+      </div>
+    </div>
+    <p class="footer-note">Formerly agents-md-scaffold, renamed Gearbox on 2026-07-19 (ADR-0015).</p>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    }
+  }, { rootMargin: '0px 0px -60px 0px', threshold: 0.05 });
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+
+  // Nav hairline appears once content scrolls under the chrome
+  const nav = document.getElementById('nav');
+  addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', scrollY > 8);
+  }, { passive: true });
+
+  // Copy install command — feedback on press, revert after 1.6s
+  for (const id of ['copyBtn', 'copyBtn2']) {
+    const btn = document.getElementById(id);
+    btn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText('npx gearbox-agents install'); } catch {}
+      btn.classList.add('copied');
+      clearTimeout(btn._t);
+      btn._t = setTimeout(() => btn.classList.remove('copied'), 1600);
+    });
+  }
+</script>
+
+</body>
+</html>

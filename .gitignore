@@ -11,3 +11,6 @@ npm-debug.log*
 .zcode/
 .vscode/
 .idea/
+
+# Vercel local link state (site/ landing page)
+.vercel/
