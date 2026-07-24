@@ -280,7 +280,6 @@
   .step p code { font-size: 0.85em; }
 
   /* ---------- Architecture ---------- */
-  .arch { background: var(--bg-elevated); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
   .arch-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -355,7 +354,6 @@
   .tag-l2 { background: var(--hairline); color: var(--text-secondary); }
 
   /* ---------- Terminal ---------- */
-  .terminal-section { background: var(--bg-elevated); border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
   .terminal-wrap {
     display: grid;
     grid-template-columns: 1fr 1.2fr;
@@ -735,7 +733,7 @@
         io.unobserve(e.target);
       }
     }
-  }, { rootMargin: '0px 0px -60px 0px', threshold: 0.05 });
+  }, { rootMargin: '0px 0px 80px 0px', threshold: 0 });
   document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
 
   // Nav hairline appears once content scrolls under the chrome
