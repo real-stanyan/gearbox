@@ -11,6 +11,11 @@
 <meta property="og:type" content="website">
 <!-- og:image should be an absolute URL once the production domain is settled. -->
 <meta property="og:image" content="assets/hero-poster.webp">
+<!-- English is what's in the markup; Chinese is applied by script from ?lang=zh.
+     The alternates make both states linkable and let crawlers see the pair. -->
+<link rel="alternate" hreflang="en" href="?lang=en">
+<link rel="alternate" hreflang="zh" href="?lang=zh">
+<link rel="alternate" hreflang="x-default" href="./">
 <link rel="icon" type="image/png" href="gearbox-logo.png">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -43,8 +48,10 @@
     --shadow-hard: 6px 6px 0 rgba(0, 0, 0, 0.55);
     --shadow-hard-sm: 4px 4px 0 rgba(0, 0, 0, 0.6);
 
-    --pixel: "Press Start 2P", ui-monospace, "SF Mono", Menlo, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    /* The bitmap face is a latin-only subset by design — Han glyphs at 8×8 are mush.
+       CJK falls through to the platform face on both stacks. */
+    --pixel: "Press Start 2P", ui-monospace, "SF Mono", Menlo, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
     --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -162,6 +169,55 @@
   .nav-links a:hover { color: var(--ink); }
   .nav-links a.nav-cta { color: var(--amber); }
   @media (max-width: 620px) { .nav-links a:not(.nav-cta) { display: none; } }
+
+  /* Language toggle — a two-state segmented chip with both states always on screen.
+     A single button labelled with the *other* language makes the reader guess whether
+     it names where they are or where they'd go. */
+  .lang {
+    display: flex;
+    flex: none;
+    margin-left: 0.9rem;
+    border: 1px solid var(--line);
+    background: rgba(21, 18, 13, 0.6);
+  }
+  .lang button {
+    font-family: var(--pixel);
+    font-size: 0.56rem;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    padding: 0.5rem 0.6rem;
+    background: none;
+    border: 0;
+    color: var(--ink-3);
+    cursor: pointer;
+    transition: color 150ms ease, background-color 150ms ease;
+  }
+  .lang button + button { border-left: 1px solid var(--line); }
+  .lang button[lang="zh"] { font-family: var(--sans); font-size: 0.72rem; font-weight: 600; }
+  .lang button:hover { color: var(--ink-2); }
+  .lang button[aria-pressed="true"] { color: var(--bg); background: var(--amber); }
+  .lang button:active { transform: translate(1px, 1px); }
+
+  /* Chinese typography: the negative tracking and tight leading above are tuned for
+     latin display type — on Han glyphs they read cramped. Give the text back its air. */
+  html[lang="zh-Hans"] h1,
+  html[lang="zh-Hans"] .section-title,
+  html[lang="zh-Hans"] .cta h2 { letter-spacing: 0; line-height: 1.26; }
+  html[lang="zh-Hans"] p,
+  html[lang="zh-Hans"] li { line-height: 1.72; }
+  html[lang="zh-Hans"] .px { letter-spacing: 0.05em; }
+  /* A bitmap face fills far more of its em box than PingFang does, so a shared
+     font-size leaves the Han glyphs looking a size smaller than the latin beside
+     them. These sizes are picked to match apparent height, not nominal em. */
+  html[lang="zh-Hans"] .eyebrow { font-size: 0.8rem; }
+  html[lang="zh-Hans"] .hero-meta { font-size: 0.74rem; }
+  html[lang="zh-Hans"] .film-meta,
+  html[lang="zh-Hans"] .plate-cap { font-size: 0.72rem; }
+  html[lang="zh-Hans"] .gate-chip { font-size: 0.82rem; }
+  html[lang="zh-Hans"] .stat .l { font-size: 0.8rem; }
+  @media (max-width: 720px) {
+    html[lang="zh-Hans"] .hero-meta { font-size: 0.64rem; }
+  }
 
   /* ---------- Cinematic blocks (art-backed sections) ----------
      Hard top/bottom edges, never a fade to page colour: two art sections in a row
@@ -726,11 +782,15 @@
     <img class="nav-logo" src="gearbox-logo.png" alt="" width="24" height="24">
     <a class="nav-name" href="#">Gearbox</a>
     <div class="nav-links">
-      <a href="#film">Film</a>
-      <a href="#shift">Protocol</a>
-      <a href="#tools">Tools</a>
+      <a href="#film" data-t="nav.film">Film</a>
+      <a href="#shift" data-t="nav.protocol">Protocol</a>
+      <a href="#tools" data-t="nav.tools">Tools</a>
       <a href="https://www.npmjs.com/package/gearbox-agents">npm</a>
       <a class="nav-cta" href="https://github.com/real-stanyan/gearbox">GitHub&nbsp;↗</a>
+    </div>
+    <div class="lang px" role="group" aria-label="Language / 语言">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="zh" aria-pressed="false" lang="zh">中文</button>
     </div>
   </div>
 </nav>
@@ -741,11 +801,11 @@
          autoplay muted loop playsinline preload="auto" aria-hidden="true"></video>
   <div class="cine-scrim"></div>
   <div class="container hero-inner">
-    <img class="hero-logo reveal" src="gearbox-logo.png" alt="Gearbox logo — a pixel gear wrapped around the letter G" width="72" height="72">
-    <p class="eyebrow px reveal" style="--d: 40ms">Multi-agent protocol</p>
-    <h1 class="reveal" style="--d: 80ms">Many agents.<br><span class="accent">One source of truth.</span></h1>
-    <p class="hero-sub reveal" style="--d: 140ms">Gearbox is a scaffold for multi-agent collaboration projects — <code>AGENTS.md</code> as the single source of truth, decision records, and a CI hard gate. So Claude&nbsp;Code, Z&nbsp;Code, Cursor, or any coding agent can take turns in the same repo without stepping on each other.</p>
-    <button class="install-pill reveal" style="--d: 200ms" id="copyBtn" aria-label="Copy install command">
+    <img class="hero-logo reveal" src="gearbox-logo.png" alt="Gearbox logo — a pixel gear wrapped around the letter G" data-t-alt="hero.logoAlt" width="72" height="72">
+    <p class="eyebrow px reveal" style="--d: 40ms" data-t="hero.eyebrow">Multi-agent protocol</p>
+    <h1 class="reveal" style="--d: 80ms" data-t="hero.h1">Many agents.<br><span class="accent">One source of truth.</span></h1>
+    <p class="hero-sub reveal" style="--d: 140ms" data-t="hero.sub">Gearbox is a scaffold for multi-agent collaboration projects — <code>AGENTS.md</code> as the single source of truth, decision records, and a CI hard gate. So Claude&nbsp;Code, Z&nbsp;Code, Cursor, or any coding agent can take turns in the same repo without stepping on each other.</p>
+    <button class="install-pill reveal" style="--d: 200ms" id="copyBtn" aria-label="Copy install command" data-t-aria-label="copy.aria">
       <span class="prompt">$</span>
       <span class="mono">npx gearbox-agents install</span>
       <span class="copy-icon">
@@ -754,50 +814,50 @@
       </span>
     </button>
     <div class="hero-links reveal" style="--d: 260ms">
-      <a href="https://github.com/real-stanyan/gearbox">View on GitHub</a>
-      <a href="https://github.com/real-stanyan/gearbox#quick-start-zero-config-adr-0028">Quick start</a>
+      <a href="https://github.com/real-stanyan/gearbox" data-t="hero.github">View on GitHub</a>
+      <a href="https://github.com/real-stanyan/gearbox#quick-start-zero-config-adr-0028" data-t="hero.quickstart">Quick start</a>
     </div>
-    <p class="hero-meta px reveal" style="--d: 320ms">MIT · Zero runtime deps · Tool-agnostic</p>
+    <p class="hero-meta px reveal" style="--d: 320ms" data-t="hero.meta">MIT · Zero runtime deps · Tool-agnostic</p>
   </div>
 </header>
 
 <section id="film" class="container">
-  <p class="eyebrow px reveal">The film</p>
-  <h2 class="section-title reveal">The whole idea,<br>in seventy-one seconds.</h2>
-  <p class="section-sub reveal">Same story this page tells, told in one take. Read on, or watch it — your call.</p>
-  <button class="film-frame reveal" id="filmOpen" aria-label="Play the Gearbox film — 71 seconds, with sound">
-    <img src="assets/film-cover.webp" alt="Film still: a hall of glowing machines around a giant gear, captioned 'every mechanism traced to an ADR'" width="1280" height="720" loading="lazy" decoding="async">
+  <p class="eyebrow px reveal" data-t="film.eyebrow">The film</p>
+  <h2 class="section-title reveal" data-t="film.title">The whole idea,<br>in seventy-one seconds.</h2>
+  <p class="section-sub reveal" data-t="film.sub">Same story this page tells, told in one take. Read on, or watch it — your call.</p>
+  <button class="film-frame reveal" id="filmOpen" aria-label="Play the Gearbox film — 71 seconds, with sound" data-t-aria-label="film.openAria">
+    <img id="filmCover" src="assets/film-cover.webp" alt="Film still: a hall of glowing machines around a giant gear, captioned 'every mechanism traced to an ADR'" data-t-alt="film.coverAlt" width="1280" height="720" loading="lazy" decoding="async">
     <span class="film-veil"></span>
     <span class="film-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l15 9-15 9z"/></svg></span>
   </button>
-  <p class="film-meta px reveal">71 sec · English narration · <b>sound on</b></p>
+  <p class="film-meta px reveal" data-t="film.meta">71 sec · English narration · <b>sound on</b></p>
 </section>
 
 <section id="problem" class="container">
   <div class="split">
     <div>
-      <p class="eyebrow px reveal">The problem</p>
-      <h2 class="section-title reveal">The second agent<br>starts blind.</h2>
-      <p class="section-sub reveal" style="margin-bottom: 0;">By the time another agent picks up the repo, everything the last one worked out is gone. The chat window it lived in doesn't survive the session — and the repo was never told.</p>
+      <p class="eyebrow px reveal" data-t="prob.eyebrow">The problem</p>
+      <h2 class="section-title reveal" data-t="prob.title">The second agent<br>starts blind.</h2>
+      <p class="section-sub reveal" style="margin-bottom: 0;" data-t="prob.sub">By the time another agent picks up the repo, everything the last one worked out is gone. The chat window it lived in doesn't survive the session — and the repo was never told.</p>
     </div>
     <figure class="plate reveal" style="--d: 80ms">
-      <img src="assets/s02.webp" alt="A lone pixel-art agent in a lit doorway, three blank slabs on the ground in front of it" width="1920" height="1080" loading="lazy" decoding="async">
-      <figcaption class="plate-cap">One agent, one doorway, <b>three</b> versions of the rules</figcaption>
+      <img src="assets/s02.webp" alt="A lone pixel-art agent in a lit doorway, three blank slabs on the ground in front of it" data-t-alt="prob.plateAlt" width="1920" height="1080" loading="lazy" decoding="async">
+      <figcaption class="plate-cap" data-t="prob.plateCap">One agent, one doorway, <b>three</b> versions of the rules</figcaption>
     </figure>
   </div>
   <div class="stack-gap">
     <div class="grid-hair cols-3 reveal">
       <div class="arch-cell">
-        <span class="file mono">Rules ×3</span>
-        <p>The same rule copied into <code>CLAUDE.md</code>, a README, and a comment. Copies drift; three versions disagree and nobody notices.</p>
+        <span class="file mono" data-t="prob.c1t">Rules ×3</span>
+        <p data-t="prob.c1p">The same rule copied into <code>CLAUDE.md</code>, a README, and a comment. Copies drift; three versions disagree and nobody notices.</p>
       </div>
       <div class="arch-cell">
-        <span class="file mono">Why → ∅</span>
-        <p>A trade-off gets weighed carefully, then evaporates. The next shift re-litigates it, or quietly undoes it.</p>
+        <span class="file mono" data-t="prob.c2t">Why → ∅</span>
+        <p data-t="prob.c2p">A trade-off gets weighed carefully, then evaporates. The next shift re-litigates it, or quietly undoes it.</p>
       </div>
       <div class="arch-cell">
-        <span class="file mono">Mid-task swap</span>
-        <p>An agent hands off halfway through a change. Half-applied edits, no gate, no record of what "done" was supposed to mean.</p>
+        <span class="file mono" data-t="prob.c3t">Mid-task swap</span>
+        <p data-t="prob.c3p">An agent hands off halfway through a change. Half-applied edits, no gate, no record of what "done" was supposed to mean.</p>
       </div>
     </div>
   </div>
@@ -807,107 +867,107 @@
   <img class="cine-bg" src="assets/s03.webp" alt="" width="1920" height="1080" loading="lazy" decoding="async">
   <div class="cine-scrim"></div>
   <div class="container">
-    <p class="eyebrow px reveal">The shift protocol</p>
-    <h2 class="section-title reveal">Handoffs with nothing<br>left to guesswork.</h2>
-    <p class="section-sub reveal">One agent works at a time. The repo — git history, issues, PRs — is the only shared memory between shifts. Every shift follows the same loop:</p>
+    <p class="eyebrow px reveal" data-t="shift.eyebrow">The shift protocol</p>
+    <h2 class="section-title reveal" data-t="shift.title">Handoffs with nothing<br>left to guesswork.</h2>
+    <p class="section-sub reveal" data-t="shift.sub">One agent works at a time. The repo — git history, issues, PRs — is the only shared memory between shifts. Every shift follows the same loop:</p>
     <div class="steps">
       <div class="step reveal" style="--d: 0ms">
         <div class="step-num">01</div>
-        <h3>Sync, then read</h3>
-        <p>Fetch and fast-forward, read recent commits, then find the open handoff issue — the previous shift's memory lives there.</p>
+        <h3 data-t="shift.s1t">Sync, then read</h3>
+        <p data-t="shift.s1p">Fetch and fast-forward, read recent commits, then find the open handoff issue — the previous shift's memory lives there.</p>
       </div>
       <div class="step reveal" style="--d: 60ms">
         <div class="step-num">02</div>
-        <h3>Claim &amp; work</h3>
-        <p>Claim a frontier task, see it through start to finish. Small commits that spell out the <em>why</em>. Non-trivial changes go through a branch + PR.</p>
+        <h3 data-t="shift.s2t">Claim &amp; work</h3>
+        <p data-t="shift.s2p">Claim a frontier task, see it through start to finish. Small commits that spell out the <em>why</em>. Non-trivial changes go through a branch + PR.</p>
       </div>
       <div class="step reveal" style="--d: 120ms">
         <div class="step-num">03</div>
-        <h3>Gate green</h3>
-        <p>A hard gate — your own test/typecheck/lint command — must pass before shift-end. CI runs the same commands. Red means no merge.</p>
+        <h3 data-t="shift.s3t">Gate green</h3>
+        <p data-t="shift.s3p">A hard gate — your own test/typecheck/lint command — must pass before shift-end. CI runs the same commands. Red means no merge.</p>
       </div>
       <div class="step reveal" style="--d: 180ms">
         <div class="step-num">04</div>
-        <h3>Hand off</h3>
-        <p>Open a handoff issue with a five-part memory: done, blocked, next, closures, and the rationale behind every non-default decision.</p>
+        <h3 data-t="shift.s4t">Hand off</h3>
+        <p data-t="shift.s4p">Open a handoff issue with a five-part memory: done, blocked, next, closures, and the rationale behind every non-default decision.</p>
       </div>
     </div>
   </div>
 </section>
 
 <section class="container">
-  <p class="eyebrow px reveal">Architecture</p>
-  <h2 class="section-title reveal">Five files. Zero dependencies.</h2>
-  <p class="section-sub reveal">Plain Markdown and one Node script — nothing to install in your runtime, nothing that rots.</p>
+  <p class="eyebrow px reveal" data-t="arch.eyebrow">Architecture</p>
+  <h2 class="section-title reveal" data-t="arch.title">Five files. Zero dependencies.</h2>
+  <p class="section-sub reveal" data-t="arch.sub">Plain Markdown and one Node script — nothing to install in your runtime, nothing that rots.</p>
   <div class="arch-wrap">
     <div>
       <div class="grid-hair cols-3 reveal">
         <div class="arch-cell">
           <span class="file mono">AGENTS.md</span>
-          <p>The single source of truth. Every agent reads it — rules live here and only here, never duplicated.</p>
+          <p data-t="arch.f1">The single source of truth. Every agent reads it — rules live here and only here, never duplicated.</p>
         </div>
         <div class="arch-cell">
           <span class="file mono">CLAUDE.md</span>
-          <p>An empty shell: one <code>@AGENTS.md</code> line. Tool-specific entry points stay pointers, not forks.</p>
+          <p data-t="arch.f2">An empty shell: one <code>@AGENTS.md</code> line. Tool-specific entry points stay pointers, not forks.</p>
         </div>
         <div class="arch-cell">
           <span class="file mono">CONTEXT.md</span>
-          <p>Domain glossary. Keeps different agents from understanding the same business term differently.</p>
+          <p data-t="arch.f3">Domain glossary. Keeps different agents from understanding the same business term differently.</p>
         </div>
         <div class="arch-cell">
           <span class="file mono">docs/adr/</span>
-          <p>Architectural decision records — one decision per file. Protocol ADRs ship alongside, tool-managed.</p>
+          <p data-t="arch.f4">Architectural decision records — one decision per file. Protocol ADRs ship alongside, tool-managed.</p>
         </div>
         <div class="arch-cell">
           <span class="file mono">ci.yml</span>
-          <p>The hard gate. The one constraint that doesn't depend on agent self-discipline.</p>
+          <p data-t="arch.f5">The hard gate. The one constraint that doesn't depend on agent self-discipline.</p>
         </div>
         <div class="arch-cell">
           <span class="file mono">.gearbox-version</span>
-          <p>Protocol version stamp, written and read by tooling. Downstream repos self-check and backfill upstream updates.</p>
+          <p data-t="arch.f6">Protocol version stamp, written and read by tooling. Downstream repos self-check and backfill upstream updates.</p>
         </div>
       </div>
-      <p class="arch-note reveal">Deliberately <strong>no HANDOFF.md</strong> — progress and handoffs run through GitHub Issues and PRs: append-only, timestamped, never goes stale.</p>
+      <p class="arch-note reveal" data-t="arch.note">Deliberately <strong>no HANDOFF.md</strong> — progress and handoffs run through GitHub Issues and PRs: append-only, timestamped, never goes stale.</p>
     </div>
     <figure class="plate reveal" style="--d: 80ms">
-      <img src="assets/s04.webp" alt="Three pixel-art agents standing before a single lit monolith in a dark cavern" width="1920" height="1080" loading="lazy" decoding="async">
-      <figcaption class="plate-cap">One file every agent reads — <b>AGENTS.md</b></figcaption>
+      <img src="assets/s04.webp" alt="Three pixel-art agents standing before a single lit monolith in a dark cavern" data-t-alt="arch.plateAlt" width="1920" height="1080" loading="lazy" decoding="async">
+      <figcaption class="plate-cap" data-t="arch.plateCap">One file every agent reads — <b>AGENTS.md</b></figcaption>
     </figure>
   </div>
 </section>
 
 <section class="container">
-  <p class="eyebrow px reveal">Guardrails</p>
-  <h2 class="section-title reveal">Agents can change the rules.<br>Within rules.</h2>
-  <p class="section-sub reveal">The protocol repairs and extends itself — but changes are tiered, and humans keep an after-the-fact veto.</p>
+  <p class="eyebrow px reveal" data-t="guard.eyebrow">Guardrails</p>
+  <h2 class="section-title reveal" data-t="guard.title">Agents can change the rules.<br>Within rules.</h2>
+  <p class="section-sub reveal" data-t="guard.sub">The protocol repairs and extends itself — but changes are tiered, and humans keep an after-the-fact veto.</p>
   <div class="features-grid">
     <div class="feature reveal" style="--d: 0ms">
-      <h3>Tiered authorization</h3>
-      <p><span class="tag tag-l1">L1</span>Hard rules, the gate, the tiering itself — an agent may only merge after the maintainer explicitly agrees, verified against their GitHub account.</p>
-      <p><span class="tag tag-l2">L2</span>Working-agreement refinements — agents merge autonomously. Every protocol change still needs an issue, an ADR, and a green PR.</p>
+      <h3 data-t="guard.g1t">Tiered authorization</h3>
+      <p data-t="guard.g1a"><span class="tag tag-l1">L1</span>Hard rules, the gate, the tiering itself — an agent may only merge after the maintainer explicitly agrees, verified against their GitHub account.</p>
+      <p data-t="guard.g1b"><span class="tag tag-l2">L2</span>Working-agreement refinements — agents merge autonomously. Every protocol change still needs an issue, an ADR, and a green PR.</p>
     </div>
     <div class="feature reveal" style="--d: 60ms">
-      <h3>Three roles for issues</h3>
-      <p><strong>Task</strong> — an actionable thing to do. <strong>Memory</strong> — the shift-end handoff comment. <strong>Protocol gap</strong> — a question the repo can't answer.</p>
-      <p>Hit a gap? Opening an issue is mandatory — silent judgment calls are not allowed. That's the protocol's self-repair loop.</p>
+      <h3 data-t="guard.g2t">Three roles for issues</h3>
+      <p data-t="guard.g2a"><strong>Task</strong> — an actionable thing to do. <strong>Memory</strong> — the shift-end handoff comment. <strong>Protocol gap</strong> — a question the repo can't answer.</p>
+      <p data-t="guard.g2b">Hit a gap? Opening an issue is mandatory — silent judgment calls are not allowed. That's the protocol's self-repair loop.</p>
     </div>
     <div class="feature reveal" style="--d: 120ms">
-      <h3>Memory that doesn't decay</h3>
-      <p>Five-part handoff format: what's done, what's blocked, what's next, what closed — and the rationale behind every non-default decision, including what would overturn it.</p>
+      <h3 data-t="guard.g3t">Memory that doesn't decay</h3>
+      <p data-t="guard.g3p">Five-part handoff format: what's done, what's blocked, what's next, what closed — and the rationale behind every non-default decision, including what would overturn it.</p>
     </div>
     <div class="feature reveal" style="--d: 180ms">
-      <h3>Parallel lanes</h3>
-      <p>Multi-human repos run parallel shifts: a lane = one shift plus its claimed tasks. Claims are visible and timestamped; protocol changes serialize at merge time.</p>
+      <h3 data-t="guard.g4t">Parallel lanes</h3>
+      <p data-t="guard.g4p">Multi-human repos run parallel shifts: a lane = one shift plus its claimed tasks. Claims are visible and timestamped; protocol changes serialize at merge time.</p>
     </div>
   </div>
   <div class="duo">
     <figure class="plate reveal" style="--d: 0ms">
-      <img src="assets/s05.webp" alt="A pixel-art archive wall of glowing record slabs" width="1920" height="1080" loading="lazy" decoding="async">
-      <figcaption class="plate-cap">Decisions become <b>ADRs</b>, terms become <b>CONTEXT.md</b></figcaption>
+      <img src="assets/s05.webp" alt="A pixel-art archive wall of glowing record slabs" data-t-alt="guard.duo1Alt" width="1920" height="1080" loading="lazy" decoding="async">
+      <figcaption class="plate-cap" data-t="guard.duo1Cap">Decisions become <b>ADRs</b>, terms become <b>CONTEXT.md</b></figcaption>
     </figure>
     <figure class="plate reveal" style="--d: 60ms">
-      <img src="assets/s06.webp" alt="Two pixel-art agents passing a glowing object between shifts" width="1920" height="1080" loading="lazy" decoding="async">
-      <figcaption class="plate-cap">No handoff file — the handoff is an <b>issue</b></figcaption>
+      <img src="assets/s06.webp" alt="Two pixel-art agents passing a glowing object between shifts" data-t-alt="guard.duo2Alt" width="1920" height="1080" loading="lazy" decoding="async">
+      <figcaption class="plate-cap" data-t="guard.duo2Cap">No handoff file — the handoff is an <b>issue</b></figcaption>
     </figure>
   </div>
 </section>
@@ -916,13 +976,13 @@
   <img class="cine-bg" src="assets/s07.webp" alt="" width="1920" height="1080" loading="lazy" decoding="async">
   <div class="cine-scrim"></div>
   <div class="container gate-body">
-    <p class="eyebrow px reveal">The hard gate</p>
-    <h2 class="section-title reveal">Red never merges.</h2>
-    <p class="section-sub reveal" style="margin-left: auto; margin-right: auto;">Your own command — vitest, tsc, lint, whatever the project already runs. AGENTS.md names it, CI runs the same line. It's the one rule that doesn't depend on an agent's good intentions.</p>
-    <div class="gate-chip reveal" id="gateChip" role="img" aria-label="Illustration: the gate flips from red to green when the check passes">
-      <span class="dot"></span><span class="txt">Gate · red</span>
+    <p class="eyebrow px reveal" data-t="gate.eyebrow">The hard gate</p>
+    <h2 class="section-title reveal" data-t="gate.title">Red never merges.</h2>
+    <p class="section-sub reveal" style="margin-left: auto; margin-right: auto;" data-t="gate.sub">Your own command — vitest, tsc, lint, whatever the project already runs. AGENTS.md names it, CI runs the same line. It's the one rule that doesn't depend on an agent's good intentions.</p>
+    <div class="gate-chip reveal" id="gateChip" role="img" aria-label="Illustration: the gate flips from red to green when the check passes" data-t-aria-label="gate.chipAria">
+      <span class="dot"></span><span class="txt" data-t="gate.red">Gate · red</span>
     </div>
-    <p class="gate-caption reveal">Shift-end rule #1: the gate is all-green, or the shift isn't over.</p>
+    <p class="gate-caption reveal" data-t="gate.caption">Shift-end rule #1: the gate is all-green, or the shift isn't over.</p>
   </div>
 </section>
 
@@ -930,25 +990,25 @@
   <img class="cine-bg" src="assets/s08.webp" alt="" width="1920" height="1080" loading="lazy" decoding="async">
   <div class="cine-scrim"></div>
   <div class="container">
-    <p class="eyebrow px reveal">Tooling</p>
-    <h2 class="section-title reveal">One command to start.<br>One to stay in sync.</h2>
+    <p class="eyebrow px reveal" data-t="tools.eyebrow">Tooling</p>
+    <h2 class="section-title reveal" data-t="tools.title">One command to start.<br>One to stay in sync.</h2>
     <div class="terminal-wrap">
       <ul class="tools-list">
         <li class="reveal" style="--d: 0ms">
           <span class="cmd">npx gearbox-agents install</span>
-          <p>Lay down the full scaffold — placeholders, gate, ADR provenance, hash stamps. Zero config.</p>
+          <p data-t="tools.d1">Lay down the full scaffold — placeholders, gate, ADR provenance, hash stamps. Zero config.</p>
         </li>
         <li class="reveal" style="--d: 60ms">
           <span class="cmd">npx gearbox-agents version</span>
-          <p>Check which upstream protocol version and ADRs this repo is synced to.</p>
+          <p data-t="tools.d2">Check which upstream protocol version and ADRs this repo is synced to.</p>
         </li>
         <li class="reveal" style="--d: 120ms">
           <span class="cmd">npx gearbox-agents update</span>
-          <p>Backfill missing upstream ADRs into a review-ready branch. Pull-triggered — no upstream registry of forks needed.</p>
+          <p data-t="tools.d3">Backfill missing upstream ADRs into a review-ready branch. Pull-triggered — no upstream registry of forks needed.</p>
         </li>
         <li class="reveal" style="--d: 180ms">
           <span class="cmd">npx gearbox-agents prune</span>
-          <p>Branch hygiene: merged branches, stale refs, leftover worktrees. Dry-run by default, never force-deletes.</p>
+          <p data-t="tools.d4">Branch hygiene: merged branches, stale refs, leftover worktrees. Dry-run by default, never force-deletes.</p>
         </li>
       </ul>
       <div class="terminal reveal" style="--d: 100ms" aria-hidden="true">
@@ -973,32 +1033,32 @@
 </section>
 
 <section class="container">
-  <p class="eyebrow px reveal">Validated in practice</p>
-  <h2 class="section-title reveal">Six rounds of dogfooding.<br>Honest about the limits.</h2>
-  <p class="section-sub reveal">The protocol ran four rounds of multi-agent validation in a real repo, then two more maintaining itself — every mechanism that emerged landed as an ADR.</p>
+  <p class="eyebrow px reveal" data-t="val.eyebrow">Validated in practice</p>
+  <h2 class="section-title reveal" data-t="val.title">Six rounds of dogfooding.<br>Honest about the limits.</h2>
+  <p class="section-sub reveal" data-t="val.sub">The protocol ran four rounds of multi-agent validation in a real repo, then two more maintaining itself — every mechanism that emerged landed as an ADR.</p>
   <div class="grid-hair cols-4 reveal" style="margin-bottom: 1.6rem;">
-    <div class="stat"><span class="n">49</span><span class="l">Protocol ADRs</span></div>
-    <div class="stat"><span class="n">6</span><span class="l">Dogfood rounds</span></div>
-    <div class="stat"><span class="n">0</span><span class="l">Runtime deps</span></div>
-    <div class="stat"><span class="n">1000+</span><span class="l">npm downloads</span></div>
+    <div class="stat"><span class="n">49</span><span class="l" data-t="val.l1">Protocol ADRs</span></div>
+    <div class="stat"><span class="n">6</span><span class="l" data-t="val.l2">Dogfood rounds</span></div>
+    <div class="stat"><span class="n">0</span><span class="l" data-t="val.l3">Runtime deps</span></div>
+    <div class="stat"><span class="n">1000+</span><span class="l" data-t="val.l4">npm downloads</span></div>
   </div>
   <div class="honest-grid">
     <div class="honest-col honest-yes reveal" style="--d: 0ms">
-      <h3>What held up</h3>
+      <h3 data-t="val.yesH">What held up</h3>
       <ul>
-        <li>Zero-verbal handoffs — three shifts of collaboration with nothing left to guesswork</li>
-        <li>The self-repair loop: find a gap, open an issue, fold it into the protocol</li>
-        <li>The protocol catching its own violations — and its own overreach — without anyone pointing the way</li>
-        <li>Async L1 approval running end-to-end, verified against a GitHub account</li>
+        <li data-t="val.y1">Zero-verbal handoffs — three shifts of collaboration with nothing left to guesswork</li>
+        <li data-t="val.y2">The self-repair loop: find a gap, open an issue, fold it into the protocol</li>
+        <li data-t="val.y3">The protocol catching its own violations — and its own overreach — without anyone pointing the way</li>
+        <li data-t="val.y4">Async L1 approval running end-to-end, verified against a GitHub account</li>
       </ul>
     </div>
     <div class="honest-col honest-no reveal" style="--d: 60ms">
-      <h3>What's unvalidated</h3>
+      <h3 data-t="val.noH">What's unvalidated</h3>
       <ul>
-        <li>Scale: n=1 user, two agents, a toy-sized codebase</li>
-        <li>An all-green gate ≠ correct — inherent to regression-style guarantees</li>
-        <li>L1 while the maintainer is offline — the bottleneck is accepted, never yet felt</li>
-        <li>Ceremony cost in high-frequency, small-task settings</li>
+        <li data-t="val.n1">Scale: n=1 user, two agents, a toy-sized codebase</li>
+        <li data-t="val.n2">An all-green gate ≠ correct — inherent to regression-style guarantees</li>
+        <li data-t="val.n3">L1 while the maintainer is offline — the bottleneck is accepted, never yet felt</li>
+        <li data-t="val.n4">Ceremony cost in high-frequency, small-task settings</li>
       </ul>
     </div>
   </div>
@@ -1008,8 +1068,8 @@
   <img class="cine-bg" src="assets/s09.webp" alt="" width="1920" height="1080" loading="lazy" decoding="async">
   <div class="cine-scrim"></div>
   <div class="container">
-    <h2 class="reveal">Give your agents<br>a working agreement.</h2>
-    <button class="install-pill reveal" style="--d: 60ms" id="copyBtn2" aria-label="Copy install command">
+    <h2 class="reveal" data-t="cta.title">Give your agents<br>a working agreement.</h2>
+    <button class="install-pill reveal" style="--d: 60ms" id="copyBtn2" aria-label="Copy install command" data-t-aria-label="copy.aria">
       <span class="prompt">$</span>
       <span class="mono">npx gearbox-agents install</span>
       <span class="copy-icon">
@@ -1028,17 +1088,17 @@
       <div class="footer-links">
         <a href="https://github.com/real-stanyan/gearbox">GitHub</a>
         <a href="https://www.npmjs.com/package/gearbox-agents">npm</a>
-        <a href="https://github.com/real-stanyan/gearbox/blob/main/LICENSE">MIT License</a>
+        <a href="https://github.com/real-stanyan/gearbox/blob/main/LICENSE" data-t="footer.mit">MIT License</a>
       </div>
     </div>
-    <p class="footer-note">Formerly agents-md-scaffold, renamed Gearbox on 2026-07-19 (ADR-0015). Artwork: original 16-bit pixel plates from the Gearbox film.</p>
+    <p class="footer-note" data-t="footer.note">Formerly agents-md-scaffold, renamed Gearbox on 2026-07-19 (ADR-0015). Artwork: original 16-bit pixel plates from the Gearbox film.</p>
   </div>
 </footer>
 
 <div class="film-overlay" id="filmOverlay" hidden>
   <div class="film-scrim" data-close></div>
-  <button class="film-close" id="filmClose" aria-label="Close the film">Esc ✕</button>
-  <div class="film-stage" id="filmStage" role="dialog" aria-modal="true" aria-label="Gearbox — the film">
+  <button class="film-close" id="filmClose" aria-label="Close the film" data-t-aria-label="film.closeAria">Esc ✕</button>
+  <div class="film-stage" id="filmStage" role="dialog" aria-modal="true" aria-label="Gearbox — the film" data-t-aria-label="film.dialogAria">
     <video id="filmVideo" playsinline controls preload="none" poster="assets/film-cover.webp"></video>
   </div>
 </div>
@@ -1047,6 +1107,202 @@
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const saveData = navigator.connection && navigator.connection.saveData;
   const heroVideo = document.getElementById('heroVideo');
+
+  // ---- Language ----------------------------------------------------------
+  // English lives in the markup, so it stays crawlable and readable in the source;
+  // the dictionary only carries the Chinese. Originals are captured on first run,
+  // which means EN is never written down twice and can't drift out of sync.
+  const ZH = {
+    'nav.film': '影片',
+    'nav.protocol': '协议',
+    'nav.tools': '工具',
+
+    'copy.aria': '复制安装命令',
+
+    'hero.logoAlt': 'Gearbox 标志 —— 一个像素齿轮环绕字母 G',
+    'hero.eyebrow': '多 AGENT 协作协议',
+    'hero.h1': '多个 agent。<br><span class="accent">一份事实源。</span>',
+    'hero.sub': 'Gearbox 是给多 agent 协作项目用的脚手架 —— <code>AGENTS.md</code> 作为唯一事实源，加上决策记录和 CI 硬门禁。让 Claude&nbsp;Code、Z&nbsp;Code、Cursor 或任何 coding agent 在同一个仓库里轮班，互不踩脚。',
+    'hero.github': '在 GitHub 上查看',
+    'hero.quickstart': '快速开始',
+    'hero.meta': 'MIT · 零运行时依赖 · 不绑定工具',
+
+    'film.eyebrow': '影片',
+    'film.title': '整件事，<br>七十三秒讲完。',
+    'film.sub': '这一页讲的和片子讲的是同一件事。往下读，或者点开看 —— 你决定。',
+    'film.meta': '73 秒 · 中文旁白 · <b>请开声音</b>',
+    'film.openAria': '播放 Gearbox 影片 —— 73 秒，有声',
+    'film.coverAlt': '影片截图：一座发光的机器大厅围着巨大齿轮，字幕写着「每一条机制都有 ADR 出处」',
+    'film.closeAria': '关闭影片',
+    'film.dialogAria': 'Gearbox —— 影片',
+
+    'prob.eyebrow': '问题',
+    'prob.title': '第二个 agent<br>是瞎着开工的。',
+    'prob.sub': '等到另一个 agent 接手仓库，上一个想明白的东西已经没了。它待过的那个对话窗口活不过这次会话 —— 而仓库从来没被告知过。',
+    'prob.plateAlt': '一个像素风 agent 站在亮着的门口，面前地上摆着三块空白石板',
+    'prob.plateCap': '一个 agent，一道门，<b>三份</b>不一样的规则',
+    'prob.c1t': '规则 ×3',
+    'prob.c1p': '同一条规则被抄进 <code>CLAUDE.md</code>、README 和某行注释。副本会漂移；三份互相矛盾，没人发现。',
+    'prob.c2t': '为什么 → ∅',
+    'prob.c2p': '一个权衡被认真掂量过，然后蒸发了。下一班要么重新吵一遍，要么悄悄推翻。',
+    'prob.c3t': '中途换手',
+    'prob.c3p': 'agent 干到一半交班。改了一半的编辑、没跑过的门禁，也没有任何记录说明「做完」到底指什么。',
+
+    'shift.eyebrow': '轮班协议',
+    'shift.title': '交接不留<br>任何靠猜的部分。',
+    'shift.sub': '一次只有一个 agent 在干活。仓库 —— git 历史、issues、PR —— 是轮班之间唯一的共享记忆。每一班都走同一个循环：',
+    'shift.s1t': '先同步，再读',
+    'shift.s1p': 'fetch 并快进，读最近的提交，然后找那个开着的交接 issue —— 上一班的记忆就在里面。',
+    'shift.s2t': '认领并做完',
+    'shift.s2p': '认领一个前沿任务，从头做到尾。小步提交，讲清楚<em>为什么</em>。非琐碎改动走分支 + PR。',
+    'shift.s3t': '门禁绿灯',
+    'shift.s3p': '硬门禁 —— 你自己的测试／类型检查／lint 命令 —— 必须在下班前通过。CI 跑同一行命令。红了就不许合。',
+    'shift.s4t': '交班',
+    'shift.s4p': '开一个交接 issue，写五段式记忆：做完了什么、卡在哪、下一步、关掉了什么，以及每个非默认决定背后的理由。',
+
+    'arch.eyebrow': '架构',
+    'arch.title': '五个文件。零依赖。',
+    'arch.sub': '纯 Markdown 加一个 Node 脚本 —— 运行时不用装任何东西，也没有会烂掉的部分。',
+    'arch.f1': '唯一事实源。每个 agent 都读它 —— 规则只写这一份，绝不复制。',
+    'arch.f2': '一个空壳：只有一行 <code>@AGENTS.md</code>。工具专属入口只做指针，不做分叉。',
+    'arch.f3': '领域词汇表。避免不同 agent 把同一个业务词理解成两回事。',
+    'arch.f4': '架构决策记录 —— 一个决策一个文件。协议 ADR 一并附带，由工具管理。',
+    'arch.f5': '硬门禁。唯一一条不依赖 agent 自觉的约束。',
+    'arch.f6': '协议版本戳，由工具读写。下游仓库据此自检，并回填上游更新。',
+    'arch.note': '刻意<strong>不设 HANDOFF.md</strong> —— 进度和交接走 GitHub Issues 和 PR：只追加、带时间戳、不会过期。',
+    'arch.plateAlt': '三个像素风 agent 站在暗洞里一块亮着的独石前',
+    'arch.plateCap': '每个 agent 都读的那一个文件 —— <b>AGENTS.md</b>',
+
+    'guard.eyebrow': '护栏',
+    'guard.title': 'agent 可以改规则。<br>在规则之内。',
+    'guard.sub': '协议会自我修补、自我扩展 —— 但改动分级，而且人类保留事后否决权。',
+    'guard.g1t': '分级授权',
+    'guard.g1a': '<span class="tag tag-l1">L1</span>硬规则、门禁、分级机制本身 —— agent 必须等 maintainer 明确同意才能合，并对照其 GitHub 账号核验。',
+    'guard.g1b': '<span class="tag tag-l2">L2</span>工作约定层面的细化 —— agent 自主合并。但任何协议改动依然要有 issue、ADR 和一个绿灯 PR。',
+    'guard.g2t': 'issue 的三种角色',
+    'guard.g2a': '<strong>Task</strong> —— 一件可执行的事。<strong>Memory</strong> —— 下班时的交接留言。<strong>Protocol gap</strong> —— 仓库回答不了的问题。',
+    'guard.g2b': '碰到 gap？必须开 issue —— 不允许私自判断。这就是协议的自我修补回路。',
+    'guard.g3t': '不会衰减的记忆',
+    'guard.g3p': '五段式交接格式：做完了什么、卡在哪、下一步、关掉了什么 —— 以及每个非默认决定背后的理由，包括什么前提被推翻就该重来。',
+    'guard.g4t': '并行车道',
+    'guard.g4p': '多人仓库可以并行轮班：一条车道 = 一个班次加它认领的任务。认领动作可见且带时间戳；协议改动在合并那一刻串行化。',
+    'guard.duo1Alt': '像素风档案墙，整面发光的记录石板',
+    'guard.duo1Cap': '决策变成 <b>ADR</b>，术语变成 <b>CONTEXT.md</b>',
+    'guard.duo2Alt': '两个像素风 agent 在交班时传递一个发光物件',
+    'guard.duo2Cap': '没有交接文件 —— 交接本身就是一个 <b>issue</b>',
+
+    'gate.eyebrow': '硬门禁',
+    'gate.title': '红灯永不合并。',
+    'gate.sub': '用你自己的命令 —— vitest、tsc、lint，项目本来就在跑的那些。AGENTS.md 写明它，CI 跑同一行。这是唯一一条不指望 agent 自觉的规则。',
+    'gate.chipAria': '示意图：检查通过时，门禁由红转绿',
+    'gate.red': '门禁 · 红',
+    'gate.green': '门禁 · 绿',
+    'gate.caption': '下班第一条：门禁全绿，否则这一班不算结束。',
+
+    'tools.eyebrow': '工具链',
+    'tools.title': '一条命令开始。<br>一条命令保持同步。',
+    'tools.d1': '铺下完整脚手架 —— 占位符、门禁、ADR 出处、哈希戳。零配置。',
+    'tools.d2': '查这个仓库同步到了哪个上游协议版本、哪些 ADR。',
+    'tools.d3': '把缺失的上游 ADR 回填到一个可评审的分支。拉取触发 —— 上游不需要知道有哪些 fork。',
+    'tools.d4': '分支卫生：已合并分支、过期引用、残留 worktree。默认 dry-run，绝不强删。',
+
+    'val.eyebrow': '实战验证',
+    'val.title': '六轮 dogfooding。<br>对局限保持诚实。',
+    'val.sub': '协议在真实仓库里跑了四轮多 agent 验证，之后又用两轮维护它自己 —— 每一条冒出来的机制都落成了 ADR。',
+    'val.l1': '协议 ADR',
+    'val.l2': 'dogfood 轮次',
+    'val.l3': '运行时依赖',
+    'val.l4': 'npm 下载量',
+    'val.yesH': '站得住的',
+    'val.y1': '零口头交接 —— 三班协作，没有一处靠猜',
+    'val.y2': '自我修补回路：发现空白、开 issue、折进协议',
+    'val.y3': '协议抓到了自己的违规 —— 以及自己的越界 —— 没人从旁指路',
+    'val.y4': '异步 L1 批准跑通全程，并对照 GitHub 账号核验',
+    'val.noH': '还没验证的',
+    'val.n1': '规模：n=1 用户、两个 agent、玩具级代码量',
+    'val.n2': '门禁全绿 ≠ 正确 —— 这是回归型保证的固有局限',
+    'val.n3': 'maintainer 离线时的 L1 —— 瓶颈被接受，但还没真正卡到过',
+    'val.n4': '高频小任务场景下的仪式成本',
+
+    'cta.title': '给你的 agent<br>一份工作约定。',
+
+    'footer.mit': 'MIT 许可证',
+    'footer.note': '原名 agents-md-scaffold，2026-07-19 更名为 Gearbox（ADR-0015）。插图：Gearbox 影片的原创 16-bit 像素画。',
+
+    'meta.title': 'Gearbox —— 多个 agent，一份事实源。',
+    'meta.desc': '多 agent 协作项目的脚手架 —— AGENTS.md 作为唯一事实源，加上 ADR 决策记录和 CI 硬门禁。适用于 Claude Code、Z Code、Cursor 等任何 agent coding 工具。',
+  };
+
+  // The film is narrated, so it is part of the translation, not decoration next to it.
+  const FILM = {
+    en: { video: 'assets/film-en.mp4', cover: 'assets/film-cover.webp' },
+    zh: { video: 'assets/film-cn.mp4', cover: 'assets/film-cover-cn.webp' },
+  };
+
+  const ATTRS = ['alt', 'aria-label', 'title'];
+  const i18nNodes = [];
+  for (const el of document.querySelectorAll('[data-t], [data-t-alt], [data-t-aria-label], [data-t-title]')) {
+    const entry = { el, key: el.dataset.t, html: el.innerHTML, attrs: [] };
+    for (const a of ATTRS) {
+      const k = el.getAttribute('data-t-' + a);
+      if (k) entry.attrs.push({ a, key: k, val: el.getAttribute(a) });
+    }
+    i18nNodes.push(entry);
+  }
+  const metaDesc = document.querySelector('meta[name="description"]');
+  const EN_META = { title: document.title, desc: metaDesc.content };
+  const langBtns = [...document.querySelectorAll('.lang button')];
+  const filmCover = document.getElementById('filmCover');
+
+  let lang = 'en';
+
+  function applyLang(next) {
+    lang = next === 'zh' ? 'zh' : 'en';
+    const zh = lang === 'zh';
+    const t = (key, fallback) => (zh && ZH[key] !== undefined ? ZH[key] : fallback);
+
+    for (const n of i18nNodes) {
+      if (n.key) n.el.innerHTML = t(n.key, n.html);
+      for (const a of n.attrs) n.el.setAttribute(a.a, t(a.key, a.val));
+    }
+
+    document.documentElement.lang = zh ? 'zh-Hans' : 'en';
+    document.title = t('meta.title', EN_META.title);
+    metaDesc.content = t('meta.desc', EN_META.desc);
+
+    for (const b of langBtns) b.setAttribute('aria-pressed', String(b.dataset.lang === lang));
+
+    // The gate chip may already have flipped; keep whichever state it is in.
+    const txt = chip.querySelector('.txt');
+    if (chip.classList.contains('green')) txt.innerHTML = t('gate.green', 'Gate · green');
+
+    // Swap the film to the matching narration. If it is already loaded, drop the
+    // source — the next open fetches the right one rather than replaying the wrong.
+    filmCover.src = FILM[lang].cover;
+    filmVideo.poster = FILM[lang].cover;
+    if (filmVideo.getAttribute('src') && filmVideo.getAttribute('src') !== FILM[lang].video) {
+      filmVideo.pause();
+      filmVideo.removeAttribute('src');
+      filmVideo.load();
+    }
+
+    try { localStorage.setItem('gb-lang', lang); } catch {}
+    const url = new URL(location.href);
+    url.searchParams.set('lang', lang);
+    history.replaceState(null, '', url);
+  }
+
+  function initialLang() {
+    const q = new URLSearchParams(location.search).get('lang');
+    if (q === 'zh' || q === 'en') return q;
+    try {
+      const saved = localStorage.getItem('gb-lang');
+      if (saved === 'zh' || saved === 'en') return saved;
+    } catch {}
+    return (navigator.languages || [navigator.language || 'en']).some((l) => /^zh\b/i.test(l)) ? 'zh' : 'en';
+  }
+
+  for (const b of langBtns) b.addEventListener('click', () => applyLang(b.dataset.lang));
 
   // Scroll reveal — fires slightly before the element lands, so nothing pops in late.
   const io = new IntersectionObserver((entries) => {
@@ -1084,7 +1340,8 @@
       gateIo.unobserve(e.target);
       setTimeout(() => {
         chip.classList.add('green');
-        chip.querySelector('.txt').textContent = 'Gate · green';
+        chip.querySelector('.txt').innerHTML =
+          lang === 'zh' ? ZH['gate.green'] : 'Gate · green';
       }, reduceMotion.matches ? 0 : 900);
     }
   }, { threshold: 0.6 });
@@ -1092,7 +1349,7 @@
 
   // ---- The film ----------------------------------------------------------
   // Opens by growing out of the frame that was tapped and closes back into it, so the
-  // player never arrives from nowhere. The 6.9 MB file is only fetched on that first tap.
+  // player never arrives from nowhere. The ~7 MB file is only fetched on that first tap.
   const filmOpen = document.getElementById('filmOpen');
   const filmOverlay = document.getElementById('filmOverlay');
   const filmStage = document.getElementById('filmStage');
@@ -1120,7 +1377,7 @@
   }
 
   function openFilm() {
-    if (!filmVideo.src) filmVideo.src = 'assets/film-en.mp4';
+    if (!filmVideo.getAttribute('src')) filmVideo.src = FILM[lang].video;
     const bar = innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = 'hidden';
     if (bar > 0) document.body.style.paddingRight = bar + 'px';
@@ -1179,6 +1436,10 @@
       stops[(i + (e.shiftKey ? stops.length - 1 : 1)) % stops.length].focus({ preventScroll: true });
     }
   });
+
+  // Runs last, but before first paint — this script is synchronous and sits at the end
+  // of the body, so a Chinese reader never sees the English flash past.
+  applyLang(initialLang());
 
   // Hero loop: the poster carries the frame until the clip is worth playing.
   // Reduced motion, or a metered connection, keeps the still.
