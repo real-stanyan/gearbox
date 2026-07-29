@@ -9,13 +9,21 @@
 <meta property="og:title" content="Gearbox">
 <meta property="og:description" content="Many agents. One source of truth. AGENTS.md + ADRs + a CI hard gate.">
 <meta property="og:type" content="website">
-<!-- og:image should be an absolute URL once the production domain is settled. -->
-<meta property="og:image" content="assets/hero-poster.webp">
+<meta property="og:url" content="https://gearbox-gamma.vercel.app/">
+<meta property="og:site_name" content="Gearbox">
+<!-- Absolute on purpose: link unfurlers fetch og:image out of page context, so a
+     relative path resolves against nothing and the card renders blank. -->
+<meta property="og:image" content="https://gearbox-gamma.vercel.app/assets/hero-poster.webp">
+<meta property="og:image:width" content="1920">
+<meta property="og:image:height" content="1080">
+<meta property="og:image:alt" content="A pixel-art hall of glowing machines around a giant gear">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://gearbox-gamma.vercel.app/">
 <!-- English is what's in the markup; Chinese is applied by script from ?lang=zh.
      The alternates make both states linkable and let crawlers see the pair. -->
-<link rel="alternate" hreflang="en" href="?lang=en">
-<link rel="alternate" hreflang="zh" href="?lang=zh">
-<link rel="alternate" hreflang="x-default" href="./">
+<link rel="alternate" hreflang="en" href="https://gearbox-gamma.vercel.app/?lang=en">
+<link rel="alternate" hreflang="zh" href="https://gearbox-gamma.vercel.app/?lang=zh">
+<link rel="alternate" hreflang="x-default" href="https://gearbox-gamma.vercel.app/">
 <link rel="icon" type="image/png" href="gearbox-logo.png">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
