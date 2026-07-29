@@ -82,10 +82,23 @@
     line-height: 1.7;
   }
 
-  /* ---------- Layout ---------- */
-  .container { max-width: 1080px; margin: 0 auto; padding: 0 1.5rem; }
-  section { padding: 5.5rem 0; }
-  @media (max-width: 720px) { section { padding: 4rem 0; } }
+  /* ---------- Layout ----------
+     Horizontal padding as longhand on purpose: `.container` also lands on <section>
+     elements, and the shorthand would out-specify the element rule and zero out the
+     section's vertical rhythm. */
+  .container {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+  section { padding: 4.75rem 0; }
+  /* Art sections can carry more air — theirs is filled with picture, not blank page. */
+  .cine { padding: 5.75rem 0; }
+  @media (max-width: 720px) {
+    section { padding: 3.25rem 0; }
+    .cine { padding: 4rem 0; }
+  }
 
   .eyebrow {
     font-size: 0.6rem;
