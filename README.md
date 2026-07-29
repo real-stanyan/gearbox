@@ -10,6 +10,10 @@
 </p>
 
 <p align="center">
+  <a href="https://gearbox-gamma.vercel.app"><b>gearbox-gamma.vercel.app</b></a>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/gearbox-agents"><img src="https://img.shields.io/npm/v/gearbox-agents?color=ef9f27&label=npm" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-dbd7cb" alt="MIT license"></a>
 </p>
