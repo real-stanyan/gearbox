@@ -363,6 +363,109 @@
   .step h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
   .step p { font-size: 0.87rem; color: var(--ink-2); }
 
+  /* ---------- The film ---------- */
+  .film-frame {
+    display: block;
+    position: relative;
+    width: 100%;
+    padding: 0;
+    border: 1px solid var(--line);
+    background: var(--bg-lift);
+    box-shadow: var(--shadow-hard);
+    cursor: pointer;
+    line-height: 0;
+    color: inherit;
+    transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), border-color 150ms ease;
+  }
+  .film-frame img { width: 100%; height: auto; display: block; }
+  /* Press-down feedback fires on pointerdown, not on click — the frame answers the finger. */
+  .film-frame[data-pressed] {
+    transform: translate(3px, 3px);
+    box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .film-frame:hover { border-color: rgba(245, 171, 61, 0.45); }
+    .film-frame:hover .film-play { background: var(--amber); color: #17150f; }
+  }
+  .film-veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(60% 60% at 50% 50%, rgba(10, 9, 8, 0.5) 0%, rgba(10, 9, 8, 0) 70%),
+      repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.26) 0 1px, rgba(0, 0, 0, 0) 1px 3px);
+  }
+  .film-play {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 84px; height: 84px;
+    display: grid;
+    place-items: center;
+    color: var(--amber);
+    background: rgba(23, 21, 15, 0.5);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    backdrop-filter: blur(12px) saturate(140%);
+    border: 2px solid rgba(245, 171, 61, 0.85);
+    box-shadow: 0 0 34px rgba(10, 9, 8, 0.6);
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .film-play svg { width: 26px; height: 26px; margin-left: 4px; fill: currentColor; }
+  /* Metadata sits outside the frame — the still already carries the film's own captions,
+     and stacking a third text layer on it just crowds the picture. */
+  .film-meta {
+    margin-top: 1rem;
+    font-size: 0.53rem;
+    color: var(--ink-3);
+    line-height: 1.7;
+  }
+  .film-meta b { color: var(--amber); font-weight: 400; }
+  @media (max-width: 620px) {
+    .film-play { width: 62px; height: 62px; }
+    .film-play svg { width: 20px; height: 20px; }
+  }
+
+  /* Lightbox: dim to focus, and grow out of the frame that was tapped. */
+  .film-overlay { position: fixed; inset: 0; z-index: 200; }
+  .film-overlay[hidden] { display: none; }
+  .film-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(6, 5, 4, 0.86);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .film-scrim { background: #060504; -webkit-backdrop-filter: none; backdrop-filter: none; }
+    .film-play { background: #17150f; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  }
+  .film-stage {
+    position: absolute;
+    top: 50%; left: 50%;
+    translate: -50% -50%;
+    width: min(94vw, 1280px, calc((88vh - 4rem) * 16 / 9));
+    aspect-ratio: 16 / 9;
+    border: 1px solid var(--line);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 30px 80px rgba(0, 0, 0, 0.7);
+    background: #000;
+    will-change: transform;
+  }
+  .film-stage video { width: 100%; height: 100%; display: block; }
+  .film-close {
+    position: absolute;
+    top: 1.1rem; right: 1.2rem;
+    font-family: var(--pixel);
+    font-size: 0.56rem;
+    color: var(--ink-2);
+    background: rgba(23, 21, 15, 0.6);
+    border: 1px solid var(--line);
+    padding: 0.7em 0.9em;
+    cursor: pointer;
+    transition: transform 110ms var(--ease-out), color 150ms ease, border-color 150ms ease;
+  }
+  .film-close:hover { color: var(--ink); border-color: rgba(245, 171, 61, 0.5); }
+  .film-close:active { transform: scale(0.96); }
+
   /* ---------- Text beside a plate ---------- */
   .split {
     display: grid;
@@ -623,7 +726,7 @@
     <img class="nav-logo" src="gearbox-logo.png" alt="" width="24" height="24">
     <a class="nav-name" href="#">Gearbox</a>
     <div class="nav-links">
-      <a href="#problem">Why</a>
+      <a href="#film">Film</a>
       <a href="#shift">Protocol</a>
       <a href="#tools">Tools</a>
       <a href="https://www.npmjs.com/package/gearbox-agents">npm</a>
@@ -657,6 +760,18 @@
     <p class="hero-meta px reveal" style="--d: 320ms">MIT · Zero runtime deps · Tool-agnostic</p>
   </div>
 </header>
+
+<section id="film" class="container">
+  <p class="eyebrow px reveal">The film</p>
+  <h2 class="section-title reveal">The whole idea,<br>in seventy-one seconds.</h2>
+  <p class="section-sub reveal">Same story this page tells, told in one take. Read on, or watch it — your call.</p>
+  <button class="film-frame reveal" id="filmOpen" aria-label="Play the Gearbox film — 71 seconds, with sound">
+    <img src="assets/film-cover.webp" alt="Film still: a hall of glowing machines around a giant gear, captioned 'every mechanism traced to an ADR'" width="1280" height="720" loading="lazy" decoding="async">
+    <span class="film-veil"></span>
+    <span class="film-play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l15 9-15 9z"/></svg></span>
+  </button>
+  <p class="film-meta px reveal">71 sec · English narration · <b>sound on</b></p>
+</section>
 
 <section id="problem" class="container">
   <div class="split">
@@ -920,8 +1035,18 @@
   </div>
 </footer>
 
+<div class="film-overlay" id="filmOverlay" hidden>
+  <div class="film-scrim" data-close></div>
+  <button class="film-close" id="filmClose" aria-label="Close the film">Esc ✕</button>
+  <div class="film-stage" id="filmStage" role="dialog" aria-modal="true" aria-label="Gearbox — the film">
+    <video id="filmVideo" playsinline controls preload="none" poster="assets/film-cover.webp"></video>
+  </div>
+</div>
+
 <script>
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const saveData = navigator.connection && navigator.connection.saveData;
+  const heroVideo = document.getElementById('heroVideo');
 
   // Scroll reveal — fires slightly before the element lands, so nothing pops in late.
   const io = new IntersectionObserver((entries) => {
@@ -965,13 +1090,101 @@
   }, { threshold: 0.6 });
   gateIo.observe(chip);
 
+  // ---- The film ----------------------------------------------------------
+  // Opens by growing out of the frame that was tapped and closes back into it, so the
+  // player never arrives from nowhere. The 6.9 MB file is only fetched on that first tap.
+  const filmOpen = document.getElementById('filmOpen');
+  const filmOverlay = document.getElementById('filmOverlay');
+  const filmStage = document.getElementById('filmStage');
+  const filmVideo = document.getElementById('filmVideo');
+  const filmClose = document.getElementById('filmClose');
+  const OPEN_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  let filmAnim = null;
+
+  // Feedback on press, not on release.
+  filmOpen.addEventListener('pointerdown', () => filmOpen.setAttribute('data-pressed', ''));
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+    filmOpen.addEventListener(ev, () => filmOpen.removeAttribute('data-pressed'));
+  }
+
+  function flip(reverse) {
+    const from = filmOpen.getBoundingClientRect();
+    const to = filmStage.getBoundingClientRect();
+    const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+    const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+    const s = from.width / to.width;
+    const shrunk = { transform: `translate(${dx}px, ${dy}px) scale(${s})`, opacity: 0.35 };
+    const full = { transform: 'translate(0px, 0px) scale(1)', opacity: 1 };
+    const frames = reverse ? [full, shrunk] : [shrunk, full];
+    return { frames, opts: { duration: reverse ? 300 : 420, easing: OPEN_EASE, fill: 'both' } };
+  }
+
+  function openFilm() {
+    if (!filmVideo.src) filmVideo.src = 'assets/film-en.mp4';
+    const bar = innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = 'hidden';
+    if (bar > 0) document.body.style.paddingRight = bar + 'px';
+
+    filmOverlay.hidden = false;
+    heroVideo.pause();
+    filmVideo.currentTime = 0;
+    filmVideo.play().catch(() => {});
+
+    filmAnim?.cancel();
+    if (reduceMotion.matches) {
+      filmAnim = filmOverlay.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: 'both' });
+    } else {
+      const { frames, opts } = flip(false);
+      filmAnim = filmStage.animate(frames, opts);
+      filmOverlay.querySelector('.film-scrim').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, fill: 'both' });
+      filmClose.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, delay: 120, fill: 'both' });
+    }
+    filmClose.focus({ preventScroll: true });
+  }
+
+  function closeFilm() {
+    filmAnim?.cancel();
+    const done = () => {
+      filmOverlay.hidden = true;
+      filmVideo.pause();
+      filmVideo.currentTime = 0;
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      if (!reduceMotion.matches && !saveData) heroVideo.play().catch(() => {});
+      filmOpen.focus({ preventScroll: true });
+    };
+    if (reduceMotion.matches) {
+      filmOverlay.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'both' }).finished.then(done, done);
+      return;
+    }
+    // Exit retraces the entry path — out the way it came in.
+    const { frames, opts } = flip(true);
+    filmOverlay.querySelector('.film-scrim').animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: 'both' });
+    filmClose.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: 'both' });
+    filmAnim = filmStage.animate(frames, opts);
+    filmAnim.finished.then(done, done);
+  }
+
+  filmOpen.addEventListener('click', openFilm);
+  filmClose.addEventListener('click', closeFilm);
+  filmOverlay.addEventListener('click', (e) => { if (e.target.dataset.close !== undefined) closeFilm(); });
+  addEventListener('keydown', (e) => {
+    if (filmOverlay.hidden) return;
+    if (e.key === 'Escape') { closeFilm(); return; }
+    // Two stops only — the player and the way out. Keep Tab inside them.
+    if (e.key === 'Tab') {
+      const stops = [filmClose, filmVideo];
+      const i = stops.indexOf(document.activeElement);
+      e.preventDefault();
+      stops[(i + (e.shiftKey ? stops.length - 1 : 1)) % stops.length].focus({ preventScroll: true });
+    }
+  });
+
   // Hero loop: the poster carries the frame until the clip is worth playing.
   // Reduced motion, or a metered connection, keeps the still.
-  const video = document.getElementById('heroVideo');
-  const saveData = navigator.connection && navigator.connection.saveData;
   if (!reduceMotion.matches && !saveData) {
-    video.src = 'assets/hero.mp4';
-    video.play().catch(() => {});
+    heroVideo.src = 'assets/hero.mp4';
+    heroVideo.play().catch(() => {});
   }
 </script>
 
