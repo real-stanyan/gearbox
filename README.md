@@ -18,8 +18,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-dbd7cb" alt="MIT license"></a>
 </p>
 
-> Formerly named `agents-md-scaffold`, renamed **Gearbox** on 2026-07-19 (ADR-0015). The old GitHub URL redirects automatically.
-
 ## Quick start (zero config, ADR-0028)
 
 Just need node — no clone, no PATH setup:
