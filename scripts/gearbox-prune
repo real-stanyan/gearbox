@@ -14,6 +14,7 @@
 //   - `git worktree remove --force` is likewise forbidden — git's own refusal on dirty/locked worktrees is the second safety layer
 //   - only touches merged branches/worktrees; unmerged ones are never touched, even if the name looks stale (protects in-progress task branches)
 //   - merged-but-dirty worktrees are reported, never removed (uncommitted work might matter)
+//   - branches with no work on them are never deleted (#141): a branch nobody has committed on looks 100% merged to git, but under parallel lanes that is exactly a freshly opened lane — deleting it frees nothing and can stomp a live one
 //   - allowlist protection: current branch / default branch (main/master) / `gearbox-backfill-*` prefix; the main worktree and the worktree the process runs in are never removed
 //   - never auto-changes GitHub repo settings — `delete_branch_on_merge` is only read + suggested as an opt-in command
 //   - not a git repo / no origin → fail loudly and exit, never silently
@@ -86,7 +87,8 @@ if (args.includes("-h") || args.includes("--help")) {
 Allowlist protection: current branch / default branch / gearbox-backfill-* prefix; the main worktree and
 the worktree you run from are never removed. Force flags (-D, worktree remove --force) are never used.
 Only deletes merged branches/worktrees; unmerged ones are never touched. Merged-but-dirty worktrees are
-reported, never removed.`);
+reported, never removed. Branches with no work on them (nobody has committed on them yet) are kept — under
+parallel lanes that shape is a freshly opened lane, not a leftover twig.`);
   exit(0);
 }
 
@@ -164,19 +166,54 @@ function localMergedBranches() {
     "branch",
     "--merged",
     `origin/${defaultBranch}`,
-    "--format=%(refname:short)\t%(worktreepath)",
+    "--format=%(refname:short)\t%(worktreepath)\t%(objectname)",
   ]);
-  if (out === null) return { deletable: [], blocked: [] };
+  if (out === null) return { deletable: [], blocked: [], zeroWork: [] };
+  const defaultTip = tryGit(["rev-parse", `origin/${defaultBranch}`]);
   const deletable = [];
   const blocked = [];
+  const zeroWork = [];
   for (const line of out.split("\n")) {
     if (!line) continue;
-    const [b, wtPath] = line.split("\t");
+    const [b, wtPath, tip] = line.split("\t");
     if (!b || isProtected(b)) continue;
-    if (wtPath) blocked.push({ branch: b, worktree: wtPath });
+    if (wtPath) {
+      blocked.push({ branch: b, worktree: wtPath });
+      continue;
+    }
+    const why = zeroWorkReason(b, tip, defaultTip);
+    if (why) zeroWork.push({ branch: b, why });
     else deletable.push(b);
   }
-  return { deletable, blocked };
+  return { deletable, blocked, zeroWork };
+}
+
+// A branch nobody has committed on yet: in git's eyes it is 100% merged (its tip *is*
+// an ancestor of the default branch), so `branch -d` deletes it without complaint — but
+// under parallel lanes (ADR-0048) that shape is exactly how a freshly opened lane looks
+// before its first commit, and it is indistinguishable from a leftover twig (#141;
+// downstream report: real-stanyan/Mr-Otto#449, where prune deleted a branch another live
+// agent was about to commit on).
+//
+// So: never delete a branch with no work on it. Deleting one frees nothing — it owns no
+// commit, not even an unreachable object — while the downside is stomping a live lane's
+// starting point. Returns the reason to report, or null when the branch has real work.
+function zeroWorkReason(branch, tip, defaultTip) {
+  // A: the branch tip *is* the default branch's tip — opened from an up-to-date default
+  //    branch and not committed on since.
+  if (defaultTip && tip === defaultTip) return `no commits of its own (tip == origin/${defaultBranch})`;
+  // B: the reflog carries no commit-ish entry, only the `branch: Created from ...` line —
+  //    catches a branch opened from an *older* default branch, which A cannot see.
+  //    A missing/expired reflog says nothing either way, so it falls through to normal
+  //    handling rather than protecting the branch forever.
+  const reflog = tryGit(["reflog", "show", "--format=%gs", branch]);
+  if (reflog !== null && reflog !== "") {
+    const worked = reflog
+      .split("\n")
+      .some((l) => /^(commit|merge|rebase|pull|reset|cherry-pick|am|revert)\b/.test(l));
+    if (!worked) return "never committed on (reflog shows only its creation)";
+  }
+  return null;
 }
 
 // 2. Stale remote-tracking refs (deleted on origin, local tracking ref still around)
@@ -374,7 +411,11 @@ async function main() {
   }
 
   // collected after the worktree pass: branches freed above become deletable in the same run
-  const { deletable: localMerged, blocked: localBlocked } = localMergedBranches();
+  const {
+    deletable: localMerged,
+    blocked: localBlocked,
+    zeroWork: localZeroWork,
+  } = localMergedBranches();
 
   // --- Local ---
   console.log(C.bold(`Local merged branches (safe to delete via git branch -d):`));
@@ -382,6 +423,10 @@ async function main() {
   if (localBlocked.length > 0) {
     console.log(C.bold("Merged branches checked out in a worktree (git branch -d refuses these — freed by --apply-worktrees if the worktree is merged+clean):"));
     listOrNone(localBlocked.map((b) => `${b.branch}${C.dim(` @ ${b.worktree}`)}`));
+  }
+  if (localZeroWork.length > 0) {
+    console.log(C.bold("Kept — branches with no work on them (a parallel lane may have just opened one, #141):"));
+    listOrNone(localZeroWork.map((b) => `${b.branch}${C.dim(` — ${b.why}`)}`));
   }
   console.log("");
   console.log(C.bold("Stale remote-tracking refs (cleaned by git fetch --prune):"));

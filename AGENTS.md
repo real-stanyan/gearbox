@@ -142,7 +142,7 @@ Serial single-human repos need none of this — with one live shift, the rules a
 Before shift-end (or when you hit stale refs at shift-start), run `npx gearbox-agents prune` (in this repo you can run `node scripts/gearbox-prune` directly). It cleans up four things (ADR-0030/0043):
 
 - Leftover linked worktrees from agent sessions (`--apply-worktrees`, `git worktree remove` on merged + clean ones only — dirty or locked worktrees are reported, never removed; runs before the branch pass because a worktree checkout blocks `git branch -d`)
-- Locally merged branches (`git branch -d` safe-deletes, fails loudly)
+- Locally merged branches (`git branch -d` safe-deletes, fails loudly). **Branches with no work on them are kept, not deleted** (ADR-0050): a branch nobody has committed on is 100% merged in git's eyes, but under parallel lanes that shape *is* a freshly opened lane — they are listed under "Kept" with the reason
 - stale remote-tracking refs (`git fetch --prune`)
 - Remote merged branches (`--apply-remote`, prints the list + asks for confirmation before deleting)
 
