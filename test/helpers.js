@@ -85,6 +85,7 @@ export function makeUpstream({ version = "v2.0.0", protocol = PROTOCOL, glossary
 export const GEARBOX_FILES = [
   "AGENTS.md", "CONTEXT.md", "CLAUDE.md", "README.md", "package.json",
   ".github/workflows/ci.yml", ".github/pull_request_template.md", "docs/gearbox-adr/0001-adr-template.md",
+  "scripts/lib/v1-known-lines.json", // a required file of the upstream self-check (the v1 → v2 fingerprint)
 ];
 export function gearboxRepo({ version = "2.0.0", tag = true } = {}) {
   const dir = tmp("gearbox-self-");

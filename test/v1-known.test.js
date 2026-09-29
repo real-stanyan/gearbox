@@ -1,0 +1,34 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { normalizeKnownLine, knownLineHash, termKey, tableTerms, buildKnown, serializeKnown, loadKnown } from "../scripts/lib/v1-known.js";
+import { tmp, write } from "./helpers.js";
+
+test("normalizeKnownLine trims and folds the maintainer name back to the placeholder", () => {
+  assert.equal(normalizeKnownLine("  - L1 waits for `real-owner` agreement  ", "real-owner"), "- L1 waits for `<maintainer>` agreement");
+  assert.equal(normalizeKnownLine("x", null), "x");
+});
+
+test("tableTerms skips header and separator rows and normalizes the first cell", () => {
+  assert.deepEqual(tableTerms("| Term | Def |\n|---|---|\n| **Handoff** | x |\n| `gate` | y |\n"), ["handoff", "gate"]);
+});
+
+test("buildKnown → serialize → load round-trips", () => {
+  const k = buildKnown(["## Terms\n\n| Term | D |\n|---|---|\n| handoff | x |\n"]);
+  assert.ok(k.lines.has(knownLineHash("## Terms")));
+  const dir = tmp();
+  const p = write(dir, "k.json", serializeKnown(k, { test: true }));
+  const back = loadKnown(p);
+  assert.ok(back.lines.has(knownLineHash("| handoff | x |")));
+  assert.ok(back.terms.has("handoff"));
+  assert.equal(knownLineHash("abc").length, 12);
+  assert.equal(termKey(" `L1/L2 tiers` "), "l1/l2 tiers");
+});
+
+test("the shipped fingerprint knows v1 protocol text in both languages", () => {
+  const k = loadKnown();
+  assert.ok(k.lines.has(knownLineHash("### While working")));
+  assert.ok(k.lines.has(knownLineHash("### On starting a shift (the three start-of-shift steps)")));
+  assert.ok(k.lines.has(knownLineHash("### 协议自身的变更（改本文件的规则）")));
+  assert.ok(k.terms.has("handoff"));
+  assert.ok(k.terms.has("交接（handoff）"));
+});

@@ -36,6 +36,8 @@ const requiredFiles = [
   // B-3 carrier (ADR-0013 → ADR-0026 pull model): the downstream-impact declaration runs
   // through the PR template — if it disappears, the mechanism dies silently.
   ".github/pull_request_template.md",
+  // the v1 → v2 migration's fingerprint (ADR-0050)
+  "scripts/lib/v1-known-lines.json",
 ];
 for (const f of requiredFiles) check(`missing required file: ${f}`, existsSync(join(root, f)));
 
