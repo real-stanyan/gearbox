@@ -532,6 +532,18 @@ function planFences(downDir) {
   return { layout: files[0].status.state === "missing" ? "v1" : "v2", files, protocolVersion: files[0].status.upstream.version };
 }
 
+// .gearbox-version, parsed once (ADR-0023/0050). `version`: its first non-empty line, for
+// display. `current`: the file is byte-for-byte what update writes, CRLF aside (an autocrlf
+// checkout). Anything else is rewritten — e.g. a leading blank line, which the protocol check
+// reads as a missing stamp — and since the tree starts clean, a rewrite always changes the blob.
+function readStamp(path, protocolVersion) {
+  const raw = existsSync(path) ? readFileSync(path, "utf8") : null;
+  return {
+    version: (raw || "").split("\n").map((l) => l.trim()).find(Boolean) || null,
+    current: raw !== null && raw.replace(/\r\n/g, "\n") === `${protocolVersion}\n`,
+  };
+}
+
 // Lines present on one side only — enough to show what a hand edit changed.
 function lineDiff(localContent, upstreamContent, max = 20) {
   const a = localContent.split("\n");
@@ -657,7 +669,7 @@ function commitPaths(paths, message) {
 
 // Returns `made`: one display line per commit that landed, in commit order (a commit skipped by
 // commitPaths lands in `unchanged` instead), so the printed list never claims a commit that isn't there.
-function gitOps({ downDir, assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites }) {
+function gitOps({ assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites, stampCurrent }) {
   if (!resume) run(`git checkout -b ${branchName}`);
   const made = [];
   const unchanged = [];
@@ -727,14 +739,11 @@ by gearbox-update tool.`,
       workflowWrites.map((w) => `${w.path.split("/").pop()} ${w.why}`).join(", "),
     );
 
-  // .gearbox-version = the protocol version (ADR-0050). Written even when nothing else
+  // .gearbox-version = the protocol version (ADR-0050), committed even when nothing else
   // changed — the pre-v2 early return skipped this and stranded downstreams at v1.15.0.
-  let stampUpdated = false;
-  const stampPath = join(downDir, ".gearbox-version");
-  const prev = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : null;
-  if (prev !== protocolVersion) {
-    writeFileSync(stampPath, protocolVersion + "\n");
-    stampUpdated = commit(
+  // main() parsed it once (readStamp) and already wrote it.
+  if (!stampCurrent)
+    commit(
       [".gearbox-version"],
       `chore: .gearbox-version → ${protocolVersion}
 
@@ -742,12 +751,11 @@ The protocol version this repo now runs (gearbox ADR-0023, ADR-0050).
 by gearbox-update tool.`,
       `.gearbox-version → ${protocolVersion} ${C.dim("(ADR-0023 stamp)")}`,
     );
-  }
 
   let pushResult = null;
   if (!noPush)
     pushResult = tryRun(forceRedo ? `git push --force-with-lease -u origin ${branchName} 2>&1` : `git push -u origin ${branchName} 2>&1`);
-  return { pushResult, stampUpdated, made, unchanged };
+  return { pushResult, made, unchanged };
 }
 
 // Filled in by the v1 → v2 migration task.
@@ -811,7 +819,7 @@ async function main() {
   const fences = planFences(downDir);
   const protocolVersion = fences.protocolVersion;
   const stampPath = join(downDir, ".gearbox-version");
-  const localStamp = existsSync(stampPath) ? readFileSync(stampPath, "utf8").split("\n")[0].trim() : null;
+  const { version: localStamp, current: stampCurrent } = readStamp(stampPath, protocolVersion);
   const fenceWrites = [];
   let migration = null;
   if (fences.layout === "v2") {
@@ -840,7 +848,6 @@ async function main() {
     die("This repo still has the v1 AGENTS.md layout (no gearbox fence)", "the v1 → v2 migration arrives in a later task of this change");
   }
   const workflowWrites = planWorkflowFixes(downDir);
-  const stampCurrent = localStamp === protocolVersion;
 
   // TTY: the whole scan collapses into one presentational bar (results are already
   // computed); the per-ADR skip wall is gone — only actionable lines follow (ADR-0041)
@@ -994,6 +1001,7 @@ async function main() {
     mkdirSync(dirname(join(downDir, w.path)), { recursive: true });
     writeFileSync(join(downDir, w.path), w.text);
   }
+  if (!stampCurrent) writeFileSync(stampPath, protocolVersion + "\n");
 
   // git operations
   const reportDate = new Date().toISOString().slice(0, 10);
@@ -1002,11 +1010,11 @@ async function main() {
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   let pushResult = null;
   try {
-    const ops = gitOps({ downDir, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites });
+    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites, stampCurrent });
     pushResult = ops.pushResult;
     for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
     for (const u of ops.unchanged) stdout.write(`  ${C.dim(`· ${u} — already matched the index, nothing to commit`)}\n`);
-    if (!ops.stampUpdated) stdout.write(`  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`);
+    if (stampCurrent) stdout.write(`  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`);
     if (noPush) stdout.write(`  ${C.dim("push skipped (--no-push)")}\n`);
     else if (pushResult) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
     else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     git push -u origin ${branchName}\n`);

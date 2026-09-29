@@ -70,6 +70,22 @@ test("stamp-only lag is fixed even when fences and ADRs already match", () => {
   assert.match(git(down, "log", "-1", "--format=%s"), /\.gearbox-version → v2\.0\.0/);
 });
 
+// One stamp parse: gitOps once compared the whole trimmed file ("v2.0.0" = current) while main
+// read the first line ("" = stale) — exit 0 on an EMPTY backfill branch, and the check still red.
+test("a malformed stamp is repaired with a stamp commit, never left on an empty branch", () => {
+  const up = makeUpstream();
+  const down = v2Downstream(up);
+  write(down, ".gearbox-version", "\nv2.0.0\n");
+  commitAll(down, "stamp with a leading blank line");
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(read(down, ".gearbox-version"), "v2.0.0\n");
+  assert.equal(git(down, "rev-list", "--count", "main..HEAD"), "1");
+  assert.match(git(down, "log", "-1", "--format=%s"), /\.gearbox-version → v2\.0\.0/);
+  const c = runTool("gearbox-check", [], { cwd: down });
+  assert.equal(c.code, 0, c.out);
+});
+
 test("hand-edited fence: refused without --force, re-applied with it", () => {
   const up = makeUpstream();
   const down = v2Downstream(up);
