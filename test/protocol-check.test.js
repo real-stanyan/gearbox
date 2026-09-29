@@ -381,3 +381,49 @@ test("gearbox-check prints warnings without failing, counts its errors, and --he
   assert.equal(help.code, 0);
   assert.match(help.out, /^gearbox-check — /);
 });
+
+test("docs/adr: a duplicate ADR ID fails — IDs compare as numbers, and issue IDs are never exempt (ADR-0052)", () => {
+  const mixed = v2Repo();
+  write(mixed, "docs/adr/0074-a.md", "# a\n");
+  write(mixed, "docs/adr/74-b.md", "# b\n");
+  assert.deepEqual(errorsOf(mixed), [
+    "docs/adr: ADR-74 is used by 2 files: 0074-a.md, 74-b.md — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)",
+  ]);
+  const issueIds = v2Repo();
+  write(issueIds, "docs/adr/1266-a.md", "# a\n");
+  write(issueIds, "docs/adr/1266-b.md", "# b\n");
+  const errs = errorsOf(issueIds);
+  assert.equal(errs.length, 1, errs.join("\n"));
+  assert.match(errs[0], /^docs\/adr: ADR-1266 is used by 2 files: 1266-a\.md, 1266-b\.md — /);
+});
+
+test("docs/adr: distinct IDs pass; README, notes and other non-numbered files aren't ADRs", () => {
+  const dir = v2Repo();
+  for (const f of ["0001-first.md", "0002-second.md", "1266-issue-id.md", "1267-next.md", "README.md", "notes.md", "draft-1268.md"])
+    write(dir, `docs/adr/${f}`, "# x\n");
+  const r = runProtocolChecks(dir);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.warnings, []);
+});
+
+test("docs/adr: duplicates among older zero-padded IDs warn once instead of failing — renumbering would break their references", () => {
+  const dir = v2Repo();
+  for (const f of ["0045-a.md", "0045-b.md", "0046-c.md", "0046-d.md", "0047-e.md"]) write(dir, `docs/adr/${f}`, "# x\n");
+  const r = runProtocolChecks(dir);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.warnings, [
+    "docs/adr: older ADR numbers used by more than one file: ADR-45 (0045-a.md, 0045-b.md); ADR-46 (0046-c.md, 0046-d.md) — references to them are ambiguous; new ADRs are named after their issue, so this can't recur (ADR-0052)",
+  ]);
+});
+
+test("docs/gearbox-adr: any duplicate fails, with the fix for the mode — downstream copies vs upstream numbers", () => {
+  const dir = v2Repo();
+  write(dir, "docs/gearbox-adr/0050-a.md", "# a\n");
+  write(dir, "docs/gearbox-adr/0050-b.md", "# b\n");
+  assert.deepEqual(errorsOf(dir).filter((e) => e.startsWith("docs/gearbox-adr")), [
+    "docs/gearbox-adr: ADR-50 is used by 2 files: 0050-a.md, 0050-b.md — these copies are managed by gearbox-agents: delete the stray file and rerun `npx gearbox-agents update`",
+  ]);
+  assert.deepEqual(errorsOf(dir, { upstream: true }).filter((e) => e.startsWith("docs/gearbox-adr")), [
+    "docs/gearbox-adr: ADR-50 is used by 2 files: 0050-a.md, 0050-b.md — protocol ADR numbers are claimed at merge: renumber yours (Upstream release process)",
+  ]);
+});
