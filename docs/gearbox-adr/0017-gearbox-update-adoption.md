@@ -1,7 +1,7 @@
 # ADR-0017: gearbox-update Onboarding — the Write-Side Backfill Tool Graduates, Guardrails Become Contract
 
 - Date: 2026-07-19
-- Status: accepted
+- Status: accepted (amended by ADR-0050: in place of the "never touch downstream AGENTS.md" guardrail and its hand-edit checklist, update writes AGENTS.md / CONTEXT.md only between the gearbox markers and only on a backfill branch — plus the one-time v1 → v2 migration there)
 
 ## Context
 

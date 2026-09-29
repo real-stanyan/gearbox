@@ -1,7 +1,7 @@
 # ADR-0022: gearbox-install — Onboarding Goes From README Manual Steps to a Tool
 
 - Date: 2026-07-19
-- Status: accepted
+- Status: accepted (amended by ADR-0050: install copies the protocol fences verbatim into a v2 skeleton, so the anchor-based AGENTS.md template transforms and their anchor contract are gone)
 - Related: ADR-0016/ADR-0017 (the third member of the tool family), ADR-0021 (hash stamps applied at install time)
 
 ## Context
