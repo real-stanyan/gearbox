@@ -36,9 +36,14 @@
 //   4. git add + commit + push to a new branch docs/gearbox-backfill-{date}
 //   5. Rewrites the protocol fences in AGENTS.md / CONTEXT.md when upstream moved (ADR-0050) and
 //      writes gearbox-update-report.md (the PR body)
+//   6. v1 layout (no fence): migrates AGENTS.md / CONTEXT.md to the v2 layout (ADR-0050,
+//      scripts/lib/migrate-v1.js) in one commit on the same branch; a "Where to find things"
+//      too big for the 32 KiB budget moves to docs/INDEX.md (appended to an existing one). The
+//      report says what moved where and what needs a human
 //
 // What it doesn't do:
-//   - Doesn't touch anything in AGENTS.md / CONTEXT.md outside the fences
+//   - Doesn't touch anything in AGENTS.md / CONTEXT.md outside the fences — except the one-time
+//     v1 → v2 migration (6.), which rewrites both on the backfill branch, never on main
 //   - Doesn't touch any file in the gearbox repo itself (this is a downstream-side tool)
 //   - Doesn't run `gh pr create` automatically (left for the user)
 //   - Doesn't auto-merge (L1 requires maintainer agreement)
@@ -62,6 +67,8 @@ import { fenceStatus, replaceFence } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
 import { CHECK_YML, pinSyncYml } from "./lib/workflows.js";
 import { runProtocolChecks } from "./lib/protocol-check.js";
+import { loadKnown } from "./lib/v1-known.js";
+import { migrateV1, MigrationError } from "./lib/migrate-v1.js";
 
 // ============== Config ==============
 
@@ -556,6 +563,60 @@ function readStamp(path, protocolVersion) {
   };
 }
 
+// v1 → v2 migration plan (ADR-0050): a v1 AGENTS.md has no protocol fence. Read-only and run
+// before the branch step, like planFences, so every refusal leaves the repo as it was. Refused:
+// a CONTEXT.md that already has its fence (half-migrated — migrating it again would add a second
+// glossary fence); an AGENTS.md / CONTEXT.md that isn't committed (the pre-migration text must
+// stay in git history — the report points there); a file whose code fences don't pair up
+// (MigrationError, which names the line to fix).
+const INDEX_PATH = "docs/INDEX.md";
+const INDEX_MOVED_HEADING = "## Moved from AGENTS.md (Gearbox v2 migration)";
+
+function planMigration(downDir, files) {
+  const [agentsFile, contextFile] = files;
+  if (contextFile.status.state !== "missing")
+    die(
+      "CONTEXT.md has a gearbox:glossary fence while AGENTS.md has no gearbox:protocol fence",
+      "a half-migrated tree — restore the v1 CONTEXT.md (git log -p -- CONTEXT.md) so update migrates both files together, or finish AGENTS.md by hand from a fresh `npx gearbox-agents install` in a scratch dir",
+    );
+  for (const f of files)
+    if (existsSync(join(downDir, f.file)) && tryRun(`git cat-file -e "HEAD:${f.file}"`) === null)
+      die(
+        `${f.file} isn't committed — the v1 → v2 migration rewrites it, and its v1 text must stay in git history (ADR-0050)`,
+        "commit it first, then rerun gearbox-update — nothing was written",
+      );
+  let m;
+  try {
+    m = migrateV1({
+      agentsMd: agentsFile.text,
+      contextMd: contextFile.text,
+      known: loadKnown(),
+      protocolBlock: agentsFile.status.upstream.block,
+      glossaryBlock: contextFile.status.upstream.block,
+    });
+  } catch (e) {
+    if (!(e instanceof MigrationError)) throw e;
+    die(e.message, "the v1 → v2 migration (ADR-0050) stopped before writing or committing anything");
+  }
+  // A project may already keep a map in docs/INDEX.md: the moved index is appended, never
+  // overwrites it.
+  let index = null;
+  if (m.indexMd) {
+    const prior = existsSync(join(downDir, INDEX_PATH)) ? readFileSync(join(downDir, INDEX_PATH), "utf8") : null;
+    index = {
+      path: INDEX_PATH,
+      appended: prior !== null,
+      text: prior === null ? m.indexMd : `${prior.trimEnd()}\n\n${INDEX_MOVED_HEADING}\n\n${m.indexMd.replace(/^# Index\n\n/, "")}`,
+    };
+  }
+  // The commit holding the v1 text, for the report's `git show <base>:AGENTS.md`.
+  return { ...m, index, base: run("git rev-parse --short=12 HEAD") };
+}
+
+function migrationPaths(migration) {
+  return ["AGENTS.md", "CONTEXT.md", ...(migration.index ? [migration.index.path] : [])];
+}
+
 // Lines present on one side only — enough to show what a hand edit changed.
 function lineDiff(localContent, upstreamContent, max = 20) {
   const a = localContent.split("\n");
@@ -661,9 +722,67 @@ function generateReport({
   return lines.join("\n");
 }
 
-// Filled in by the v1 → v2 migration task; v2-only runs never call it.
-function migrationReportLines() {
-  return [];
+// The v1 → v2 migration's part of the PR body (spec §4): what moved where, and a checklist of
+// what needs a human. Every unknown v1 line is in `## Gate`, in `## Local protocol extensions`,
+// or named here (a flagged subsection) — this is where "nothing dropped silently" is kept.
+function migrationReportLines(m) {
+  const r = m.report;
+  const oldText = `\`git show ${m.base}:AGENTS.md\``;
+  const notes = r.gateNotes ? ` (+${r.gateNotes} project note line(s) below the command)` : "";
+  const L = [
+    "## ⚠️ v1 → v2 layout migration (ADR-0050)",
+    "",
+    `This repo's AGENTS.md held the v1 protocol text, merged by hand. It is now a tool-managed fence — as are CONTEXT.md's protocol terms — and project content lives in the sections around it. Every line that wasn't known upstream text is accounted for below — nothing was dropped silently. The pre-migration text: ${oldText}.`,
+    "",
+    `- Kept in place: the title and intro, \`## Tech stack\`, \`## Hard rules\`${m.index ? "" : ", `## Where to find things`"} (v1 template notes dropped)`,
+    r.maintainer ? `- Maintainer: \`${r.maintainer}\`` : "- [ ] Maintainer: **not detected** — fill in `## Maintainer` (the GitHub account whose PR-comment agreement counts for L1)",
+    r.gateMoved
+      ? `- Gate command: moved to \`## Gate\`${notes}`
+      : `- [ ] Gate command: **not found** — fill in \`## Gate\`, byte-identical to \`.github/workflows/ci.yml\`${notes}`,
+    `- Division of labor: ${r.divisionOfLabor === "kept" ? "your v1 choice, kept in `## Division of labor`" : "none chosen in v1 — `## Division of labor` states the default (claim-based ownership)"}`,
+  ];
+  if (m.index)
+    L.push(
+      `- Where to find things: ${r.indexMoved.bytes} bytes ${m.index.appended ? `appended to the existing \`${m.index.path}\` under \`${INDEX_MOVED_HEADING}\`` : `moved to a new \`${m.index.path}\``} to fit the 32 KiB budget; AGENTS.md keeps four pointer lines and is ${Buffer.byteLength(m.agentsMd)} bytes`,
+    );
+  if (r.oversize)
+    L.push(`- [ ] **AGENTS.md is still ${r.oversize} bytes (> 32768)** — trim Local protocol extensions or project sections (point to ADRs for detail); the protocol check fails until it fits`);
+  L.push("");
+  if (r.moved.length) {
+    L.push("### Subsections moved verbatim into `## Local protocol extensions`", "");
+    for (const t of r.moved)
+      L.push(`- [ ] ${t} — set its \`Upstream:\` (an upstream issue link, or \`project-specific\`); if it's a project procedure rather than a protocol extension, move it to a project section`);
+    L.push("");
+  }
+  if (r.carried.length) {
+    L.push("### Local lines carried into `## Local protocol extensions`", "");
+    for (const c of r.carried)
+      L.push(`- [ ] From v1: ${c.section} — ${c.lines} line(s). A line edited in place is carried whole: trim what the fence now says anyway, then set \`Upstream:\``);
+    L.push("");
+  }
+  if (r.flagged.length) {
+    L.push(
+      "### ⚠️ Subsections flagged for manual review (not carried)",
+      "",
+      `More than half of each one's lines weren't known upstream text (translated or rewritten), so carrying them would duplicate the protocol. Compare them with the pre-migration text (${oldText}) and move any genuine project rule into \`## Local protocol extensions\`:`,
+      "",
+    );
+    for (const f of r.flagged) L.push(`- [ ] ${f.section} — ${f.unknown}/${f.total} unknown lines`);
+    L.push("");
+  }
+  if (r.extraSections.length) {
+    L.push("### Other top-level sections kept as they were", "");
+    for (const t of r.extraSections) L.push(`- ${t}`);
+    L.push("");
+  }
+  const c = r.context;
+  L.push("### CONTEXT.md", "", `- ${c.removedTerms} protocol term row(s) replaced by the glossary fence; ${c.keptRows} project row(s) kept`);
+  if (c.editedTerms.length)
+    L.push(`- [ ] Protocol terms whose definition had been edited locally (the fence now carries upstream's — re-home anything project-specific under \`## Project terms\`): ${c.editedTerms.map((t) => `\`${t}\``).join(", ")}`);
+  for (const t of [...new Set(c.collisions)])
+    L.push(`- [ ] \`${t}\` — kept as a project row, but it's also a protocol term (the glossary fence defines it): confirm it's a product term; if the row restates the protocol meaning, delete it`);
+  L.push("");
+  return L;
 }
 
 // ============== git operations ==============
@@ -725,7 +844,7 @@ partially superseded. by gearbox-update tool.`,
       "0006 status sync",
     );
 
-  if (migration) commitMigration(migration, protocolVersion);
+  if (migration) commitMigration(commit, migration, protocolVersion);
 
   if (fenceWrites.length > 0)
     commit(
@@ -768,8 +887,25 @@ by gearbox-update tool.`,
   return { pushResult, made, unchanged };
 }
 
-// Filled in by the v1 → v2 migration task.
-function commitMigration() {}
+// The v1 → v2 layout change as one commit (ADR-0050), through gitOps' `commit` (commitPaths).
+function commitMigration(commit, migration, protocolVersion) {
+  const r = migration.report;
+  const carried = r.carried.reduce((n, c) => n + c.lines, 0);
+  const body = [
+    "The protocol body now sits in a tool-managed fence and project content in project",
+    `sections (gearbox ADR-0050). Local protocol extensions: ${carried} carried line(s), ${r.moved.length} moved`,
+    `subsection(s); ${r.flagged.length} subsection(s) flagged for manual review.`,
+    ...(migration.index ? [`"Where to find things" moved to ${migration.index.path} (the 32 KiB AGENTS.md budget).`] : []),
+    "The PR body (gearbox-update-report.md) lists what moved where and what needs a",
+    "human; the v1 text is this commit's parent.",
+    "by gearbox-update tool.",
+  ];
+  commit(
+    migrationPaths(migration),
+    `docs(protocol): migrate to the Gearbox v2 layout (${protocolVersion})\n\n${body.join("\n")}`,
+    `${migrationPaths(migration).join(" / ")} → the Gearbox v2 layout ${C.dim("(ADR-0050)")}`,
+  );
+}
 
 // ============== main flow ==============
 
@@ -855,7 +991,14 @@ async function main() {
       });
     }
   } else {
-    die("This repo still has the v1 AGENTS.md layout (no gearbox fence)", "the v1 → v2 migration arrives in a later task of this change");
+    migration = planMigration(downDir, fences.files);
+    const r = migration.report;
+    stdout.write(
+      C.yellow("⚠️  v1 AGENTS.md layout — migrating to the Gearbox v2 layout (ADR-0050)\n") +
+        C.dim(
+          `  ${r.carried.reduce((n, c) => n + c.lines, 0)} local line(s) carried · ${r.moved.length} subsection(s) moved · ${r.flagged.length} flagged for review${migration.index ? ` · index → ${migration.index.path}` : ""} — details in the report\n\n`,
+        ),
+    );
   }
   const workflowWrites = planWorkflowFixes(downDir);
 
@@ -1023,6 +1166,14 @@ async function main() {
   }
 
   for (const w of fenceWrites) writeFileSync(join(downDir, w.file), w.text);
+  if (migration) {
+    writeFileSync(join(downDir, "AGENTS.md"), migration.agentsMd);
+    writeFileSync(join(downDir, "CONTEXT.md"), migration.contextMd);
+    if (migration.index) {
+      mkdirSync(dirname(join(downDir, migration.index.path)), { recursive: true });
+      writeFileSync(join(downDir, migration.index.path), migration.index.text);
+    }
+  }
   for (const w of workflowWrites) {
     mkdirSync(dirname(join(downDir, w.path)), { recursive: true });
     writeFileSync(join(downDir, w.path), w.text);
@@ -1049,6 +1200,7 @@ async function main() {
     // Only the paths this run wrote — like the tool itself, never sweep in the user's untracked files.
     const own = [
       ...(toCopy.length > 0 || toRefresh.length > 0 || (supersedeResult && !supersedeResult.alreadyApplied) ? ["docs/gearbox-adr/"] : []),
+      ...(migration ? migrationPaths(migration) : []),
       ...fenceWrites.map((w) => w.file),
       ...workflowWrites.map((w) => w.path),
       ...(stampCurrent ? [] : [".gearbox-version"]),
