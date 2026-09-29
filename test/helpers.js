@@ -47,6 +47,9 @@ export function runTool(script, args = [], { cwd = REPO, env = {} } = {}) {
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
 
+// The npx entry point, `bin/gearbox.js <command> …` — what `npx -y gearbox-agents@2 …` runs.
+export const runBin = (args = [], opts = {}) => runTool("../bin/gearbox.js", args, opts);
+
 // A bare `origin` for `down` whose pre-receive hook refuses any pushed commit that touches
 // .github/workflows/ — what GitHub does to a push made with the Actions GITHUB_TOKEN. `down`'s
 // current branch is pushed before the hook exists. Returns the origin's path.

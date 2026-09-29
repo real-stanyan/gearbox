@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { runProtocolChecks, gateCommand, maintainerAccount, AGENTS_MAX_BYTES, PROTOCOL_FENCE_MAX_BYTES } from "../scripts/lib/protocol-check.js";
 import { renderFence, findFence, replaceFence } from "../scripts/lib/fence.js";
 import { CHECK_YML } from "../scripts/lib/workflows.js";
-import { v2Repo, write, read, gitInit, runTool, tmp, PROTOCOL } from "./helpers.js";
+import { v2Repo, write, read, gitInit, runTool, runBin, tmp, PROTOCOL } from "./helpers.js";
 
 const errorsOf = (dir, opts) => runProtocolChecks(dir, opts).errors;
 
@@ -356,6 +356,20 @@ test("gearbox-check CLI exits 0 on a clean repo and 1 with errors", () => {
   const bad = runTool("gearbox-check", [], { cwd: tmp() });
   assert.equal(bad.code, 1);
   assert.match(bad.out, /AGENTS\.md is missing/);
+});
+
+// Every downstream's CI job runs `npx -y gearbox-agents@2 check`: bin/gearbox.js routes `check` to
+// scripts/gearbox-check and passes its exit code through.
+test("the npx entry point's check route: exit 0 on a clean repo, 1 with errors, warnings printed", () => {
+  const ok = runBin(["check"], { cwd: v2Repo() });
+  assert.equal(ok.code, 0, ok.out);
+  assert.match(ok.out, /✅ gearbox check passed/);
+  const bad = runBin(["check"], { cwd: tmp() });
+  assert.equal(bad.code, 1, bad.out);
+  assert.match(bad.out, /gearbox check failed \(\d+\)[\s\S]*AGENTS\.md is missing/);
+  const warned = runBin(["check"], { cwd: v2Repo({ maintainer: null }) });
+  assert.equal(warned.code, 0, warned.out);
+  assert.match(warned.out, /⚠ "## Maintainer" names no GitHub account/);
 });
 
 test("gearbox-check prints warnings without failing, counts its errors, and --help never runs the check", () => {

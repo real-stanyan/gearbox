@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { findFence, oneFenceAdvice } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
-import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, guardedOrigin } from "./helpers.js";
+import { REPO, makeUpstream, runTool, runBin, gitInit, git, tmp, read, write, commitAll, guardedOrigin } from "./helpers.js";
 
 // The real output of the v1.15.2 installer (--name example-project --maintainer octo-owner
 // --gate "npm test"): Gearbox's own public template text, generated from the v1.15.2 tag.
@@ -75,6 +75,26 @@ test("update migrates a real v1.15.2 install to the v2 layout on a backfill bran
   assert.equal(git(down, "rev-list", "--count", "main"), "1");
   assert.equal(git(down, "show", "main:AGENTS.md"), agentsIn.trim());
   assert.equal(git(down, "status", "--porcelain"), "?? gearbox-update-report.md");
+});
+
+// The path every existing downstream takes, end to end: a real v1.15.2 install migrated against this
+// repo's own fences, ADRs and v1 fingerprint (not makeUpstream's), then checked through the npx entry
+// point, as its CI will — no error, and no warning either.
+test("end to end: the v1.15.2 install migrates against this repo's real fences, and `gearbox check` passes", () => {
+  const down = v1Downstream(REPO);
+  git(down, "rm", "-q", "docs/gearbox-adr/0050-protocol-fence.md", "docs/gearbox-adr/0051-protocol-check-and-size-budget.md");
+  commitAll(down, "a v1.15.2 install predates ADR-0050/0051");
+  const r = update(down, REPO);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(findFence(read(down, "AGENTS.md"), "protocol").block, findFence(read(REPO, "AGENTS.md"), "protocol").block);
+  assert.equal(findFence(read(down, "CONTEXT.md"), "glossary").block, findFence(read(REPO, "CONTEXT.md"), "glossary").block);
+  const log = git(down, "log", "--format=%s", "main..HEAD");
+  assert.match(log, /backfill gearbox ADR-0050 \(protocol-fence\)/);
+  assert.match(log, /^docs\(protocol\): migrate to the Gearbox v2 layout/m);
+  const c = runBin(["check"], { cwd: down });
+  assert.equal(c.code, 0, c.out);
+  assert.match(c.out, /✅ gearbox check passed/);
+  assert.doesNotMatch(c.out, /⚠/);
 });
 
 // The sync Action's exact run (GITHUB_ACTIONS=true update --refresh-drift) on a v1 downstream. GitHub
