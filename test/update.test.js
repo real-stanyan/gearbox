@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { findFence } from "../scripts/lib/fence.js";
-import { chmodSync, readdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
+import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, guardedOrigin, PROTOCOL, GLOSSARY } from "./helpers.js";
 
 function v2Downstream(up, { autocrlf = false } = {}) {
   const down = tmp("gearbox-down-");
@@ -181,11 +181,49 @@ test("--force-redo deletes today's branch only after every refusal has passed", 
 test("after --force-redo, every push hint says --force-with-lease", () => {
   const down = v2Downstream(makeUpstream());
   git(down, "branch", `docs/gearbox-backfill-${new Date().toISOString().slice(0, 10)}`);
-  // no --no-push: this repo has no origin, so the push fails and prints its hint
+  // no --no-push: this repo has no origin, so the push fails — exit 1, git's reason, the retry command
   const r = runTool("gearbox-update", ["--force-redo"], { cwd: down, env: { GEARBOX_DIR: makeUpstream({ version: "v2.1.0" }) } });
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /push failed[^\n]*\n\s*git push --force-with-lease -u origin docs\/gearbox-backfill-/);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /'origin' does not appear to be a git repository/);
+  assert.match(r.out, /retry the push:\n\s*git push --force-with-lease -u origin docs\/gearbox-backfill-/);
   assert.match(read(down, "gearbox-update-report.md"), /push the branch: `git push --force-with-lease -u origin docs\/gearbox-backfill-/);
+});
+
+// GitHub refuses a push made with the Actions GITHUB_TOKEN that creates or updates a workflow file.
+// update printed a yellow line and exited 0 — a green sync job and no PR, every week. A failed push
+// is a failure: exit 1, git's own reason, the retry command; the branch and the report are kept.
+test("a rejected push exits 1 with git's reason and the retry command; the committed branch and the report stay", () => {
+  const up = makeUpstream();
+  const down = v2Downstream(up);
+  git(down, "rm", "-q", ".github/workflows/gearbox-check.yml");
+  commitAll(down, "drop gearbox-check.yml");
+  guardedOrigin(down);
+  const r = runTool("gearbox-update", [], { cwd: down, env: { GEARBOX_DIR: up } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /remote: refusing to allow a GitHub App to create or update workflow/);
+  assert.match(r.out, /retry the push:\n\s*git push -u origin docs\/gearbox-backfill-\d{4}-\d{2}-\d{2}\n/);
+  assert.doesNotMatch(r.out, /✓ done/);
+  const today = git(down, "rev-parse", "--abbrev-ref", "HEAD");
+  assert.match(today, /^docs\/gearbox-backfill-/);
+  assert.match(git(down, "log", "-1", "--format=%s"), /gearbox-check\.yml added/);
+  assert.equal(git(down, "ls-remote", "--heads", "origin", today), "");
+  assert.match(read(down, "gearbox-update-report.md"), /push the branch: `git push -u origin docs\/gearbox-backfill-/);
+});
+
+// In GitHub Actions update never writes a workflow file (ADR-0051). When that is all there is to do,
+// it makes no branch — the ::warning:: annotation is how the downstream learns it needs a local run.
+test("in GitHub Actions, workflow changes alone make no branch: exit 0 and a ::warning:: naming the skipped file", () => {
+  const up = makeUpstream();
+  const down = v2Downstream(up);
+  git(down, "rm", "-q", ".github/workflows/gearbox-check.yml");
+  commitAll(down, "drop gearbox-check.yml");
+  // the sync Action's exact invocation — no --no-push, and no origin: a push attempt would exit 1
+  const r = runTool("gearbox-update", ["--refresh-drift"], { cwd: down, env: { GEARBOX_DIR: up, GITHUB_ACTIONS: "true" } });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^::warning::[^\n]*\.github\/workflows\/gearbox-check\.yml \(added\)[^\n]*run npx gearbox-agents@2 update locally/m);
+  assert.equal(git(down, "branch", "--list", "docs/gearbox-backfill-*"), "");
+  assert.equal(git(down, "status", "--porcelain"), "");
+  assert.ok(!existsSync(join(down, ".github/workflows/gearbox-check.yml")));
 });
 
 // Branch first, files second: a branch step that fails (here: today's branch is checked out in

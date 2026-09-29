@@ -2,7 +2,7 @@
 
 - Date: 2026-09-29
 - Status: accepted
-- Related: ADR-0050 (fences), ADR-0002 (self-check as gate), ADR-0010/0020 (gate tiers), ADR-0049 (scheduled sync — amended: major pin)
+- Related: ADR-0050 (fences), ADR-0002 (self-check as gate), ADR-0010/0020 (gate tiers), ADR-0049 (scheduled sync — amended: major pin, workflow files skipped in Actions, a PR step that fails loudly)
 
 ## Context
 
@@ -23,6 +23,9 @@ Every agent loads `AGENTS.md` whole at session start — one repo was paying abo
   Warnings, which don't fail the check: a placeholder maintainer, and a local extension without an `Upstream:` value or with `Upstream: undecided`.
 - **CI.**
   - `.github/workflows/gearbox-check.yml` is tool-owned: install writes it, and update rewrites it whenever it differs from the template. It runs `npx -y gearbox-agents@2 check` on pull requests and on pushes to `main`/`master`, with `contents: read`.
+  - GitHub refuses a push made with the Actions `GITHUB_TOKEN` that creates or updates a file under `.github/workflows/`, and no `permissions:` key can grant it. So in GitHub Actions (`GITHUB_ACTIONS=true`) update never writes, commits or pushes a workflow file. Each skipped change is an unchecked TODO in the report — run `npx gearbox-agents@2 update` locally after merging — and a `::warning::` line. When workflow changes are all that's pending, update makes no branch and exits 0. Fences, ADRs, the stamp and the v1 migration proceed as usual.
+  - A failed push is exit 1: update prints git's decisive lines and the retry command, and keeps the committed branch and the report. It used to print a yellow line and exit 0, so a refused push was a green sync job with no PR, every week.
+  - `gearbox-sync.yml`'s PR step prints `::error::` and exits 1 when `gh pr create` fails, where it used to `|| echo` and stay green — ADR-0049's PR step no longer fails silently. A run with no backfill branch still exits 0 ("Nothing to sync"), and after a failed push the step doesn't run at all.
   - The workflow templates (`scripts/lib/workflows.js`: `ci.yml`, `gearbox-sync.yml`, `gearbox-check.yml`) use `actions/checkout@v5` and `actions/setup-node@v5` on Node 24, up from `@v4`. A downstream's existing `ci.yml` is its own and keeps its versions.
   - install writes a simple single-line Gate command into `ci.yml` as a plain `- run:` line. Anything else (several lines, `: `, ` #`, a leading `!`) goes into a `run: |` block, which YAML passes through verbatim.
   - The Gate contract now reads: CI's `gate` job runs the Gate command byte-for-byte; the `gearbox-check` job runs the protocol check; both green to merge and before shift-end.

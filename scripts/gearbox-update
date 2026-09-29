@@ -19,7 +19,15 @@
 //                    base is wrong, the output isn't trustworthy.
 //   --force          re-apply upstream's fence over a hand-edited one; the diff goes into the
 //                    report (ADR-0050)
-//   --no-push        commit locally, skip the push
+//   --no-push        commit locally, skip the push. Without it, a push that fails is exit 1
+//                    (ADR-0051): git's reason and the retry command are printed; the committed
+//                    branch and the report stay
+//
+// In GitHub Actions (GITHUB_ACTIONS=true, the gearbox-sync Action) it never writes, commits or
+// pushes anything under .github/workflows/ (ADR-0051): GitHub refuses a push made with the Actions
+// GITHUB_TOKEN that creates or updates a workflow file, whatever `permissions:` grants. Each skipped
+// workflow change is a TODO in the report plus a `::warning::` line — run update locally after the
+// merge; when workflow changes are all that's pending, no branch is made (exit 0).
 //
 // Startup safety checks (ADR-0025): the clean-worktree check exempts this tool's own
 // gearbox-update-report.md; auto `git checkout main` when not on main/master (unless
@@ -81,6 +89,9 @@ let GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
 let UPSTREAM_URL = null; // = the .gearbox-upstream URL when remote; null when local
 const GEARBOX_GITHUB_BASE =
   "https://github.com/real-stanyan/gearbox/blob/master/docs/gearbox-adr";
+// Inside GitHub Actions the tool-owned workflow files are left alone (ADR-0051) — see the header.
+const IN_ACTIONS = env.GITHUB_ACTIONS === "true";
+const WORKFLOW_TODO = "after merging, run `npx gearbox-agents@2 update` locally (the Actions token can't push workflow files)";
 
 // CLI args
 let refreshDrift = false;
@@ -141,6 +152,15 @@ function tryRun(cmd) {
   } catch {
     return null;
   }
+}
+
+// What a failed git command said, from its stderr: the decisive lines — a server's `remote:` lines
+// (GitHub's workflow-file refusal, any pre-receive hook), `! [rejected]` / `! [remote rejected]`,
+// `error:`, `fatal:` — or, when none match, every non-blank line: never a failure without git's words.
+function gitErrorLines(e) {
+  const all = String(e.stderr || e.message || "").split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+  const decisive = all.filter((l) => /^\s*(remote:|error:|fatal:|! \[)/.test(l));
+  return decisive.length > 0 ? decisive : all;
 }
 
 // Upstream addressing (ADR-0027): env > local default > .gearbox-upstream remote cache.
@@ -668,7 +688,7 @@ function lineDiff(localContent, upstreamContent, max = 20) {
 
 function generateReport({
   downstreamRepo, assignments, refreshes, supersedeResult, branchName, reportDate, baseBranch,
-  fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed, pushCmd,
+  fenceWrites, migration, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
 }) {
   const lines = [
     "# gearbox-update report",
@@ -719,6 +739,11 @@ function generateReport({
   if (workflowWrites.length > 0) {
     lines.push("## Workflow files", "");
     for (const w of workflowWrites) lines.push(`- \`${w.path}\` — ${w.why}`);
+    lines.push("");
+  }
+  if (workflowSkipped.length > 0) {
+    lines.push("## Workflow files skipped in GitHub Actions", "");
+    for (const w of workflowSkipped) lines.push(`- [ ] \`${w.path}\` — ${w.why}: ${WORKFLOW_TODO}`);
     lines.push("");
   }
   lines.push("## Protocol check on this branch", "");
@@ -901,9 +926,17 @@ by gearbox-update tool.`,
       `.gearbox-version → ${protocolVersion} ${C.dim("(ADR-0023 stamp)")}`,
     );
 
-  let pushResult = null;
-  if (!noPush) pushResult = tryRun(`${pushCmd} 2>&1`);
-  return { pushResult, made, unchanged };
+  // push: null with --no-push, else { ok } — and on failure git's own words (gitErrorLines)
+  let push = null;
+  if (!noPush) {
+    try {
+      run(pushCmd);
+      push = { ok: true };
+    } catch (e) {
+      push = { ok: false, lines: gitErrorLines(e) };
+    }
+  }
+  return { push, made, unchanged };
 }
 
 // The v1 → v2 layout change as one commit (ADR-0050), through gitOps' `commit` (commitPaths).
@@ -1024,7 +1057,11 @@ async function main() {
       stdout.write(C.yellow(`  ⚠️  flagged for manual review (not carried): ${r.flagged.map((f) => `${f.section} (${f.unknown}/${f.total} unknown lines)`).join(" · ")}\n`));
     stdout.write("\n");
   }
-  const workflowWrites = planWorkflowFixes(downDir);
+  // Tool-owned workflow files (ADR-0051). In GitHub Actions none is written: the push would be
+  // refused, costing the whole sync — each change is skipped instead, for a local run to write.
+  const workflowPlan = planWorkflowFixes(downDir);
+  const workflowWrites = IN_ACTIONS ? [] : workflowPlan;
+  const workflowSkipped = IN_ACTIONS ? workflowPlan : [];
 
   // TTY: the whole scan collapses into one presentational bar (results are already
   // computed); the per-ADR skip wall is gone — only actionable lines follow (ADR-0041)
@@ -1043,8 +1080,24 @@ async function main() {
     stdout.write("\n");
   }
 
-  if (toCopy.length === 0 && toRefresh.length === 0 && fenceWrites.length === 0 && !migration && workflowWrites.length === 0 && stampCurrent) {
-    stdout.write(C.green("✅ Nothing to do — fences, ADRs and .gearbox-version all match upstream\n\n"));
+  const nothingToDo =
+    toCopy.length === 0 && toRefresh.length === 0 && fenceWrites.length === 0 && !migration && workflowWrites.length === 0 && stampCurrent;
+  // One annotation per skipped workflow change, raw — a color code in front would hide it from
+  // Actions. With a backfill branch coming, the local run waits for its merge: a local run before
+  // it would build a second, conflicting branch of the same name.
+  for (const w of workflowSkipped)
+    stdout.write(
+      `::warning::gearbox-update skipped ${w.path} (${w.why}): the Actions token can't push workflow files — run npx gearbox-agents@2 update locally${nothingToDo ? "" : " after this run's backfill PR merges"}\n`,
+    );
+
+  if (nothingToDo) {
+    stdout.write(
+      C.green(
+        workflowSkipped.length > 0
+          ? "✅ Nothing to do here — fences, ADRs and .gearbox-version all match upstream; the workflow file(s) above need a local run\n\n"
+          : "✅ Nothing to do — fences, ADRs and .gearbox-version all match upstream\n\n",
+      ),
+    );
     if (resume) {
       stdout.write(
         C.dim(`  resumed ${plannedBranch}: nothing new to commit — if its PR isn't open yet: gh pr create --base ${baseBranch} --head ${plannedBranch}\n`),
@@ -1208,23 +1261,23 @@ async function main() {
       reportPath,
       generateReport({
         downstreamRepo: downRepo, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, reportDate, baseBranch,
-        fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed, pushCmd,
+        fenceWrites, migration, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
       }),
     );
   writeReport(false);
 
   // git operations
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
-  let pushResult = null;
+  let push = null;
   try {
     const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, protocolVersion, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd });
-    pushResult = ops.pushResult;
+    push = ops.push;
     for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
     for (const u of ops.unchanged) stdout.write(`  ${C.dim(`· ${u} — already matched the index, nothing to commit`)}\n`);
     if (stampCurrent) stdout.write(`  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`);
     if (noPush) stdout.write(`  ${C.dim("push skipped (--no-push)")}\n`);
-    else if (pushResult) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
-    else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     ${pushCmd}\n`);
+    else if (push.ok) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
+    else stdout.write(`  ${C.red("✗ push failed — git said:")}\n${push.lines.map((l) => `      ${l}\n`).join("")}`);
   } catch (e) {
     // Exact files, in gitOps' commit order — never a directory, which would sweep a user's own
     // untracked file into `git add` (#92). `git clean` gets only what this run created: tracked
@@ -1256,7 +1309,7 @@ async function main() {
     );
   }
   stdout.write("\n");
-  if (pushResult) writeReport(true);
+  if (push && push.ok) writeReport(true);
 
   stdout.write(C.green(`✓ report: ${reportPath.replace(downDir + "/", "")}\n`));
   stdout.write(
@@ -1264,6 +1317,15 @@ async function main() {
       "  (this file isn't committed — delete it by hand after the PR merges)\n\n",
     ),
   );
+
+  // A failed push is a failure (ADR-0051), never a yellow line under a green job: the sync Action's
+  // PR step must not run, and nobody reads a log that says "done". The commits and the report (its
+  // push line still unchecked) stay — the push is all that's left to redo.
+  if (push && !push.ok)
+    die(
+      `push to origin failed — ${branchName} is committed locally, and gearbox-update-report.md (the PR body) is written`,
+      `fix what git reported above, then retry the push:\n  ${pushCmd}`,
+    );
 
   stdout.write(tui.isTTY ? "  " + tui.grad("⚙ downstream in sync") + "\n" : C.bold(C.green("✓ done\n")));
   stdout.write("\n");

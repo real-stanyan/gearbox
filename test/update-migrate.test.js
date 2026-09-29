@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { findFence } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
-import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll } from "./helpers.js";
+import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, guardedOrigin } from "./helpers.js";
 
 // The real output of the v1.15.2 installer (--name example-project --maintainer octo-owner
 // --gate "npm test"): Gearbox's own public template text, generated from the v1.15.2 tag.
@@ -75,6 +75,31 @@ test("update migrates a real v1.15.2 install to the v2 layout on a backfill bran
   assert.equal(git(down, "rev-list", "--count", "main"), "1");
   assert.equal(git(down, "show", "main:AGENTS.md"), agentsIn.trim());
   assert.equal(git(down, "status", "--porcelain"), "?? gearbox-update-report.md");
+});
+
+// The sync Action's exact run (GITHUB_ACTIONS=true update --refresh-drift) on a v1 downstream. GitHub
+// refuses a GITHUB_TOKEN push touching .github/workflows/, so the migration travels without the
+// workflow files — each one a TODO for a local run after the merge, and a ::warning:: (ADR-0051).
+test("in GitHub Actions, the migration is committed and pushed without any workflow file; each skipped one is a TODO and a ::warning::", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up);
+  const origin = guardedOrigin(down);
+  const r = runTool("gearbox-update", ["--refresh-drift"], { cwd: down, env: { GEARBOX_DIR: up, GITHUB_ACTIONS: "true" } });
+  assert.equal(r.code, 0, r.out);
+  const today = git(down, "rev-parse", "--abbrev-ref", "HEAD");
+  assert.match(today, /^docs\/gearbox-backfill-/);
+  assert.match(git(origin, "log", "--format=%s", today), /^docs\(protocol\): migrate to the Gearbox v2 layout/m);
+  assert.equal(git(origin, "rev-parse", today), git(down, "rev-parse", "HEAD"));
+  assert.ok(!existsSync(join(down, ".github/workflows/gearbox-check.yml")));
+  assert.match(read(down, ".github/workflows/gearbox-sync.yml"), /gearbox-agents@latest/);
+  assert.equal(git(down, "diff", "--name-only", "main", "HEAD", "--", ".github/workflows"), "");
+  const report = read(down, "gearbox-update-report.md");
+  const todo = "after merging, run `npx gearbox-agents@2 update` locally (the Actions token can't push workflow files)";
+  assert.ok(report.includes(`- [ ] \`.github/workflows/gearbox-check.yml\` — added: ${todo}`), report);
+  assert.ok(report.includes(`- [ ] \`.github/workflows/gearbox-sync.yml\` — npx pin @latest → @2: ${todo}`), report);
+  assert.doesNotMatch(report, /push the branch/);
+  assert.match(r.out, /^::warning::[^\n]*\.github\/workflows\/gearbox-check\.yml \(added\)[^\n]*npx gearbox-agents@2 update/m);
+  assert.match(r.out, /^::warning::[^\n]*\.github\/workflows\/gearbox-sync\.yml \(npx pin @latest → @2\)[^\n]*npx gearbox-agents@2 update/m);
 });
 
 // migrateV1 throws MigrationError when the fences don't pair up: the sections after an open

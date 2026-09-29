@@ -100,8 +100,10 @@ jobs:
           fi
           gh pr create --head "\$BRANCH" \\
             --title "gearbox: protocol backfill (\$BRANCH)" \\
-            --body-file gearbox-update-report.md \\
-            || echo "PR creation failed — if the log above says GitHub Actions may not create pull requests, enable it in Settings → Actions → General → Workflow permissions. The sync branch is already pushed."
+            --body-file gearbox-update-report.md || {
+            echo "::error::PR creation failed — if the log above says GitHub Actions may not create pull requests, enable it in Settings → Actions → General → Workflow permissions. The sync branch is already pushed."
+            exit 1
+          }
 `;
 
 export const CHECK_YML = `name: gearbox-check

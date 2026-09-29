@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -36,12 +36,40 @@ export function commitAll(dir, msg = "init") {
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", msg);
 }
+// GITHUB_ACTIONS changes what update writes (it skips workflow files, ADR-0051): a test opts in
+// through `env`, and the parent's never leaks in — this suite may itself run in GitHub CI.
 export function runTool(script, args = [], { cwd = REPO, env = {} } = {}) {
+  const { GITHUB_ACTIONS, ...parent } = process.env;
   const r = spawnSync(process.execPath, [join(REPO, "scripts", script), ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, ...GIT_ENV, NO_COLOR: "1", ...env },
+    env: { ...parent, ...GIT_ENV, NO_COLOR: "1", ...env },
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+// A bare `origin` for `down` whose pre-receive hook refuses any pushed commit that touches
+// .github/workflows/ — what GitHub does to a push made with the Actions GITHUB_TOKEN. `down`'s
+// current branch is pushed before the hook exists. Returns the origin's path.
+export function guardedOrigin(down) {
+  const origin = tmp("gearbox-origin-");
+  git(origin, "init", "-q", "--bare");
+  git(origin, "config", "core.hooksPath", join(origin, "hooks")); // beats any global hooksPath
+  git(down, "remote", "add", "origin", origin);
+  git(down, "push", "-q", "origin", "HEAD");
+  write(origin, "hooks/pre-receive", [
+    "#!/bin/sh",
+    "while read old new ref; do",
+    '  for c in $(git rev-list "$new" --not --all); do',
+    "    if git diff-tree --root --no-commit-id --name-only -r \"$c\" | grep -q '^\\.github/workflows/'; then",
+    '      echo "refusing to allow a GitHub App to create or update workflow without workflows permission" >&2',
+    "      exit 1",
+    "    fi",
+    "  done",
+    "done",
+    "",
+  ].join("\n"));
+  chmodSync(join(origin, "hooks/pre-receive"), 0o755);
+  return origin;
 }
 
 // Minimal v2 fence content carrying every heading the check requires.
