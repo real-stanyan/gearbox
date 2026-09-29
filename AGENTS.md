@@ -28,7 +28,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 GitHub account: `real-stanyan`
 
-<!-- gearbox:protocol v2.0.0 sha256:36fdec488475; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:41ce6e214f9f; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -115,7 +115,7 @@ General rules (apply to both tiers):
 |---|---|---|
 | New template/subsystem that **references** a protocol mechanism | **L1** | ADR-0012 |
 | New purely informational document (e.g. "how to contribute") that **references** no protocol mechanism | L2 | ADR-0012 |
-| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Working agreement content) | **L1** | ADR-0006 |
+| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Maintainer / Working agreement content) | **L1** | ADR-0006 |
 | Modifying the index (Where to find things) | L2 | ADR-0005 |
 | A CONTEXT.md entry **defines** an existing mechanism (changes only CONTEXT.md + cites its source ADR + adds no new obligation/changes no process boundary — all three conditions required) | L2 | ADR-0019 |
 
