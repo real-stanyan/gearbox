@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gearbox-version — check which Gearbox ADRs a downstream project has synced
+// gearbox-version — check which Gearbox protocol fences and ADRs a downstream project has synced
 //
 // Usage: run `gearbox-version` from any downstream repo's root
 //       (recommended: symlink onto PATH: ln -sf ~/Github/gearbox/scripts/gearbox-version ~/.local/bin/)
@@ -27,9 +27,21 @@
 //   match → ✅; mismatch → ⚠️ upstream has been revised (drift); no stamp → ✅ as before,
 //   counted in the legacy summary.
 //
-// Version summary (ADR-0023): upstream's latest tag vs downstream's `.gearbox-version` stamp,
-// printed as one line — "upstream vX / local vY (behind by <segment>)". The summary isn't the
-// source of truth — the per-ADR detail (plus hashes) is.
+// Version summary (ADR-0023): upstream's protocol version vs downstream's `.gearbox-version`
+// stamp, printed as one line — "upstream vX / local vY (behind by <segment>)". The protocol
+// version is the upstream fence's (ADR-0050); the latest tag / GEARBOX_UPSTREAM_VERSION only
+// stands in for a pre-v2 upstream that has no fences. The summary isn't the source of truth —
+// the fence lines and the per-ADR detail (plus hashes) are.
+//
+// Protocol fences (ADR-0050): AGENTS.md's `gearbox:protocol` and CONTEXT.md's `gearbox:glossary`
+// are each reported as synced / behind / NEWER than upstream / hand-edited / v1 layout (no
+// fence). fenceStatus calls any version or hash difference "behind" — it has no direction — so
+// a local fence with a semver-greater version than upstream's (typically a stale upstream
+// checkout, and `update` refuses to downgrade) is shown as NEWER, never as "behind".
+// "Fully synced" requires both fences synced, no missing or revised ADR, AND `.gearbox-version`
+// equal to upstream's protocol version; it used to count ADR files only, and could print
+// "behind by patch" and "fully synced" in the same run. A size line warns when AGENTS.md is
+// past the 32 KiB budget (ADR-0051); it is advisory and doesn't affect the sync status.
 //
 // Honesty boundary:
 // - A downstream project that "evaluated and rejected a backfill" (closed an issue declining
@@ -55,6 +67,9 @@ import { execSync } from "node:child_process";
 import { join, basename } from "node:path";
 import { env, exit, cwd, stdout } from "node:process";
 import * as tui from "./lib/tui.js";
+import { fenceStatus } from "./lib/fence.js";
+import { semverGreater } from "./lib/fence-release.js";
+import { AGENTS_MAX_BYTES } from "./lib/protocol-check.js";
 
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -183,6 +198,39 @@ let localVersion = "";
 if (existsSync(".gearbox-version"))
   localVersion = (readFileSync(".gearbox-version", "utf8").split("\n")[0] || "").replace(/\s/g, "");
 
+// Protocol fences (ADR-0050): "synced" means the fenced text equals upstream's.
+const fenceRows = [];
+let fencesSynced = true;
+let upstreamProtocolVersion = "";
+for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"]]) {
+  const upText = existsSync(join(gearboxDir, file)) ? readFileSync(join(gearboxDir, file), "utf8") : "";
+  const localText = existsSync(file) ? readFileSync(file, "utf8") : "";
+  let st;
+  try {
+    st = fenceStatus(localText, upText, name);
+  } catch (e) {
+    st = { state: "error", message: e.message };
+  }
+  // fenceStatus's "behind" has no direction. A local fence with the greater version is the
+  // usual sign of a stale upstream checkout (`update` would refuse to downgrade it), so it
+  // gets its own presentation state instead of advice to run a backfill.
+  if (st.state === "behind" && semverGreater(st.local.version, st.upstream.version)) st = { ...st, state: "ahead" };
+  if (name === "protocol" && st.upstream) upstreamProtocolVersion = st.upstream.version;
+  if (st.state !== "synced") fencesSynced = false;
+  fenceRows.push({ file, name, st });
+}
+// The protocol version is the fence's (ADR-0050); fall back to the tag for a pre-v2 upstream.
+if (upstreamProtocolVersion) upstreamVersion = upstreamProtocolVersion;
+const FENCE_LOCAL = { protocol: 'rules to "## Local protocol extensions"', glossary: 'terms to "## Project terms"' };
+const FENCE_TEXT = {
+  synced: (r) => `${GREEN}✅ ${r.file} gearbox:${r.name} synced (${r.st.local.version})${RESET}`,
+  behind: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} behind (${r.st.local.version} → ${r.st.upstream.version}) — run npx gearbox-agents update${RESET}`,
+  ahead: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} is NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — your upstream gearbox is older; refresh it (git pull / npx -y gearbox-agents@2), don't run update${RESET}`,
+  "hand-edited": (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, then npx gearbox-agents update --force${RESET}`,
+  missing: (r) => `${YELLOW}⚠️  ${r.file} has no gearbox:${r.name} fence (v1 layout) — run npx gearbox-agents update to migrate (ADR-0050)${RESET}`,
+  error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${RESET}`,
+};
+
 console.log("");
 console.log(`${DIM}repo:${RESET}      ${repoName}`);
 if (isRemote) {
@@ -199,6 +247,11 @@ if (upstreamVersion) {
     console.log(
       `${DIM}version:${RESET}   ${GREEN}upstream ${upstreamVersion} / local ${localVersion} (in sync)${RESET}`,
     );
+  } else if (semverGreater(localVersion, upstreamVersion)) {
+    // not "behind": the stamp is past upstream's version (the fence: lines say why)
+    console.log(
+      `${DIM}version:${RESET}   ${YELLOW}upstream ${upstreamVersion} / local ${localVersion} (ahead of upstream)${RESET}`,
+    );
   } else {
     const lag = semverLag(localVersion, upstreamVersion);
     console.log(
@@ -206,6 +259,10 @@ if (upstreamVersion) {
     );
   }
 }
+for (const r of fenceRows) console.log(`${DIM}fence:${RESET}     ${FENCE_TEXT[r.st.state](r)}`);
+const agentsBytes = existsSync("AGENTS.md") ? Buffer.byteLength(readFileSync("AGENTS.md", "utf8")) : 0;
+if (agentsBytes > AGENTS_MAX_BYTES)
+  console.log(`${DIM}size:${RESET}      ${YELLOW}⚠️  AGENTS.md is ${agentsBytes} bytes — over the ${AGENTS_MAX_BYTES}-byte budget (ADR-0051); move long maps to docs/INDEX.md${RESET}`);
 console.log("");
 
 // Gitignore blind-spot check (Gearbox ADR-0037): protocol files must reach the
@@ -306,10 +363,21 @@ if (tui.isTTY) {
 }
 
 console.log("");
-if (missingCount === 0 && driftCount === 0) {
+// "Fully synced" = fences, ADRs and stamp all match; the stamp is the protocol version (ADR-0050).
+const stampOk = !upstreamVersion || localVersion === upstreamVersion;
+if (missingCount === 0 && driftCount === 0 && fencesSynced && stampOk) {
   console.log(`${DIM}status:${RESET}    ${GREEN}✅ fully synced (${syncedCount})${RESET}`);
   if (tui.isTTY) console.log("\n  " + tui.grad("⚙ downstream in sync"));
 } else {
+  if (!fencesSynced) console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  protocol fences not synced (see fence: lines above)${RESET}`);
+  if (!stampOk) {
+    // `update` rewrites a stale stamp — unless a NEWER fence makes it refuse to downgrade (an
+    // ahead fence: lines above), which a stamp typo on its own would not
+    const fix = fenceRows.some((r) => r.st.state === "ahead")
+      ? "your upstream gearbox is older; refresh it, don't run update"
+      : "run npx gearbox-agents update";
+    console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  .gearbox-version ${localVersion || "(missing)"} ≠ protocol ${upstreamVersion} — ${fix}${RESET}`);
+  }
   console.log(
     `${DIM}status:${RESET}    ${YELLOW}⚠️  ${missingCount} not synced, ${driftCount} revised upstream${RESET} ${DIM}(${syncedCount} synced)${RESET}`,
   );

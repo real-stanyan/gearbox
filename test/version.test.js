@@ -1,0 +1,145 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { makeUpstream, runTool, gitInit, tmp, read, write, commitAll, PROTOCOL } from "./helpers.js";
+
+function installed(up) {
+  const down = tmp("gearbox-ver-");
+  gitInit(down);
+  const r = runTool("gearbox-install", [down, "--name", "demo", "--maintainer", "octo", "--gate", "npm test"], { env: { GEARBOX_DIR: up } });
+  assert.equal(r.code, 0, r.out);
+  commitAll(down, "install");
+  return down;
+}
+const version = (down, up, env = {}) => runTool("gearbox-version", [], { cwd: down, env: { GEARBOX_DIR: up, ...env } });
+
+test("fully synced only when fences, ADRs and stamp all match", () => {
+  const up = makeUpstream();
+  const r = version(installed(up), up);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol synced/);
+  assert.match(r.out, /fully synced/);
+});
+
+test("behind, hand-edited and v1 layout are each reported, never as fully synced", () => {
+  const up = makeUpstream();
+  const behind = version(installed(up), makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- new` }));
+  assert.match(behind.out, /behind \(v2\.0\.0 → v2\.1\.0\)/);
+  assert.doesNotMatch(behind.out, /fully synced/);
+
+  const edited = installed(up);
+  write(edited, "AGENTS.md", read(edited, "AGENTS.md").replace("Commit in small steps.", "Commit whenever."));
+  const editedOut = version(edited, up).out;
+  assert.match(editedOut, /hand-edited/);
+  assert.doesNotMatch(editedOut, /fully synced/);
+
+  const v1 = installed(up);
+  write(v1, "AGENTS.md", "# old\n\n## Working agreement (multi-agent)\n");
+  const v1Out = version(v1, up).out;
+  assert.match(v1Out, /v1 layout/);
+  assert.doesNotMatch(v1Out, /fully synced/);
+});
+
+test("warns when AGENTS.md is over the 32 KiB budget", () => {
+  const up = makeUpstream();
+  const down = installed(up);
+  write(down, "AGENTS.md", read(down, "AGENTS.md") + `\n${"x".repeat(33000)}\n`);
+  assert.match(version(down, up).out, /over the 32768-byte budget/);
+});
+
+// fenceStatus says "behind" whenever the versions differ, in either direction. The tools default to
+// a local ~/Github/gearbox checkout that may be stale, and `update` refuses to downgrade — so a
+// local fence NEWER than upstream's must not read "behind" or advise running update.
+test("a fence newer than upstream's is its own state: not 'behind', not 'fully synced', no 'run update'", () => {
+  const down = installed(makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- new` }));
+  const stale = makeUpstream(); // v2.0.0
+  const r = version(down, stale);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol is NEWER than upstream \(v2\.1\.0 > v2\.0\.0\)/);
+  assert.match(r.out, /CONTEXT\.md gearbox:glossary is NEWER than upstream \(v2\.1\.0 > v2\.0\.0\)/);
+  assert.match(r.out, /your upstream gearbox is older; refresh it \(git pull \/ npx -y gearbox-agents@2\), don't run update/);
+  assert.match(r.out, /upstream v2\.0\.0 \/ local v2\.1\.0 \(ahead of upstream\)/);
+  assert.doesNotMatch(r.out, /fully synced/);
+  assert.doesNotMatch(r.out, /behind/);
+  assert.doesNotMatch(r.out, /run npx gearbox-agents update/);
+  // "don't run update" is true: exactly this state is the one update refuses to act on
+  const u = runTool("gearbox-update", ["--no-push"], { cwd: down, env: { GEARBOX_DIR: stale } });
+  assert.equal(u.code, 1, u.out);
+  assert.match(u.out, /older than this repo/);
+});
+
+test("a stale, missing or too-new .gearbox-version alone is never 'fully synced'", () => {
+  const up = makeUpstream();
+  const stale = installed(up);
+  write(stale, ".gearbox-version", "v1.9.9\n");
+  const s = version(stale, up);
+  assert.equal(s.code, 0, s.out);
+  assert.match(s.out, /AGENTS\.md gearbox:protocol synced/);
+  assert.match(s.out, /\.gearbox-version v1\.9\.9 ≠ protocol v2\.0\.0 — run npx gearbox-agents update/);
+  assert.doesNotMatch(s.out, /fully synced/);
+
+  const none = installed(up);
+  rmSync(join(none, ".gearbox-version"));
+  const m = version(none, up);
+  assert.equal(m.code, 0, m.out);
+  assert.match(m.out, /\.gearbox-version \(missing\) ≠ protocol v2\.0\.0 — run npx gearbox-agents update/);
+  assert.doesNotMatch(m.out, /fully synced/);
+
+  // A stamp past the protocol version with the fences in sync is a bad stamp, not a stale upstream:
+  // update rewrites it, so "don't run update" would be wrong advice here — and the advice given
+  // must really work.
+  const typo = installed(up);
+  write(typo, ".gearbox-version", "v9.9.9\n");
+  commitAll(typo, "typo'd stamp"); // update refuses a dirty tree
+  const t = version(typo, up);
+  assert.equal(t.code, 0, t.out);
+  assert.match(t.out, /upstream v2\.0\.0 \/ local v9\.9\.9 \(ahead of upstream\)/);
+  assert.match(t.out, /\.gearbox-version v9\.9\.9 ≠ protocol v2\.0\.0 — run npx gearbox-agents update/);
+  assert.doesNotMatch(t.out, /fully synced/);
+  const u = runTool("gearbox-update", ["--no-push"], { cwd: typo, env: { GEARBOX_DIR: up } });
+  assert.equal(u.code, 0, u.out);
+  assert.match(version(typo, up).out, /fully synced/);
+});
+
+test("an upstream without fences is reported, never 'fully synced'; the version falls back to the env/tag", () => {
+  const down = installed(makeUpstream());
+  const preV2 = makeUpstream();
+  write(preV2, "AGENTS.md", "# Gearbox\n\n## Working agreement (multi-agent)\n");
+  write(preV2, "CONTEXT.md", "# Domain context — Gearbox\n");
+  const r = version(down, preV2, { GEARBOX_UPSTREAM_VERSION: "v1.9.0" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /upstream has no gearbox:protocol fence/);
+  assert.match(r.out, /upstream v1\.9\.0 \/ local v2\.0\.0/);
+  assert.doesNotMatch(r.out, /fully synced/);
+});
+
+// The ADR listing predates the fences and still counts: matching fences and stamp are not enough.
+test("a missing or revised ADR still blocks 'fully synced' when the fences and stamp match", () => {
+  const upMissing = makeUpstream();
+  const downMissing = installed(upMissing);
+  write(upMissing, "docs/gearbox-adr/0003-new-rule.md", "# ADR-0003: New rule\n\n- Date: 2026-09-29\n- Status: accepted\n");
+  const missing = version(downMissing, upMissing);
+  assert.match(missing.out, /AGENTS\.md gearbox:protocol synced/);
+  assert.match(missing.out, /✖ ADR-0003/);
+  assert.doesNotMatch(missing.out, /fully synced/);
+
+  const upRevised = makeUpstream();
+  const downRevised = installed(upRevised);
+  write(upRevised, "docs/gearbox-adr/0002-self-check-as-gate.md", "# ADR-0002: Self-check as gate\n\n- Date: 2026-07-17\n- Status: accepted\n\nRevised upstream.\n");
+  const revised = version(downRevised, upRevised);
+  assert.match(revised.out, /AGENTS\.md gearbox:protocol synced/);
+  assert.match(revised.out, /upstream has been revised/);
+  assert.doesNotMatch(revised.out, /fully synced/);
+});
+
+test("a hand-edited fence names its own home: protocol rules vs glossary terms", () => {
+  const up = makeUpstream();
+  const down = installed(up);
+  write(down, "AGENTS.md", read(down, "AGENTS.md").replace("Commit in small steps.", "Commit whenever."));
+  write(down, "CONTEXT.md", read(down, "CONTEXT.md").replace("a baton passed at merge", "edited by hand"));
+  const r = version(down, up);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol hand-edited — move local rules to "## Local protocol extensions", then npx gearbox-agents update --force/);
+  assert.match(r.out, /CONTEXT\.md gearbox:glossary hand-edited — move local terms to "## Project terms", then npx gearbox-agents update --force/);
+  assert.doesNotMatch(r.out, /fully synced/);
+});
