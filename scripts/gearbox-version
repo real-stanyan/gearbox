@@ -204,9 +204,35 @@ if (existsSync(".gearbox-version"))
 const fenceRows = [];
 let fencesSynced = true;
 let upstreamProtocolVersion = "";
+let agentsBytes = 0; // AGENTS.md's size, for the budget warning — from this read, not a second one
+const readText = (path) => (existsSync(path) ? readFileSync(path, "utf8") : "");
 for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"]]) {
-  const upText = existsSync(join(gearboxDir, file)) ? readFileSync(join(gearboxDir, file), "utf8") : "";
-  const localText = existsSync(file) ? readFileSync(file, "utf8") : "";
+  // Each side is read on its own and a failure is captured, not thrown: a file this script can't
+  // read (EACCES, a directory) becomes an error row instead of an uncaught stack trace — the
+  // quick check exits 0 in every state — and neither side's trouble hides the other side's data
+  // (AGENTS.md's size, upstream's protocol version).
+  let upText = "";
+  let upError = null;
+  try {
+    upText = readText(join(gearboxDir, file));
+  } catch (e) {
+    upError = e;
+  }
+  let localText = "";
+  let localError = null;
+  try {
+    localText = readText(file);
+  } catch (e) {
+    localError = e;
+  }
+  if (file === "AGENTS.md") agentsBytes = Buffer.byteLength(localText);
+  let st;
+  try {
+    if (upError || localError) throw upError || localError;
+    st = fenceStatus(localText, upText, name);
+  } catch (e) {
+    st = { state: "error", message: e.message };
+  }
   if (name === "protocol") {
     // Upstream's protocol version comes from upstream's own text: a malformed LOCAL marker makes
     // fenceStatus throw before it hands upstream's fence back, and the fallback (the tag, or
@@ -214,14 +240,8 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
     try {
       upstreamProtocolVersion = findFence(upText, "protocol")?.version || "";
     } catch {
-      // a malformed upstream marker: the row below reports it; the tag stays the fallback
+      // a malformed upstream marker: the row reports it; the tag stays the fallback
     }
-  }
-  let st;
-  try {
-    st = fenceStatus(localText, upText, name);
-  } catch (e) {
-    st = { state: "error", message: e.message };
   }
   // A local fence with the greater version is the usual sign of a stale upstream checkout, and
   // `update` refuses to downgrade it in EVERY state (--force overrides hand edits, never a
@@ -277,7 +297,6 @@ if (upstreamVersion) {
   }
 }
 for (const r of fenceRows) console.log(`${DIM}fence:${RESET}     ${FENCE_TEXT[r.st.state](r)}`);
-const agentsBytes = existsSync("AGENTS.md") ? Buffer.byteLength(readFileSync("AGENTS.md", "utf8")) : 0;
 if (agentsBytes > AGENTS_MAX_BYTES)
   console.log(`${DIM}size:${RESET}      ${YELLOW}⚠️  AGENTS.md is ${agentsBytes} bytes — over the ${AGENTS_MAX_BYTES}-byte budget (ADR-0051); move long maps to docs/INDEX.md${RESET}`);
 console.log("");

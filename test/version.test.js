@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { makeUpstream, runTool, gitInit, tmp, read, write, commitAll, PROTOCOL } from "./helpers.js";
 
@@ -208,4 +208,73 @@ test("a malformed upstream marker is an error row, not a crash; the version fall
   assert.match(r.out, /AGENTS\.md gearbox:protocol: .*has no end marker/);
   assert.match(r.out, /upstream v2\.5\.0 \/ local v2\.0\.0/);
   assert.doesNotMatch(r.out, /fully synced/);
+});
+
+// The script is a read-only quick check that exits 0 in every state: a file it can't read is an
+// error row, not an uncaught stack trace (which also ended the run with exit 1).
+test("a fence file that can't be read is an error row, not a crash (a directory where the file should be)", () => {
+  const up = makeUpstream();
+  for (const [file, row] of [["AGENTS.md", /AGENTS\.md gearbox:protocol: EISDIR/], ["CONTEXT.md", /CONTEXT\.md gearbox:glossary: EISDIR/]]) {
+    const down = installed(up);
+    rmSync(join(down, file));
+    mkdirSync(join(down, file));
+    const r = version(down, up);
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, row);
+    assert.doesNotMatch(r.out, /node:fs|at readFileSync/); // no stack trace
+    assert.doesNotMatch(r.out, /fully synced/);
+  }
+});
+
+test("a fence file with mode 000 is an error row, not a crash", (t) => {
+  const up = makeUpstream();
+  for (const [file, row] of [["AGENTS.md", /AGENTS\.md gearbox:protocol: EACCES/], ["CONTEXT.md", /CONTEXT\.md gearbox:glossary: EACCES/]]) {
+    const down = installed(up);
+    const path = join(down, file);
+    chmodSync(path, 0o000);
+    try {
+      try {
+        readFileSync(path);
+        return t.skip("mode 000 doesn't stop reads here (root, or a platform without POSIX modes)");
+      } catch {
+        /* unreadable, as the test needs */
+      }
+      const r = version(down, up);
+      assert.equal(r.code, 0, r.out);
+      assert.match(r.out, row);
+      assert.doesNotMatch(r.out, /node:fs|at readFileSync/);
+      assert.doesNotMatch(r.out, /fully synced/);
+    } finally {
+      chmodSync(path, 0o644);
+    }
+  }
+});
+
+// Neither side's unreadable file may hide the other side's data: reading upstream first and
+// throwing on its failure skipped AGENTS.md's size check, and reading the local file first hid
+// upstream's protocol version behind the tag/env fallback.
+test("an unreadable file on one side doesn't hide the other side's data", () => {
+  // upstream's AGENTS.md unreadable: the local AGENTS.md is still measured against the budget
+  const upBroken = makeUpstream();
+  rmSync(join(upBroken, "AGENTS.md"));
+  mkdirSync(join(upBroken, "AGENTS.md"));
+  const big = installed(makeUpstream());
+  write(big, "AGENTS.md", read(big, "AGENTS.md") + `\n${"x".repeat(33000)}\n`);
+  const a = version(big, upBroken);
+  assert.equal(a.code, 0, a.out);
+  assert.match(a.out, /AGENTS\.md gearbox:protocol: EISDIR/);
+  assert.match(a.out, /over the 32768-byte budget/);
+  assert.doesNotMatch(a.out, /fully synced/);
+
+  // the local AGENTS.md unreadable: upstream's protocol version still comes from upstream's fence
+  const up = makeUpstream();
+  const down = installed(up);
+  rmSync(join(down, "AGENTS.md"));
+  mkdirSync(join(down, "AGENTS.md"));
+  const b = version(down, up, { GEARBOX_UPSTREAM_VERSION: "v2.5.0" });
+  assert.equal(b.code, 0, b.out);
+  assert.match(b.out, /AGENTS\.md gearbox:protocol: EISDIR/);
+  assert.match(b.out, /upstream v2\.0\.0 \/ local v2\.0\.0 \(in sync\)/);
+  assert.doesNotMatch(b.out, /v2\.5\.0/);
+  assert.doesNotMatch(b.out, /run npx gearbox-agents update/);
 });
