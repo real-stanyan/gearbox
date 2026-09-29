@@ -3,12 +3,20 @@ import assert from "node:assert/strict";
 import { findFence } from "../scripts/lib/fence.js";
 import { makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
-function v2Downstream(up) {
+function v2Downstream(up, { autocrlf = false } = {}) {
   const down = tmp("gearbox-down-");
   gitInit(down);
+  if (autocrlf) git(down, "config", "core.autocrlf", "true");
   const r = runTool("gearbox-install", [down, "--name", "demo", "--maintainer", "octo", "--gate", "npm test"], { env: { GEARBOX_DIR: up } });
   assert.equal(r.code, 0, r.out);
   commitAll(down, "install");
+  if (autocrlf) {
+    // A Git for Windows clone: LF blobs in the index, CRLF files on disk, status clean.
+    git(down, "rm", "-rq", "--cached", ".");
+    git(down, "reset", "-q", "--hard");
+    assert.match(read(down, ".github/workflows/gearbox-check.yml"), /\r\n/);
+    assert.equal(git(down, "status", "--porcelain"), "");
+  }
   return down;
 }
 const update = (down, up, args = []) => runTool("gearbox-update", ["--no-push", ...args], { cwd: down, env: { GEARBOX_DIR: up } });
@@ -90,4 +98,24 @@ test("older upstream: refused, even with --force — a fence is never downgraded
   }
   assert.equal(findFence(read(down, "AGENTS.md"), "protocol").version, "v2.1.0");
   assert.equal(read(down, ".gearbox-version").trim(), "v2.1.0");
+});
+
+// core.autocrlf=true: a byte compare of the CRLF gearbox-check.yml on disk planned a phantom
+// refresh; `git add` staged nothing and `git commit` failed halfway through the sequence.
+test("CRLF checkout, synced: nothing to do, no branch", () => {
+  const up = makeUpstream();
+  const down = v2Downstream(up, { autocrlf: true });
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /Nothing to do/);
+  assert.equal(git(down, "branch", "--list", "docs/gearbox-backfill-*"), "");
+});
+
+test("CRLF checkout, behind: completes with the stamp committed", () => {
+  const down = v2Downstream(makeUpstream(), { autocrlf: true });
+  const r = update(down, makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- a new rule` }));
+  assert.equal(r.code, 0, r.out);
+  assert.equal(git(down, "show", "HEAD:.gearbox-version"), "v2.1.0");
+  assert.equal(findFence(git(down, "show", "HEAD:AGENTS.md"), "protocol").version, "v2.1.0");
+  assert.equal(git(down, "status", "--porcelain"), "?? gearbox-update-report.md");
 });

@@ -544,17 +544,21 @@ function lineDiff(localContent, upstreamContent, max = 20) {
 }
 
 // Tool-owned workflow files (ADR-0051): gearbox-check.yml always matches the template;
-// gearbox-sync.yml's npx pin moves from @latest to the major version.
+// gearbox-sync.yml's npx pin moves from @latest to the major version. Compared with CRLF
+// normalized: a core.autocrlf / eol=crlf checkout has CRLF on disk but LF in the index, so a
+// byte compare plans a rewrite that stages nothing.
 function planWorkflowFixes(downDir) {
+  const lf = (text) => text.replace(/\r\n/g, "\n");
   const writes = [];
   const checkPath = ".github/workflows/gearbox-check.yml";
   const current = existsSync(join(downDir, checkPath)) ? readFileSync(join(downDir, checkPath), "utf8") : null;
-  if (current !== CHECK_YML) writes.push({ path: checkPath, text: CHECK_YML, why: current === null ? "added" : "refreshed to the template" });
+  if (current === null || lf(current) !== CHECK_YML)
+    writes.push({ path: checkPath, text: CHECK_YML, why: current === null ? "added" : "refreshed to the template" });
   const syncPath = ".github/workflows/gearbox-sync.yml";
   if (existsSync(join(downDir, syncPath))) {
     const s = readFileSync(join(downDir, syncPath), "utf8");
-    const pinned = pinSyncYml(s);
-    if (pinned !== s) writes.push({ path: syncPath, text: pinned, why: "npx pin @latest → @2" });
+    const pinned = pinSyncYml(s); // keeps the file's own line endings
+    if (lf(pinned) !== lf(s)) writes.push({ path: syncPath, text: pinned, why: "npx pin @latest → @2" });
   }
   return writes;
 }
@@ -640,13 +644,32 @@ function migrationReportLines() {
 
 // ============== git operations ==============
 
+// Stage `paths` and commit them; false (no commit) when staging changed nothing. A planned write
+// can already match the index once git normalizes it (a core.autocrlf / eol=crlf checkout keeps
+// LF blobs), and `git commit` would then fail halfway through the sequence.
+function commitPaths(paths, message) {
+  const spec = paths.join(" ");
+  run(`git add -- ${spec}`);
+  if (tryRun(`git diff --cached --quiet -- ${spec}`) !== null) return false; // exit 0: nothing staged
+  runWithStdin("git commit -F -", message);
+  return true;
+}
+
+// Returns `made`: one display line per commit that landed, in commit order (a commit skipped by
+// commitPaths lands in `unchanged` instead), so the printed list never claims a commit that isn't there.
 function gitOps({ downDir, assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites }) {
   if (!resume) run(`git checkout -b ${branchName}`);
+  const made = [];
+  const unchanged = [];
+  const commit = (paths, message, label) => {
+    const ok = commitPaths(paths, message);
+    (ok ? made : unchanged).push(...[].concat(label));
+    return ok;
+  };
 
-  for (const a of refreshes) {
-    run(`git add docs/gearbox-adr/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`);
-    runWithStdin(
-      "git commit -F -",
+  for (const a of refreshes)
+    commit(
+      [`docs/gearbox-adr/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`],
       `docs(adr): drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})
 
 Upstream gearbox ADR-${pad4(a.gearbox.num)} has been revised (hash drift); rerunning the
@@ -654,58 +677,55 @@ transform against upstream's latest content and overwriting, provenance stamp re
 sha256:${sha12(a.gearbox.content)}.
 by gearbox-update --refresh-drift (gearbox ADR-0024).
 Provenance: ${GEARBOX_GITHUB_BASE}/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`,
+      `drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})`,
     );
-  }
 
   for (const action of assignments) {
     const g = action.gearbox;
-    run(`git add docs/gearbox-adr/${pad4(g.num)}-${g.slug}.md`);
-    runWithStdin(
-      "git commit -F -",
+    commit(
+      [`docs/gearbox-adr/${pad4(g.num)}-${g.slug}.md`],
       `docs(adr): backfill gearbox ADR-${pad4(g.num)} (${g.slug})
 
 by gearbox-update tool.
 Provenance: ${GEARBOX_GITHUB_BASE}/${pad4(g.num)}-${g.slug}.md`,
+      `ADR-${pad4(g.num)}`,
     );
   }
 
-  if (supersedeResult && !supersedeResult.alreadyApplied) {
-    run("git add docs/gearbox-adr/0006-tiered-change-authority.md");
-    runWithStdin(
-      "git commit -F -",
+  if (supersedeResult && !supersedeResult.alreadyApplied)
+    commit(
+      ["docs/gearbox-adr/0006-tiered-change-authority.md"],
       `docs(adr): sync 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
 
 gearbox 0012 supersedes 0006; this commit syncs downstream 0006's status line to
 partially superseded. by gearbox-update tool.`,
+      "0006 status sync",
     );
-  }
 
   if (migration) commitMigration(migration, protocolVersion);
 
-  if (fenceWrites.length > 0) {
-    run(`git add ${fenceWrites.map((w) => w.file).join(" ")}`);
-    runWithStdin(
-      "git commit -F -",
+  if (fenceWrites.length > 0)
+    commit(
+      fenceWrites.map((w) => w.file),
       `docs(protocol): sync the gearbox fences → ${protocolVersion}
 
 ${fenceWrites.map((w) => `- ${w.file} gearbox:${w.name} ${w.from} → ${w.to}${w.state === "hand-edited" ? " (overwrote a hand edit, --force)" : ""}`).join("\n")}
 
 The fenced protocol is rewritten by tooling, never merged by hand (gearbox ADR-0050).
 by gearbox-update tool.`,
+      fenceWrites.map((w) => `${w.file} gearbox:${w.name} ${w.from} → ${w.to}`),
     );
-  }
 
-  if (workflowWrites.length > 0) {
-    run(`git add ${workflowWrites.map((w) => w.path).join(" ")}`);
-    runWithStdin(
-      "git commit -F -",
+  if (workflowWrites.length > 0)
+    commit(
+      workflowWrites.map((w) => w.path),
       `ci: gearbox workflow files (${workflowWrites.map((w) => `${w.path.split("/").pop()} ${w.why}`).join(", ")})
 
 gearbox-check.yml is tool-owned and runs the protocol check on every PR (gearbox ADR-0051);
 gearbox-sync.yml pins the major version instead of @latest.
 by gearbox-update tool.`,
+      workflowWrites.map((w) => `${w.path.split("/").pop()} ${w.why}`).join(", "),
     );
-  }
 
   // .gearbox-version = the protocol version (ADR-0050). Written even when nothing else
   // changed — the pre-v2 early return skipped this and stranded downstreams at v1.15.0.
@@ -714,21 +734,20 @@ by gearbox-update tool.`,
   const prev = existsSync(stampPath) ? readFileSync(stampPath, "utf8").trim() : null;
   if (prev !== protocolVersion) {
     writeFileSync(stampPath, protocolVersion + "\n");
-    run("git add .gearbox-version");
-    runWithStdin(
-      "git commit -F -",
+    stampUpdated = commit(
+      [".gearbox-version"],
       `chore: .gearbox-version → ${protocolVersion}
 
 The protocol version this repo now runs (gearbox ADR-0023, ADR-0050).
 by gearbox-update tool.`,
+      `.gearbox-version → ${protocolVersion} ${C.dim("(ADR-0023 stamp)")}`,
     );
-    stampUpdated = true;
   }
 
   let pushResult = null;
   if (!noPush)
     pushResult = tryRun(forceRedo ? `git push --force-with-lease -u origin ${branchName} 2>&1` : `git push -u origin ${branchName} 2>&1`);
-  return { pushResult, stampUpdated };
+  return { pushResult, stampUpdated, made, unchanged };
 }
 
 // Filled in by the v1 → v2 migration task.
@@ -982,34 +1001,12 @@ async function main() {
 
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   let pushResult = null;
-  let stampUpdated = false;
   try {
-    ({ pushResult, stampUpdated } = gitOps({ downDir, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites }));
-    for (const a of toRefresh) {
-      stdout.write(
-        `  ${C.green("✓ commit")} drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})\n`,
-      );
-    }
-    for (const action of toCopy) {
-      stdout.write(
-        `  ${C.green("✓ commit")} ADR-${pad4(action.gearbox.num)}\n`,
-      );
-    }
-    if (supersedeResult && !supersedeResult.alreadyApplied) {
-      stdout.write(`  ${C.green("✓ commit")} 0006 status sync\n`);
-    }
-    for (const w of fenceWrites) stdout.write(`  ${C.green("✓ commit")} ${w.file} gearbox:${w.name} ${w.from} → ${w.to}\n`);
-    if (workflowWrites.length > 0)
-      stdout.write(`  ${C.green("✓ commit")} ${workflowWrites.map((w) => `${w.path.split("/").pop()} ${w.why}`).join(", ")}\n`);
-    if (stampUpdated) {
-      stdout.write(
-        `  ${C.green("✓ commit")} .gearbox-version → ${protocolVersion} ${C.dim("(ADR-0023 stamp)")}\n`,
-      );
-    } else {
-      stdout.write(
-        `  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`,
-      );
-    }
+    const ops = gitOps({ downDir, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites });
+    pushResult = ops.pushResult;
+    for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
+    for (const u of ops.unchanged) stdout.write(`  ${C.dim(`· ${u} — already matched the index, nothing to commit`)}\n`);
+    if (!ops.stampUpdated) stdout.write(`  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`);
     if (noPush) stdout.write(`  ${C.dim("push skipped (--no-push)")}\n`);
     else if (pushResult) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
     else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     git push -u origin ${branchName}\n`);
