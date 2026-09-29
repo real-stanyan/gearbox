@@ -180,7 +180,7 @@ Reports per fence one of: `synced`, `behind` (untampered, upstream hash/version 
 
 - Runs the shared protocol-check assertions against the Gearbox repo itself, except `.gearbox-version`.
 - Upstream protocol fence ≤ 20480 bytes, keeping ≥ 12 KiB headroom for project content under 32 KiB.
-- **Version rule:** if either fence's content differs from the latest tag's (a v1 tag without fences counts as different), the marker version must equal `package.json`'s version. Skipped outside git or without tags.
+- **Version rule** (`scripts/lib/fence-release.js`, shared with `scripts/dev/rehash-fences.js`): if either fence's content differs from the latest tag's (the highest `vX.Y.Z` tag; a v1 tag without fences counts as different), both markers must carry `package.json`'s version, and that version must be semver-greater than the tag. If neither fence changed, the markers must carry the version in the tag's markers — not the tag's name, which a README-only release moves past it. Without tags (outside git, or a shallow clone that fetched none) the rule is skipped, except when `CI` is set: a tagless CI checkout fails ("CI checkout has no tags — use fetch-depth: 0 on actions/checkout"), since skipping there would silently switch the rule off. `rehash-fences.js` stamps the version this rule expects, and refuses — writing nothing — when content changed but `package.json` isn't bumped past the tag.
 - The existing assertions stay, adapted to the new anchors: required files, CLAUDE shell, `package.json` `files`, `Affects downstream`, CI == Gate sameness, never-ignored, no HANDOFF.
 - Assertion #9 (impact map) is removed.
 
