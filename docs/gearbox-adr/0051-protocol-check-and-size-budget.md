@@ -29,12 +29,12 @@ Every agent loads `AGENTS.md` whole at session start — one repo was paying abo
   - The workflow templates (`scripts/lib/workflows.js`: `ci.yml`, `gearbox-sync.yml`, `gearbox-check.yml`) use `actions/checkout@v5` and `actions/setup-node@v5` on Node 24, up from `@v4`. A downstream's existing `ci.yml` is its own and keeps its versions.
   - install writes a simple single-line Gate command into `ci.yml` as a plain `- run:` line. Anything else (several lines, `: `, ` #`, a leading `!`) goes into a `run: |` block, which YAML passes through verbatim.
   - The Gate contract now reads: CI's `gate` job runs the Gate command byte-for-byte; the `gearbox-check` job runs the protocol check; both green to merge and before shift-end.
-- **Upstream.** Gearbox's self-check adds the protocol-fence budget and ADR-0050's release rule. That rule compares against the latest tag, so with `CI` set a checkout without tags fails ("CI checkout has no tags — use fetch-depth: 0") instead of quietly skipping it. Gearbox's own `ci.yml` checks out with `fetch-depth: 0`.
+- **Upstream.** Gearbox's self-check adds the protocol-fence budget and ADR-0050's release rule. That rule compares against the latest tag, so with `CI` set a checkout without tags fails ("CI checkout has no tags — use fetch-depth: 0 on actions/checkout, or the fence version rule has no tag to compare against (ADR-0050)") instead of quietly skipping it. Gearbox's own `ci.yml` checks out with `fetch-depth: 0`.
 - **Budgets.**
   - `AGENTS.md` ≤ 32 KiB, matching the Codex default, so every tool sees the whole file.
   - Upstream, the protocol fence itself ≤ 20 KiB, leaving at least 12 KiB for project content.
   - "Where to find things" is one line per entry; longer maps go in `docs/INDEX.md`, which is not auto-loaded.
-- **Major pin.** `gearbox-sync.yml` runs `gearbox-agents@2` instead of `@latest`, and update rewrites existing copies. A new major version reaches downstreams only when a human changes the pin.
+- **Major pin.** `gearbox-sync.yml` runs `gearbox-agents@2` instead of `@latest`, and update rewrites existing copies (in a local run — see CI above). The scheduled Action never crosses a major on its own. The start-of-shift steps run the unpinned package on purpose, so a new major arrives as a backfill PR that a human merges under L1, or when a human changes the pin.
 - **Gate commands.** Gearbox's own gate becomes `node scripts/check-gearbox.js && node --test test/*.test.js`, and `npm test` runs the same: the tools now carry a `node:test` suite. The glob is shell-expanded so it works on Node 18–24 and never scans `.claude/worktrees/`.
 
 ## Consequences
