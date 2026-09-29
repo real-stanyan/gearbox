@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { migrateV1 } from "../scripts/lib/migrate-v1.js";
+import { migrateV1, MigrationError } from "../scripts/lib/migrate-v1.js";
 import { buildKnown, normalizeKnownLine, knownLineHash } from "../scripts/lib/v1-known.js";
 import { renderFence, findFence } from "../scripts/lib/fence.js";
 import { headings, sectionBody, splitByLevel } from "../scripts/lib/sections.js";
@@ -191,13 +191,44 @@ test("a code block added to a protocol subsection is carried whole, so its # com
   assert.ok(!headings(agentsMd).some((h) => h.title === "the whole workspace"), "a carried code line became a heading");
 });
 
-test("a code block left open in v1 is closed where it is carried, so it can't swallow the sections after it", () => {
-  // An unclosed fence runs to the end of the file, so everything after it is part of this block.
-  const open = nearTemplate.replace("- One agent sees a task through.", "- One agent sees a task through.\n- Example:\n\n  ~~~\n  some code");
-  const { agentsMd } = migrate(open);
-  assert.deepEqual(h2Titles(agentsMd), SKELETON_H2);
-  const ext = sectionBody(agentsMd, 2, "Local protocol extensions");
-  assert.match(ext, /  ~~~\n  some code\n[\s\S]*npx tsc --noEmit[\s\S]*\n  ~~~\n?$/);
+// --- Code fences that don't pair up: refused before anything is migrated ---
+
+const FENCE_FIX = "close the code fence (or escape the backticks), then rerun gearbox-agents update";
+const refusedAt = (file, line, also = "") => (e) =>
+  e instanceof MigrationError && e.file === file && e.line === line && e.message.startsWith(`${file} line ${line}: `) &&
+  e.message.endsWith(FENCE_FIX) && e.message.includes(also);
+
+test("a fence never closed is refused at its line — otherwise the index and later sections sink into a flagged subsection", () => {
+  const text = nearTemplate
+    .replace("### Division of labor", "### Branch hygiene (optional)\n\n- Prune merged branches.\n\n```bash\nnode scripts/gearbox-prune\n\n### Division of labor")
+    .replace("- `CONTEXT.md` — domain glossary", `- \`CONTEXT.md\` — domain glossary\n${"- `src/x.ts` — an index line\n".repeat(400)}\n## Deploy\n\n- Deploy on Tuesdays.`);
+  assert.throws(() => migrate(text), refusedAt("AGENTS.md", text.split("\n").lastIndexOf("```bash") + 1, "never closed"));
+  // a ~~~ fence the same way, and in CONTEXT.md
+  const tilde = nearTemplate.replace("- One agent sees a task through.", "- One agent sees a task through.\n- Example:\n\n  ~~~\n  some code");
+  assert.throws(() => migrate(tilde), refusedAt("AGENTS.md", tilde.split("\n").indexOf("  ~~~") + 1));
+  assert.throws(() => migrate(nearTemplate, `${CONTEXT_TEMPLATE}\n\`\`\`\nunclosed\n`), refusedAt("CONTEXT.md", CONTEXT_TEMPLATE.split("\n").length + 1));
+});
+
+test("a line opening with an inline ```span``` is refused at that line, before or after other blocks", () => {
+  const span = "```js``` files are linted on commit.";
+  for (const text of [
+    nearTemplate.replace("- One agent sees a task through.", `- One agent sees a task through.\n${span}`),
+    nearTemplate.replace("Single agent at a time; no routing.", `Single agent at a time; no routing.\n\n${span}`),
+  ])
+    assert.throws(() => migrate(text), refusedAt("AGENTS.md", text.split("\n").indexOf(span) + 1, "inline code span"));
+});
+
+test("a fence left open before another block is refused at its own line, not at the block that closes it by accident", () => {
+  const text = nearTemplate.replace("- One agent sees a task through.", "- One agent sees a task through.\n\n```sh\nnpm run lint");
+  const lines = text.split("\n");
+  assert.throws(() => migrate(text), refusedAt("AGENTS.md", lines.indexOf("```sh") + 1, `line ${lines.indexOf("```bash") + 1}`));
+});
+
+test("properly closed fences still migrate, a longer fence around shorter ones included", () => {
+  const block = "  ````markdown\n  ```bash\n  npm test\n  ```\n  ````";
+  const { agentsMd, report } = migrate(nearTemplate.replace("- One agent sees a task through.", `- One agent sees a task through.\n- A gate block looks like:\n\n${block}`));
+  assert.deepEqual(report.carried, [{ section: "While working", lines: 2 }]);
+  assert.ok(sectionBody(agentsMd, 2, "Local protocol extensions").includes(`- A gate block looks like:\n${block}`));
 });
 
 // --- No-silent-loss invariant (spec §4) ---

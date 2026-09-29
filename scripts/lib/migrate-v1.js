@@ -1,5 +1,6 @@
 // v1 → v2 migration (ADR-0050): turns a v1-layout AGENTS.md / CONTEXT.md — protocol text merged
-// by hand — into the fenced v2 layout. Pure: strings in, strings + report out.
+// by hand — into the fenced v2 layout. Pure: strings in, strings + report out, or a MigrationError
+// (nothing produced) when a file can't be split into sections safely.
 // Invariant: every line of the v1 protocol region that isn't known upstream text ends up in
 // `## Gate`, in `## Local protocol extensions`, or named in the report (flagged subsections).
 import { splitByLevel, baseTitle, fenceRun } from "./sections.js";
@@ -8,6 +9,17 @@ import {
 } from "./skeleton.js";
 import { AGENTS_MAX_BYTES } from "./protocol-check.js";
 import { normalizeKnownLine, knownLineHash, termKey, SEPARATOR_ROW } from "./v1-known.js";
+
+// Thrown before any output when a v1 file can't be migrated safely; `update` catches it and stops
+// with the message, having written nothing. `file` and `line` (1-based) name what to fix.
+export class MigrationError extends Error {
+  constructor(message, { file = null, line = null } = {}) {
+    super(message);
+    this.name = "MigrationError";
+    this.file = file;
+    this.line = line;
+  }
+}
 
 // v1 `###` headings (baseTitle, lowercased) → canonical section. Exact match only.
 const ALIASES = new Map([
@@ -99,9 +111,32 @@ function fencedBlocks(lines) {
   return blocks;
 }
 
+const FENCE_FIX = "close the code fence (or escape the backticks), then rerun gearbox-agents update";
+
+// The migration splits a file into sections the way sections.js pairs code fences. Where that
+// pairing can't be trusted — a fence never closed, an inline ```span``` read as an opener, a fence
+// "closed" by a line with a language tag — the headings after it read as code, and whole sections
+// (the index, later `##` sections) sink into one subsection, possibly a flagged one. Refuse instead.
+function assertFencesPair(text, file) {
+  const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
+  for (const b of fencedBlocks(lines)) {
+    const opener = lines[b.start].trim();
+    let why = null;
+    if (b.open.char === "`" && opener.slice(b.open.len).includes("`"))
+      why = `"${opener.length > 60 ? `${opener.slice(0, 57)}…` : opener}" starts with an inline code span, which reads as an opening code fence`;
+    else if (!b.closed) why = "this code fence is never closed, so the rest of the file would read as code";
+    else {
+      const closer = lines[b.end].trim();
+      if (closer.slice(fenceRun(lines[b.end]).len).trim())
+        why = `this code fence is never closed — "${closer}" on line ${b.end + 1} closes it only by accident (a closing fence has no language tag)`;
+    }
+    if (why) throw new MigrationError(`${file} line ${b.start + 1}: ${why} — ${FENCE_FIX}`, { file, line: b.start + 1 });
+  }
+}
+
 // What of a v1 protocol subsection must survive, in order: each unknown line, and each code block
-// holding one — whole, so the code keeps its fence and a `# comment` in it can't become a heading
-// (a block left open is closed). `unknown` counts the unknown lines: the > 50% rule and the report.
+// holding one — whole, so the code keeps its fence and a `# comment` in it can't become a heading.
+// `unknown` counts the unknown lines: the > 50% rule and the report.
 function carry(lines, isKnown) {
   const isUnknown = (l) => !isStructural(l) && !isKnown(l);
   const blocks = new Map(fencedBlocks(lines).map((b) => [b.start, b]));
@@ -120,7 +155,6 @@ function carry(lines, isKnown) {
     const n = block.filter(isUnknown).length;
     if (n) {
       out.push(...block);
-      if (!b.closed) out.push(lines[b.start].match(/^ */)[0] + b.open.char.repeat(b.open.len));
       unknown += n;
     }
     i = b.end;
@@ -253,6 +287,8 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
 }
 
 export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryBlock }) {
+  assertFencesPair(agentsMd, "AGENTS.md");
+  assertFencesPair(contextMd, "CONTEXT.md");
   const report = {
     maintainer: null, gateMoved: false, gateNotes: 0, divisionOfLabor: "default",
     carried: [], moved: [], flagged: [], extraSections: [], indexMoved: null, oversize: null,
