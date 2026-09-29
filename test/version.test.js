@@ -143,3 +143,40 @@ test("a hand-edited fence names its own home: protocol rules vs glossary terms",
   assert.match(r.out, /CONTEXT\.md gearbox:glossary hand-edited — move local terms to "## Project terms", then npx gearbox-agents update --force/);
   assert.doesNotMatch(r.out, /fully synced/);
 });
+
+// update refuses a downgrade in EVERY fence state — "--force overrides hand edits, never a
+// downgrade" — so a fence that is hand-edited AND newer than upstream's must not be told to
+// "update --force", least of all next to a row saying NEWER.
+test("a hand-edited fence that is also newer than upstream's is told to refresh upstream, not to force an update", () => {
+  const editProtocol = (d) => write(d, "AGENTS.md", read(d, "AGENTS.md").replace("Commit in small steps.", "Commit whenever."));
+  const editGlossary = (d) => write(d, "CONTEXT.md", read(d, "CONTEXT.md").replace("a baton passed at merge", "edited by hand"));
+  const newer = () => makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- new` });
+  const stale = makeUpstream(); // v2.0.0
+
+  // only the protocol fence is hand-edited; the glossary row is plainly NEWER
+  const one = installed(newer());
+  editProtocol(one);
+  commitAll(one, "hand edit");
+  const r = version(one, stale);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol hand-edited, and NEWER than upstream \(v2\.1\.0 > v2\.0\.0\) — refresh your upstream first; update refuses to downgrade/);
+  assert.match(r.out, /CONTEXT\.md gearbox:glossary is NEWER than upstream \(v2\.1\.0 > v2\.0\.0\)/);
+  assert.doesNotMatch(r.out, /update --force/);
+  assert.doesNotMatch(r.out, /fully synced/);
+  // and the refusal is real: update won't do it even with --force
+  const u = runTool("gearbox-update", ["--no-push", "--force"], { cwd: one, env: { GEARBOX_DIR: stale } });
+  assert.equal(u.code, 1, u.out);
+  assert.match(u.out, /older than this repo/);
+
+  // both fences hand-edited: no row reads "ahead", yet the stamp advice must still not say "run update"
+  const both = installed(newer());
+  editProtocol(both);
+  editGlossary(both);
+  const b = version(both, stale);
+  assert.equal(b.code, 0, b.out);
+  assert.match(b.out, /CONTEXT\.md gearbox:glossary hand-edited, and NEWER than upstream \(v2\.1\.0 > v2\.0\.0\)/);
+  assert.match(b.out, /\.gearbox-version v2\.1\.0 ≠ protocol v2\.0\.0 — your upstream gearbox is older; refresh it, don't run update/);
+  assert.doesNotMatch(b.out, /update --force/);
+  assert.doesNotMatch(b.out, /run npx gearbox-agents update/);
+  assert.doesNotMatch(b.out, /fully synced/);
+});

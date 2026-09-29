@@ -37,7 +37,9 @@
 // are each reported as synced / behind / NEWER than upstream / hand-edited / v1 layout (no
 // fence). fenceStatus calls any version or hash difference "behind" — it has no direction — so
 // a local fence with a semver-greater version than upstream's (typically a stale upstream
-// checkout, and `update` refuses to downgrade) is shown as NEWER, never as "behind".
+// checkout) is shown as NEWER, never as "behind". `update` refuses to downgrade in every fence
+// state, so that holds for a hand-edited fence too ("hand-edited, and NEWER"), and neither row
+// nor stamp advice then says to run `update`.
 // "Fully synced" requires both fences synced, no missing or revised ADR, AND `.gearbox-version`
 // equal to upstream's protocol version; it used to count ADR files only, and could print
 // "behind by patch" and "fully synced" in the same run. A size line warns when AGENTS.md is
@@ -211,13 +213,16 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
   } catch (e) {
     st = { state: "error", message: e.message };
   }
-  // fenceStatus's "behind" has no direction. A local fence with the greater version is the
-  // usual sign of a stale upstream checkout (`update` would refuse to downgrade it), so it
-  // gets its own presentation state instead of advice to run a backfill.
-  if (st.state === "behind" && semverGreater(st.local.version, st.upstream.version)) st = { ...st, state: "ahead" };
+  // A local fence with the greater version is the usual sign of a stale upstream checkout, and
+  // `update` refuses to downgrade it in EVERY state (--force overrides hand edits, never a
+  // downgrade) — so "newer" is judged on the versions alone, for every row that has both fences.
+  // fenceStatus's "behind" has no direction; a newer one gets its own presentation state instead
+  // of advice to run a backfill.
+  const newer = Boolean(st.local && st.upstream && semverGreater(st.local.version, st.upstream.version));
+  if (st.state === "behind" && newer) st = { ...st, state: "ahead" };
   if (name === "protocol" && st.upstream) upstreamProtocolVersion = st.upstream.version;
   if (st.state !== "synced") fencesSynced = false;
-  fenceRows.push({ file, name, st });
+  fenceRows.push({ file, name, st, newer });
 }
 // The protocol version is the fence's (ADR-0050); fall back to the tag for a pre-v2 upstream.
 if (upstreamProtocolVersion) upstreamVersion = upstreamProtocolVersion;
@@ -226,7 +231,10 @@ const FENCE_TEXT = {
   synced: (r) => `${GREEN}✅ ${r.file} gearbox:${r.name} synced (${r.st.local.version})${RESET}`,
   behind: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} behind (${r.st.local.version} → ${r.st.upstream.version}) — run npx gearbox-agents update${RESET}`,
   ahead: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} is NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — your upstream gearbox is older; refresh it (git pull / npx -y gearbox-agents@2), don't run update${RESET}`,
-  "hand-edited": (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, then npx gearbox-agents update --force${RESET}`,
+  "hand-edited": (r) =>
+    r.newer
+      ? `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited, and NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — refresh your upstream first; update refuses to downgrade${RESET}`
+      : `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, then npx gearbox-agents update --force${RESET}`,
   missing: (r) => `${YELLOW}⚠️  ${r.file} has no gearbox:${r.name} fence (v1 layout) — run npx gearbox-agents update to migrate (ADR-0050)${RESET}`,
   error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${RESET}`,
 };
@@ -371,9 +379,9 @@ if (missingCount === 0 && driftCount === 0 && fencesSynced && stampOk) {
 } else {
   if (!fencesSynced) console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  protocol fences not synced (see fence: lines above)${RESET}`);
   if (!stampOk) {
-    // `update` rewrites a stale stamp — unless a NEWER fence makes it refuse to downgrade (an
-    // ahead fence: lines above), which a stamp typo on its own would not
-    const fix = fenceRows.some((r) => r.st.state === "ahead")
+    // `update` rewrites a stale stamp — unless a NEWER fence (any state, hand-edited included)
+    // makes it refuse to downgrade, which a stamp typo on its own would not
+    const fix = fenceRows.some((r) => r.newer)
       ? "your upstream gearbox is older; refresh it, don't run update"
       : "run npx gearbox-agents update";
     console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  .gearbox-version ${localVersion || "(missing)"} ≠ protocol ${upstreamVersion} — ${fix}${RESET}`);
