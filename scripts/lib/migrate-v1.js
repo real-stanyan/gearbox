@@ -249,6 +249,7 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
   const head = trimBlank(chunks[0].lines).join("\n") || `# Domain context\n\n${CONTEXT_INTRO}`;
   const kept = [];
   let renamed = false;
+  let hasProjectTerms = false;
   for (const c of chunks.slice(1)) {
     // Protocol-term rows leave only a v1 template section (e.g. "## Terms"): the glossary fence
     // carries them now. A project's own table may use the same word for something else ("claim",
@@ -290,10 +291,13 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
       heading = "## Project terms";
       renamed = true;
     }
+    if (heading === "## Project terms" || c.title === "Project terms") hasProjectTerms = true;
     report.context.keptRows += rows;
     kept.push([heading, "", ...trimBlank(cleaned)].join("\n"));
   }
-  return buildContextMd({ head, glossaryBlock, projectTerms: kept.length ? kept.join("\n\n") : PROJECT_TERMS });
+  // The glossary marker sends new project terms to "## Project terms", so there always is one.
+  if (!hasProjectTerms) kept.push(PROJECT_TERMS);
+  return buildContextMd({ head, glossaryBlock, projectTerms: kept.join("\n\n") });
 }
 
 export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryBlock }) {

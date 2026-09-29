@@ -5,6 +5,7 @@ import { buildKnown, normalizeKnownLine, knownLineHash } from "../scripts/lib/v1
 import { renderFence, findFence } from "../scripts/lib/fence.js";
 import { headings, sectionBody, splitByLevel } from "../scripts/lib/sections.js";
 import { gateCommand } from "../scripts/lib/protocol-check.js";
+import { PROJECT_TERMS } from "../scripts/lib/skeleton.js";
 
 const TEMPLATE = [
   "# example-project", "",
@@ -122,6 +123,22 @@ test("CONTEXT.md: a project table's row named like a protocol term is kept and r
   assert.ok(contextMd.includes(`## Airport\n\n${table("| gate | where you board | — |")}`));
   assert.doesNotMatch(contextMd, /self-assignment|the command/); // the template table still loses its protocol rows
   assert.deepEqual(report.context, { removedTerms: 3, editedTerms: [], keptRows: 3, collisions: ["claim", "gate"] });
+});
+
+test("CONTEXT.md always ends up with a ## Project terms section, where the glossary marker sends new terms", () => {
+  const table = "| Term | Definition | Notes |\n|---|---|---|\n| star | loyalty point | — |";
+  for (const ctx of [
+    `${CONTEXT_TEMPLATE}\n## Shop terms\n\n${table}\n`, // project rows under a project heading
+    CONTEXT_TEMPLATE.replace("| gate | the command | — |", "| gate | the command | — |\n\nOur own terms live in the wiki."), // only prose left under ## Terms
+  ]) {
+    const { contextMd } = migrate(nearTemplate, ctx);
+    assert.ok(contextMd.endsWith(`\n\n${PROJECT_TERMS}\n`), contextMd);
+    assert.equal(h2Titles(contextMd).filter((t) => t === "Project terms").length, 1);
+  }
+  // a file that already has the section gets no second one
+  const { contextMd } = migrate(nearTemplate, `${CONTEXT_TEMPLATE}\n## Project terms\n\n${table}\n`);
+  assert.equal(h2Titles(contextMd).filter((t) => t === "Project terms").length, 1);
+  assert.ok(contextMd.includes(`## Project terms\n\n${table}`));
 });
 
 test("no Working agreement at all: skeleton with placeholders, gate reported missing", () => {
