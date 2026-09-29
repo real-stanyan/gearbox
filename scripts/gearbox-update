@@ -528,11 +528,18 @@ function planFences(downDir) {
       );
     }
     const { local, upstream } = f.status;
-    if (local && semverGreater(local.version, upstream.version))
+    if (local && semverGreater(local.version, upstream.version)) {
+      // Under npx, GEARBOX_DIR is the npm package itself (bin/gearbox.js) — no .git to pull.
+      const refresh = UPSTREAM_URL
+        ? `the .gearbox-upstream remote (${UPSTREAM_URL}) is behind — point it at a current Gearbox, or run npx -y gearbox-agents@2 update`
+        : existsSync(join(GEARBOX_DIR, ".git"))
+          ? `refresh the upstream checkout: git -C "${GEARBOX_DIR}" pull — or run npx -y gearbox-agents@2 update`
+          : `this gearbox-agents package (${GEARBOX_DIR}) is older than this repo — run npx -y gearbox-agents@2 update again once ${local.version} or later is published`;
       die(
         `Upstream gearbox (${upstream.version}) is older than this repo's protocol (${local.version} in ${f.file}) — refusing to downgrade`,
-        `${UPSTREAM_URL ? `the .gearbox-upstream remote (${UPSTREAM_URL}) is behind — point it at a current Gearbox` : `refresh the upstream checkout: git -C "${GEARBOX_DIR}" pull`}, or run npx -y gearbox-agents@2 update\n(--force only re-applies over hand edits; it never downgrades a fence)`,
+        `${refresh}\n(--force only re-applies over hand edits; it never downgrades a fence)`,
       );
+    }
   }
   return { layout: files[0].status.state === "missing" ? "v1" : "v2", files, protocolVersion: files[0].status.upstream.version };
 }

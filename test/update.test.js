@@ -116,6 +116,21 @@ test("older upstream: refused, even with --force — a fence is never downgraded
   assert.equal(read(down, ".gearbox-version").trim(), "v2.1.0");
 });
 
+// Under npx, GEARBOX_DIR is the npm package (no .git): "git -C <dir> pull" can't work there.
+test("downgrade hint: a package upstream points at npx, a git checkout at pull", () => {
+  const down = v2Downstream(makeUpstream({ version: "v2.1.0" }));
+  const stale = makeUpstream(); // v2.0.0, no .git — the shape of the npm package
+  const pkg = update(down, stale);
+  assert.equal(pkg.code, 1, pkg.out);
+  assert.match(pkg.out, /gearbox-agents package .* is older than this repo/);
+  assert.match(pkg.out, /npx -y gearbox-agents@2 update again once v2\.1\.0 or later is published/);
+  assert.doesNotMatch(pkg.out, /git -C/);
+  gitInit(stale);
+  const checkout = update(down, stale);
+  assert.equal(checkout.code, 1, checkout.out);
+  assert.ok(checkout.out.includes(`git -C "${stale}" pull`), checkout.out);
+});
+
 // core.autocrlf=true: a byte compare of the CRLF gearbox-check.yml on disk planned a phantom
 // refresh; `git add` staged nothing and `git commit` failed halfway through the sequence.
 test("CRLF checkout, synced: nothing to do, no branch", () => {
