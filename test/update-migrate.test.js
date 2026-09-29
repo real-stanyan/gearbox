@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, cpSync, existsSync, chmodSync } from "node:fs";
+import { readFileSync, cpSync, existsSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { findFence } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
@@ -34,6 +34,13 @@ const update = (down, up, args = []) => runTool("gearbox-update", ["--no-push", 
 // Enough "Where to find things" lines to push the assembled AGENTS.md past 32 KiB.
 const BIG_INDEX = Array.from({ length: 1200 }, (_, i) => `- \`src/module-${i}.ts\` — module ${i}`).join("\n");
 const INDEX_PLACEHOLDER = "- <other module documentation directories, e.g. docs/modules/>";
+// "On ending a shift" rewritten in the project's own words: > 50% unknown lines, so the migration
+// flags it for manual review instead of carrying it — the report is the only place it's named.
+const rewriteShiftEnd = (text) =>
+  text.replace(
+    /(### On ending a shift \(shift-end rules\)\n\n)[\s\S]*?(\n\n### Parallel shifts)/,
+    (_, head, tail) => `${head}1. Gate green, then push.\n2. Post a summary in the team channel.\n3. Close the lane's issues.${tail}`,
+  );
 
 test("update migrates a real v1.15.2 install to the v2 layout on a backfill branch", () => {
   const up = makeUpstream();
@@ -84,13 +91,9 @@ test("a v1 AGENTS.md whose code fences don't pair up is refused at its line, bef
 
 test("the migration report lists what moved where and every item that needs a human", () => {
   const up = makeUpstream();
-  const agents = AGENTS_V1
+  const agents = rewriteShiftEnd(AGENTS_V1)
     .replace(WHILE_WORKING, `${WHILE_WORKING}\n- Search closed issues before claiming a task (project ADR-0148)`)
     .replace("### PR disposition (merge rules)", "### Worktree discipline (project ADR-0149)\n\n- One worktree per lane.\n\n### PR disposition (merge rules)")
-    .replace(
-      /(### On ending a shift \(shift-end rules\)\n\n)[\s\S]*?(\n\n### Parallel shifts)/,
-      (_, head, tail) => `${head}1. Gate green, then push.\n2. Post a summary in the team channel.\n3. Close the lane's issues.${tail}`,
-    )
     .replace("## Where to find things", "## Runbook\n\n- Restart the worker with `make restart`.\n\n## Where to find things");
   const context = CONTEXT_V1
     .replace(/^\| handoff \| .*$/m, "| handoff | a baton, passed only at merge in this repo | — |")
@@ -155,19 +158,35 @@ test("a moved index gets a new docs/INDEX.md; AGENTS.md still over budget is a T
   assert.match(report, /## Protocol check on this branch\n\n❌ \d+ problem\(s\)/);
 });
 
-// validateContext never sweeps untracked files into a commit, and neither may the recovery hint.
-test("a failed migration commit names the migration's paths to finish by hand", () => {
+// A failed git operation must not lose the report: it's the only place a flagged (uncarried) v1
+// subsection is named (spec §4). The recovery hint names only the tool's own paths — validateContext
+// never sweeps untracked files into a commit, and neither may the hint.
+test("a failed migration commit keeps the report and names the migration's paths to finish by hand", () => {
   const up = makeUpstream();
-  const down = v1Downstream(up);
+  const agents = rewriteShiftEnd(AGENTS_V1);
+  const down = v1Downstream(up, { agents });
   write(down, ".git/hooks/pre-commit", "#!/bin/sh\nexit 1\n");
   chmodSync(join(down, ".git/hooks/pre-commit"), 0o755);
   git(down, "config", "core.hooksPath", join(down, ".git/hooks")); // beats any global hooksPath
   const r = update(down, up);
   assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /flagged for manual review[^\n]*On ending a shift/);
   assert.match(r.out, /git operation failed/);
-  assert.match(r.out, /git add -- AGENTS\.md CONTEXT\.md \.github\/workflows\/gearbox-check\.yml \.github\/workflows\/gearbox-sync\.yml \.gearbox-version\n/);
+  const own = "AGENTS.md CONTEXT.md .github/workflows/gearbox-check.yml .github/workflows/gearbox-sync.yml .gearbox-version";
+  assert.ok(r.out.includes(`git add -- ${own}\n`), r.out);
+  assert.match(r.out, /--force-redo/);
   assert.match(git(down, "rev-parse", "--abbrev-ref", "HEAD"), /^docs\/gearbox-backfill-/);
-  assert.equal(git(down, "show", "main:AGENTS.md"), AGENTS_V1.trim());
+  assert.equal(git(down, "show", "main:AGENTS.md"), agents.trim());
+  assert.match(read(down, "gearbox-update-report.md"), /- \[ \] On ending a shift — 3\/3 unknown lines/);
+
+  // Finished by hand, a rerun has nothing to do — and the report still names the flagged subsection.
+  rmSync(join(down, ".git/hooks/pre-commit"));
+  git(down, "add", "--", ...own.split(" "));
+  git(down, "commit", "-q", "-m", "finish the migration by hand");
+  const again = update(down, up);
+  assert.equal(again.code, 0, again.out);
+  assert.match(again.out, /Nothing to do/);
+  assert.match(read(down, "gearbox-update-report.md"), /- \[ \] On ending a shift — 3\/3 unknown lines/);
 });
 
 // The mirror of the v2 path's "CONTEXT.md has no fence while AGENTS.md has one": migrating

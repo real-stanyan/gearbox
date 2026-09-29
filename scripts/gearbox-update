@@ -1003,9 +1003,14 @@ async function main() {
     stdout.write(
       C.yellow("⚠️  v1 AGENTS.md layout — migrating to the Gearbox v2 layout (ADR-0050)\n") +
         C.dim(
-          `  ${r.carried.reduce((n, c) => n + c.lines, 0)} local line(s) carried · ${r.moved.length} subsection(s) moved · ${r.flagged.length} flagged for review${migration.index ? ` · index → ${migration.index.path}` : ""} — details in the report\n\n`,
+          `  ${r.carried.reduce((n, c) => n + c.lines, 0)} local line(s) carried · ${r.moved.length} subsection(s) moved · ${r.flagged.length} flagged for review${migration.index ? ` · index → ${migration.index.path}` : ""} — details in the report\n`,
         ),
     );
+    // Named here too, not only in the report: a flagged subsection isn't carried anywhere.
+    if (r.moved.length) stdout.write(C.dim(`  moved into Local protocol extensions: ${r.moved.join(" · ")}\n`));
+    if (r.flagged.length)
+      stdout.write(C.yellow(`  ⚠️  flagged for manual review (not carried): ${r.flagged.map((f) => `${f.section} (${f.unknown}/${f.total} unknown lines)`).join(" · ")}\n`));
+    stdout.write("\n");
   }
   const workflowWrites = planWorkflowFixes(downDir);
 
@@ -1187,11 +1192,27 @@ async function main() {
   }
   if (!stampCurrent) writeFileSync(stampPath, protocolVersion + "\n");
 
-  // git operations
   const reportDate = new Date().toISOString().slice(0, 10);
   // --force-redo rebuilt the branch → overwrite the remote (ADR-0025); every push hint uses this too
   const pushCmd = `git push ${forceRedo ? "--force-with-lease " : ""}-u origin ${branchName}`;
 
+  // The report (the PR body) is written before any commit: a failed git operation below must not
+  // lose it — it's the only place a flagged (uncarried) v1 subsection is named (spec §4). Its
+  // protocol check reads the working tree, which committing doesn't change; once gitOps has run,
+  // only the push line can differ, so the same inputs regenerate it.
+  const checkResult = runProtocolChecks(downDir);
+  const reportPath = join(downDir, "gearbox-update-report.md");
+  const writeReport = (pushed) =>
+    writeFileSync(
+      reportPath,
+      generateReport({
+        downstreamRepo: downRepo, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, reportDate, baseBranch,
+        fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed, pushCmd,
+      }),
+    );
+  writeReport(false);
+
+  // git operations
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   let pushResult = null;
   try {
@@ -1214,19 +1235,20 @@ async function main() {
     ];
     die(
       `git operation failed: ${e.message}`,
-      `the files are written on ${branchName} but not all committed — finish by hand:\n  git status\n  git add -- ${own.join(" ")}\n  git commit\n  ${pushCmd}`,
+      [
+        `the files are written on ${branchName} but not all committed; gearbox-update-report.md (the PR body) is written. Finish by hand:`,
+        "  git status",
+        `  git add -- ${own.join(" ")}`,
+        "  git commit",
+        `  ${pushCmd}`,
+        "or start over — --force-redo deletes and rebuilds today's branch, once this run's writes are gone:",
+        `  git checkout -f ${branch} && git clean -fd -- ${own.join(" ")}`,
+        "  gearbox-update --force-redo",
+      ].join("\n"),
     );
   }
   stdout.write("\n");
-
-  // generate the report
-  const checkResult = runProtocolChecks(downDir);
-  const report = generateReport({
-    downstreamRepo: downRepo, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, reportDate, baseBranch,
-    fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed: Boolean(pushResult), pushCmd,
-  });
-  const reportPath = join(downDir, "gearbox-update-report.md");
-  writeFileSync(reportPath, report);
+  if (pushResult) writeReport(true);
 
   stdout.write(C.green(`✓ report: ${reportPath.replace(downDir + "/", "")}\n`));
   stdout.write(
