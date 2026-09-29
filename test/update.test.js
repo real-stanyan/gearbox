@@ -76,3 +76,18 @@ test("hand-edited fence: refused without --force, re-applied with it", () => {
   assert.match(read(down, "AGENTS.md"), /Commit in small steps\./);
   assert.match(read(down, "gearbox-update-report.md"), /overwrote a hand edit/);
 });
+
+// fenceStatus says "behind" whenever the versions differ, in either direction; a stale local
+// ~/Github/gearbox checkout must not silently downgrade a downstream's fences.
+test("older upstream: refused, even with --force — a fence is never downgraded", () => {
+  const down = v2Downstream(makeUpstream({ version: "v2.1.0" }));
+  const stale = makeUpstream(); // v2.0.0
+  for (const args of [[], ["--force"]]) {
+    const r = update(down, stale, args);
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /older than this repo/);
+    assert.equal(git(down, "branch", "--list", "docs/gearbox-backfill-*"), "");
+  }
+  assert.equal(findFence(read(down, "AGENTS.md"), "protocol").version, "v2.1.0");
+  assert.equal(read(down, ".gearbox-version").trim(), "v2.1.0");
+});

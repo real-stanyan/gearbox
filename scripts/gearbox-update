@@ -58,6 +58,7 @@ import { join, dirname } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 import * as tui from "./lib/tui.js";
 import { fenceStatus, replaceFence } from "./lib/fence.js";
+import { semverGreater } from "./lib/fence-release.js";
 import { CHECK_YML, pinSyncYml } from "./lib/workflows.js";
 import { runProtocolChecks } from "./lib/protocol-check.js";
 
@@ -504,7 +505,9 @@ function readOr(base, rel) {
 }
 
 // Upstream fences + this repo's fence states. Dies when upstream predates fences or a marker
-// is malformed — both need a human, not a guess.
+// is malformed — both need a human, not a guess — and when upstream is OLDER than this repo:
+// fenceStatus says "behind" whenever the versions differ, so a stale ~/Github/gearbox checkout
+// would otherwise downgrade the fences. --force overrides hand edits, never a downgrade.
 function planFences(downDir) {
   const files = [
     { file: "AGENTS.md", name: "protocol", text: readOr(downDir, "AGENTS.md"), upText: readOr(GEARBOX_DIR, "AGENTS.md") },
@@ -519,6 +522,12 @@ function planFences(downDir) {
         "an upstream without fences predates Gearbox v2 — refresh the gearbox package/checkout; a malformed local marker must be fixed by hand",
       );
     }
+    const { local, upstream } = f.status;
+    if (local && semverGreater(local.version, upstream.version))
+      die(
+        `Upstream gearbox (${upstream.version}) is older than this repo's protocol (${local.version} in ${f.file}) — refusing to downgrade`,
+        `${UPSTREAM_URL ? `the .gearbox-upstream remote (${UPSTREAM_URL}) is behind — point it at a current Gearbox` : `refresh the upstream checkout: git -C "${GEARBOX_DIR}" pull`}, or run npx -y gearbox-agents@2 update\n(--force only re-applies over hand edits; it never downgrades a fence)`,
+      );
   }
   return { layout: files[0].status.state === "missing" ? "v1" : "v2", files, protocolVersion: files[0].status.upstream.version };
 }
