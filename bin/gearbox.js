@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // gearbox — npx dispatcher (ADR-0028).
 //
-// Lets strangers use the tool family with zero config: `npx gearbox-agents <install|version|update>`.
+// Lets strangers use the tool family with zero config: `npx gearbox-agents <install|version|update|check|prune>`.
 // The npm package ships its own upstream snapshot (bundles AGENTS.md / CONTEXT.md /
 // docs/gearbox-adr/, see package.json "files"); the dispatcher points GEARBOX_DIR at the
 // package root → the three tools reuse the existing local-path logic, and the npx path never
@@ -12,7 +12,7 @@
 // package.json via an env override, GEARBOX_UPSTREAM_VERSION, passed to the tools (tools prefer
 // it, falling back to the git tag otherwise).
 //
-// Subcommand routing: all four subcommands are node scripts (version was bash until ADR-0035
+// Subcommand routing: all five subcommands are node scripts (version was bash until ADR-0035
 // rewrote it in node to share the TUI layer). Args are passed through as-is. Exit codes are
 // passed through.
 
@@ -37,6 +37,7 @@ const ROUTES = {
   install: { cmd: "node", file: "scripts/gearbox-install" },
   version: { cmd: "node", file: "scripts/gearbox-version" }, // bash → node in ADR-0035 (shared TUI layer)
   update: { cmd: "node", file: "scripts/gearbox-update" },
+  check: { cmd: "node", file: "scripts/gearbox-check" }, // offline protocol check (ADR-0051)
   prune: { cmd: "node", file: "scripts/gearbox-prune" },
 };
 
@@ -48,6 +49,7 @@ if (!sub || sub === "-h" || sub === "--help") {
       "  install   lay down the Gearbox skeleton in the current (or a given) directory\n" +
       "  version   check which upstream version / which ADRs the current downstream repo is synced to\n" +
       "  update    backfill: copy ADRs missing from the current downstream repo, from upstream\n" +
+      "  check     offline protocol check: fences intact, AGENTS.md ≤ 32 KiB, CI == Gate (ADR-0051)\n" +
       "  prune     branch hygiene: clean up merged/stale branches (dry-run by default, ADR-0030)\n\n" +
       "example: npx gearbox-agents install --maintainer you --gate \"npm test\"\n",
   );
