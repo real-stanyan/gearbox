@@ -2,13 +2,13 @@
 
 Domain glossary. All agents' understanding of domain terms is grounded here; code naming stays consistent with the terms defined here.
 
-<!-- gearbox:glossary v2.0.0 sha256:fff2054e6480; managed by gearbox-agents, do not edit by hand; project terms go in "## Project terms" -->
+<!-- gearbox:glossary v2.0.0 sha256:83ed9a6f206c; managed by gearbox-agents, do not edit by hand; project terms go in "## Project terms" -->
 ## Protocol terms
 
 | Term | Definition | Notes |
 |---|---|---|
 | single source of truth | Rules are written in exactly one place (`AGENTS.md`); other agent configs (e.g. `CLAUDE.md`) only `@`-reference it, never copy it | Prevents rules from drifting across multiple locations |
-| empty-shell contract | `CLAUDE.md`'s content is exactly one line, `@AGENTS.md` — a physical guarantee that Claude Code and Z Code read the same rules | The structural self-check script asserts this |
+| empty-shell contract | `CLAUDE.md`'s content is exactly one line, `@AGENTS.md` — a physical guarantee that Claude Code and Z Code read the same rules | The protocol check (`gearbox-agents check`) asserts this |
 | handoff | One agent passes a task to another agent — **this only happens the moment an issue closes / a PR merges**, never mid-task | It isn't a handoff just because things were "explained clearly" — it's a handoff only when the issue closes |
 | protocol gap | A question the repo's persistent artifacts (AGENTS.md / ADR / CONTEXT.md) can't answer | Hitting one requires opening an issue — silent judgment calls are not allowed |
 | The three issue roles | The three non-overlapping uses of issues/PRs in this protocol: **Task** / **Memory** (handoff memory) / **Protocol gap** | Every issue should fall into exactly one of these — see AGENTS.md |
@@ -22,7 +22,7 @@ Domain glossary. All agents' understanding of domain terms is grounded here; cod
 | claim | Self-assignment on a Task issue (`gh issue edit <N> --add-assignee @me`), first wins; a "claiming this" comment where assignment isn't possible. An open frontier task with no assignee and no claim comment is free | ADR-0047; single-human repos may skip — the value begins at the second human |
 | lane | One shift plus the tasks it has claimed; parallel shifts are allowed iff lanes are disjoint (each works only on frontier tasks it claimed) | ADR-0048; handoff issues are per-lane |
 | context-only handoff | A handoff issue whose lane finished with nothing to transfer — kept for its Memory comment, closed by its first reader after reading | ADR-0048 |
-| downstream | A project that copies this Gearbox protocol and then evolves independently; sync status is self-checked downstream via `gearbox-version` (pull-primary, ADR-0026 — the upstream fleet dashboard was retired in ADR-0033) | See ADR-0026 |
+| downstream | A project that runs the Gearbox protocol: its fences come from upstream releases (`gearbox-agents update`); its own rules live in project sections and `## Local protocol extensions`. Sync status is self-checked via `gearbox-version` (pull-primary, ADR-0026 — the upstream fleet dashboard was retired in ADR-0033) | See ADR-0026; fences per ADR-0050 |
 | backfill | Downstream pulls Gearbox protocol improvements; **pull-triggered** — downstream runs `gearbox-version` at the start of a shift and `gearbox-update` if it's behind (or the weekly `gearbox-sync` Action does), which rewrites both fences and copies new protocol ADRs on a backfill branch; it's alignment, not enforcement — merging the PR is the downstream's L1 decision | ADR-0013 → ADR-0026 → ADR-0050 |
 | protocol version number | A semver-variant version: **major** = cross-tool/cross-repo contract change; **minor** = a new mechanism added; **patch** = revision of an existing file. Two numbers: the package version (package.json = tag) moves every release; the protocol version (the fence markers, mirrored in downstream `.gearbox-version`) moves only when fence content changes | ADR-0023, split by ADR-0050; baseline v0.0.0 |
 | protocol fence | The tool-managed block between `<!-- gearbox:protocol … -->` and `<!-- /gearbox:protocol -->` in AGENTS.md (and `gearbox:glossary` in CONTEXT.md): the Gearbox protocol, byte-identical in every repo for a given protocol version; its marker records the version and a content hash | ADR-0050; downstream never edits it — `gearbox-agents update` rewrites it |

@@ -28,7 +28,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 GitHub account: `real-stanyan`
 
-<!-- gearbox:protocol v2.0.0 sha256:5db571e68f0c; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:36fdec488475; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -145,7 +145,7 @@ Serial single-human repos need none of this — with one live shift, the rules a
 - **A lane = one shift + its claimed tasks.** Parallel shifts are allowed iff each works only on frontier tasks it has claimed (ADR-0044/0047). Disjoint claims = disjoint lanes; no other lock exists or is needed — task-level overlap is prevented at claim time, file-level overlap resolves in the PR merge like any concurrent development.
 - **Handoff issues are per-lane**: shift-end rule 4 unchanged in shape, but a starting shift reads **all** open handoff issues, takes over **at most one** lane (claim its listed tasks, close its handoff), and leaves other lanes' handoffs open — closing another live lane's handoff is stealing its baton. A **"context only"** handoff (lane finished, nothing transfers) is closed by its first reader after reading.
 - **Terminal declarations (ADR-0009) are repo-level, not lane-level** — see On ending a shift.
-- **Protocol changes serialize at merge time**: two lanes may each open a protocol PR, but ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge.
+- **Protocol changes serialize at merge time**: two lanes may each open a protocol PR, but ADR numbers (and, in the Gearbox repo, the version bump) are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR (and, in the Gearbox repo, recompute the version: latest tag + segment, ADR-0028) inside your PR, then merge.
 - A stalled lane is released by the maintainer: unassign its tasks, close its handoff (the stale-claim rule in ADR-0047 already makes dangling assignments non-binding).
 
 ### Branch hygiene (optional)
