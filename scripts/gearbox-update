@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gearbox-update — aggressive downstream ADR sync tool
+// gearbox-update — downstream protocol sync (fences + ADRs)
 //
 // Usage: run `gearbox-update [--refresh-drift] [--force-redo] [--allow-branch] [--force] [--no-push]`
 //   from a downstream repo's root
@@ -776,7 +776,7 @@ function commitMigration() {}
 async function main() {
   await tui.logo();
   if (!tui.isTTY) stdout.write(C.bold(C.cyan("\n⟳ gearbox-update\n")));
-  stdout.write(C.dim("  aggressive downstream ADR sync tool\n\n"));
+  stdout.write(C.dim("  downstream protocol sync (fences + ADRs)\n\n"));
 
   resolveUpstream(); // upstream addressing (local/remote), overwrites GEARBOX_DIR (ADR-0027)
   const { downDir, downAdrDir, branch, resume, redo, plannedBranch } = validateContext();
