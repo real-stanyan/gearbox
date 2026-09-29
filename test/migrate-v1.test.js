@@ -125,6 +125,20 @@ test("CONTEXT.md: a project table's row named like a protocol term is kept and r
   assert.deepEqual(report.context, { removedTerms: 3, editedTerms: [], keptRows: 3, collisions: ["claim", "gate"] });
 });
 
+test("CONTEXT.md: verbatim v1 protocol rows under a renamed heading are replaced too; an edited one stays as a collision", () => {
+  // A downstream renamed (or translated) the v1 "## Terms" heading and added rows of its own. A row
+  // that is upstream text word for word is the protocol's, whatever the heading says: the fence carries it now.
+  const ctxTemplate = CONTEXT_TEMPLATE.replace("| gate | the command | — |", "| gate | the command | — |\n| lane | one shift plus its claims | — |");
+  const k = buildKnown([TEMPLATE], [ctxTemplate]);
+  const renamed = ctxTemplate
+    .replace("## Terms", "## Workflow words (from Gearbox)\n\nWords a rule reader looks up.")
+    .replace("| lane | one shift plus its claims | — |", "| lane | one shift plus its claims; ours also carry a label | — |\n| roaster | the bean supplier | — |");
+  const { contextMd, report } = migrateV1({ agentsMd: nearTemplate, contextMd: renamed, known: k, protocolBlock, glossaryBlock });
+  assert.doesNotMatch(contextMd, /a baton|the command/);
+  assert.match(contextMd, /## Workflow words \(from Gearbox\)\n\nWords a rule reader looks up\.\n\n\| Term \| Definition \| Notes \|\n\|---\|---\|---\|\n\| lane \| one shift plus its claims; ours also carry a label \| — \|\n\| roaster \| the bean supplier \| — \|/);
+  assert.deepEqual(report.context, { removedTerms: 2, editedTerms: [], keptRows: 2, collisions: ["lane"] });
+});
+
 test("CONTEXT.md always ends up with a ## Project terms section, where the glossary marker sends new terms", () => {
   const table = "| Term | Definition | Notes |\n|---|---|---|\n| star | loyalty point | — |";
   for (const ctx of [

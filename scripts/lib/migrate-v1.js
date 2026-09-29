@@ -251,9 +251,10 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
   let renamed = false;
   let hasProjectTerms = false;
   for (const c of chunks.slice(1)) {
-    // Protocol-term rows leave only a v1 template section (e.g. "## Terms"): the glossary fence
-    // carries them now. A project's own table may use the same word for something else ("claim",
-    // "gate") — that row stays, and is reported as a collision.
+    // Protocol-term rows leave a v1 template section (e.g. "## Terms"), edited or not, and a row that
+    // is upstream text word for word leaves any section (a renamed or translated "## Terms"): the
+    // glossary fence carries them now. A project's own row may use the same word for something else
+    // ("claim", "gate") — that row stays, and is reported as a collision.
     const template = isTemplateHeading(c, isKnown);
     const body = [];
     let rows = 0;
@@ -269,9 +270,10 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
         }
         const key = termKey(t.split("|")[1] || "");
         if (known.terms.has(key)) {
-          if (template) {
+          const verbatim = isKnown(line);
+          if (template || verbatim) {
             report.context.removedTerms++;
-            if (!isKnown(line)) report.context.editedTerms.push(key);
+            if (!verbatim) report.context.editedTerms.push(key);
             continue;
           }
           report.context.collisions.push(key);
