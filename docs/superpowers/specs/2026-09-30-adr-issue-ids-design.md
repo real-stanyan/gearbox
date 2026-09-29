@@ -16,7 +16,7 @@ Evidence from the Mr-Otto audit:
 - Every ADR is heavily cited: 5767 `ADR-0NNN` references across 1152 files. Renumbering rewrites references, and the audit found rewrites that edited the wrong ones.
 - Mr-Otto's workaround, claim-at-merge (its ADR-0074, mirrored upstream in ADR-0048's "renumber your ADR"), moves the race from branch time to merge time. It can't close the race without "require branches to be up to date" protection, which the Mandy repos (free private repos) can't enable. Every claim still means a rewrite commit and a CI rerun.
 
-Mandy-s-Bubble-Tea shows the same failure in another hand-numbered sequence (two `007_` migrations, Mandy#139). That sequence is out of scope here; see Non-goals.
+Another downstream, dryrun, still carries 10 colliding pairs in `docs/adr/`. Mandy-s-Bubble-Tea shows the same failure in another hand-numbered sequence (two `007_` migrations, Mandy#139). That sequence is out of scope here; see Non-goals.
 
 ## Goals
 
@@ -44,7 +44,7 @@ Mandy-s-Bubble-Tea shows the same failure in another hand-numbered sequence (two
 ## 1. The ID rule
 
 - A new project ADR is `docs/adr/<issue>-<slug>.md`.
-  - `<issue>` is the number of the issue that settles the decision, written without zero padding.
+  - `<issue>` is the number of the issue that settles the decision, written without zero padding. The missing leading zero is what tells an issue ID apart from an older sequential one (§4).
   - It is cited as `ADR-<issue>`.
   - Its header carries `- Issue: #<issue>`.
 - **One decision per issue.** A second decision arising from the same issue gets its own issue.
@@ -110,18 +110,22 @@ Add to `scripts/lib/protocol-check.js`, which runs in both `gearbox-agents check
 - For each of `docs/adr/` and `docs/gearbox-adr/`, when it exists:
   - Read the file names matching `^(\d+)-.+\.md$`.
   - Parse the leading integer, so `0074` = `74`.
-  - Group by it. Every group with more than one file is an error.
+  - Group by it. A group with more than one file is a duplicate.
   - Files without a leading number (README, notes) are ignored.
-- Error text, `docs/adr/`:
-  `docs/adr: ADR-74 is used by 2 files: 0074-foo.md, 74-bar.md — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)`
-- Error text, `docs/gearbox-adr/`:
+- **`docs/adr/`: new duplicates fail, old ones warn.** A leading zero marks an older sequential ID, and no leading zero marks an issue ID (§1).
+  - A duplicate group with at least one issue-ID file (no leading zero) is an error:
+    `docs/adr: ADR-74 is used by 2 files: 0074-foo.md, 74-bar.md — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)`
+  - Duplicate groups made only of zero-padded files are older collisions. The only fix for those is renumbering, which breaks cited references, and the new rule stops them from recurring. They produce **one** summary warning, not an error:
+    `docs/adr: older ADR numbers used by more than one file: ADR-45 (0045-a.md, 0045-b.md); ADR-46 (…) — references to them are ambiguous; new ADRs are named after their issue, so this can't recur (ADR-0052)`
+  - Evidence that this split is needed: dryrun, one of the stamped downstreams, carries 10 such older pairs today (two `0045-…` files, two `0046-…`, and so on). As a hard error they would turn it red on arrival with no acceptable fix.
+- Error text, `docs/gearbox-adr/` (every duplicate is an error; the numbers there are upstream's and unique):
   - Downstream: `… these copies are managed by gearbox-agents — delete the stray file and rerun \`npx gearbox-agents update\``.
   - Upstream: `… protocol ADR numbers are claimed at merge — renumber yours (Upstream release process)`.
 - **When a duplicate is caught:**
   - With issue IDs, a duplicate needs two PRs settling the same issue.
   - A PR's check runs on the PR merged into main as it stood when the check ran. If the other PR landed first, the second PR goes red before merge. Otherwise the push-to-main run goes red at once.
   - Either way it is loud, never silent.
-- **Downstream impact:** none of the three audited repos has a duplicate today (Mr-Otto 333 files, Mandy web 18, App 2; verified). The new assertion turns nobody red on arrival.
+- **Downstream impact:** checked across all seven stamped downstreams on 2026-09-30 (`docs/adr/` and `docs/gearbox-adr/`). Mr-Otto (334 IDs), Mandy web (18), App (2), delphione_admin (2), mandys-selfheal (0) and Blackbox (5) have no duplicates. dryrun has 10 older pairs, which produce one warning. The new assertion turns nobody red on arrival.
 - **Tiering:** a new, stricter assertion is L2 (ADR-0010). The fence edits make the PR L1 regardless.
 
 ## 5. Migration and downstream impact
@@ -134,6 +138,8 @@ Add to `scripts/lib/protocol-check.js`, which runs in both `gearbox-agents check
 
 - **protocol-check**, one test each:
   - `0074-a.md` + `74-b.md` in `docs/adr/` → one error that names both files;
+  - `1266-a.md` + `1266-b.md` → an error;
+  - `0045-a.md` + `0045-b.md` → no error, and one warning that names both files;
   - distinct IDs → no error;
   - `README.md` and a non-numbered file → ignored;
   - a duplicate in `docs/gearbox-adr/` → an error carrying the downstream fix text;
