@@ -67,7 +67,7 @@ if (existsSync(join(root, "package.json"))) {
 //    unedited, equal fence versions, AGENTS.md ≤ 32 KiB, protocol fence ≤ 20 KiB, required
 //    project + fence sections, CLAUDE.md shell, no HANDOFF.md, protocol files not gitignored,
 //    and CI runs every Gate command line.
-const { errors, protocol, glossary } = runProtocolChecks(root, { upstream: true });
+const { errors, warnings, protocol, glossary } = runProtocolChecks(root, { upstream: true });
 for (const e of errors) failures.push(e);
 
 // 5. Gearbox-specific text contracts
@@ -82,11 +82,13 @@ if (existsSync(join(root, "AGENTS.md"))) {
     !/HANDOFF\.?md/i.test(agents),
   );
   // Hard-rule-by-designation (ADR-0018): without the note, scattered "Hard rule" markings
-  // silently lose L1 protection.
-  check(
-    "the protocol fence must keep the hard-rule-by-designation note ('counts as part of the `## Hard rules` section', ADR-0018)",
-    agents.includes("counts as part of the `## Hard rules` section"),
-  );
+  // silently lose L1 protection. It must sit inside the fence — the only text every repo gets.
+  // (No fence at all is already an error from step 4.)
+  if (protocol)
+    check(
+      "the protocol fence must keep the hard-rule-by-designation note ('counts as part of the `## Hard rules` section', ADR-0018)",
+      protocol.content.includes("counts as part of the `## Hard rules` section"),
+    );
   // The protocol-gap rule (ADR-0003) is the self-repair loop's only entry point.
   check(
     "AGENTS.md must keep the 'protocol gap -> open issue, no silent judgment' rule (ADR-0003)",
@@ -113,7 +115,8 @@ if (!latestTag(root) && process.env.CI)
   failures.push("CI checkout has no tags — use fetch-depth: 0 on actions/checkout, or the fence version rule has no tag to compare against (ADR-0050)");
 if (pkg) for (const e of releaseState(root, { protocol, glossary }, `v${pkg.version}`).errors) failures.push(e);
 
-// Report
+// Report — warnings (e.g. an undecided local extension) print but never fail the gate
+for (const w of warnings) console.log(`⚠ ${w}`);
 if (failures.length > 0) {
   console.error(`\n❌ Gearbox self-check failed (${failures.length}):\n`);
   for (const f of failures) console.error(`  - ${f}`);
