@@ -1,7 +1,7 @@
 # Protocol fence (Gearbox v2) — design
 
 Date: 2026-09-29
-Status: approved in session (sections 1–5), pending spec review
+Status: approved; implemented by docs/superpowers/plans/2026-09-29-protocol-fence-v2.md
 Sub-project: A of four structural changes (A fence → then D handoff lifecycle, C ADR numbering, B identity/L1 — each gets its own spec)
 
 ## Problem

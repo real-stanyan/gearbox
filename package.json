@@ -14,7 +14,7 @@
     "CONTEXT.md"
   ],
   "scripts": {
-    "test": "node scripts/check-gearbox.js"
+    "test": "node scripts/check-gearbox.js && node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"
