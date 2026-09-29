@@ -183,8 +183,9 @@ test("a glossary fence without a protocol fence is refused as a half-migrated tr
 });
 
 // Once the migration rewrites AGENTS.md, the v1 text survives only in git history (the report's
-// `git show <base>:AGENTS.md`): a v1 file that was never committed would be lost.
-test("an uncommitted v1 AGENTS.md is refused — its text must stay in git history", () => {
+// `git show <base>:AGENTS.md`): a v1 file that was never committed would be lost. An untracked
+// docs/INDEX.md would be swept whole into the migration commit — and untracked files never are (#92).
+test("an uncommitted file the migration would rewrite is refused: AGENTS.md always, docs/INDEX.md when the index moves", () => {
   const up = makeUpstream();
   const down = v1Downstream(up);
   git(down, "rm", "-q", "--cached", "AGENTS.md");
@@ -195,4 +196,13 @@ test("an uncommitted v1 AGENTS.md is refused — its text must stay in git histo
   assert.equal(read(down, "AGENTS.md"), AGENTS_V1);
   assert.equal(git(down, "branch", "--list", BRANCHES), "");
   assert.equal(git(down, "rev-parse", "--abbrev-ref", "HEAD"), "main");
+
+  const down2 = v1Downstream(up, { agents: AGENTS_V1.replace(INDEX_PLACEHOLDER, BIG_INDEX) });
+  write(down2, "docs/INDEX.md", "# Index\n\n- scratch notes\n");
+  const r2 = update(down2, up);
+  assert.equal(r2.code, 1, r2.out);
+  assert.match(r2.out, /docs\/INDEX\.md isn't committed/);
+  assert.equal(read(down2, "docs/INDEX.md"), "# Index\n\n- scratch notes\n");
+  assert.equal(git(down2, "branch", "--list", BRANCHES), "");
+  assert.equal(git(down2, "status", "--porcelain"), "?? docs/INDEX.md");
 });

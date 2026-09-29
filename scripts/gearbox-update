@@ -566,9 +566,10 @@ function readStamp(path, protocolVersion) {
 // v1 → v2 migration plan (ADR-0050): a v1 AGENTS.md has no protocol fence. Read-only and run
 // before the branch step, like planFences, so every refusal leaves the repo as it was. Refused:
 // a CONTEXT.md that already has its fence (half-migrated — migrating it again would add a second
-// glossary fence); an AGENTS.md / CONTEXT.md that isn't committed (the pre-migration text must
-// stay in git history — the report points there); a file whose code fences don't pair up
-// (MigrationError, which names the line to fix).
+// glossary fence); an uncommitted file the migration rewrites (a v1 AGENTS.md / CONTEXT.md must
+// stay in git history — the report points there — and an untracked docs/INDEX.md would be swept
+// whole into the commit, which untracked files never are, #92); a file whose code fences don't
+// pair up (MigrationError, which names the line to fix).
 const INDEX_PATH = "docs/INDEX.md";
 const INDEX_MOVED_HEADING = "## Moved from AGENTS.md (Gearbox v2 migration)";
 
@@ -579,8 +580,9 @@ function planMigration(downDir, files) {
       "CONTEXT.md has a gearbox:glossary fence while AGENTS.md has no gearbox:protocol fence",
       "a half-migrated tree — restore the v1 CONTEXT.md (git log -p -- CONTEXT.md) so update migrates both files together, or finish AGENTS.md by hand from a fresh `npx gearbox-agents install` in a scratch dir",
     );
+  const uncommitted = (rel) => existsSync(join(downDir, rel)) && tryRun(`git cat-file -e "HEAD:${rel}"`) === null;
   for (const f of files)
-    if (existsSync(join(downDir, f.file)) && tryRun(`git cat-file -e "HEAD:${f.file}"`) === null)
+    if (uncommitted(f.file))
       die(
         `${f.file} isn't committed — the v1 → v2 migration rewrites it, and its v1 text must stay in git history (ADR-0050)`,
         "commit it first, then rerun gearbox-update — nothing was written",
@@ -602,6 +604,11 @@ function planMigration(downDir, files) {
   // overwrites it.
   let index = null;
   if (m.indexMd) {
+    if (uncommitted(INDEX_PATH))
+      die(
+        `${INDEX_PATH} isn't committed — the v1 → v2 migration appends the moved index to it and commits the file (ADR-0050)`,
+        "commit it (or move it aside) first, then rerun gearbox-update — nothing was written",
+      );
     const prior = existsSync(join(downDir, INDEX_PATH)) ? readFileSync(join(downDir, INDEX_PATH), "utf8") : null;
     index = {
       path: INDEX_PATH,
