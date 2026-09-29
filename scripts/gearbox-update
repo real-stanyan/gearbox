@@ -486,6 +486,13 @@ function transformAdrContent(gearboxAdr) {
   return lines.join("\n");
 }
 
+// A backfilled ADR's path in the downstream, relative to its root: what gitOps commits and what the
+// failure hint names — one expression, so the two can't drift apart.
+function adrRelPath(g) {
+  return `docs/gearbox-adr/${pad4(g.num)}-${g.slug}.md`;
+}
+const SUPERSEDE_PATH = "docs/gearbox-adr/0006-tiered-change-authority.md";
+
 // Supersede link: if this backfill includes gearbox 0012, change downstream 0006's status
 // (the number is 1:1 with upstream, so the downstream landing number is always 12; the caller
 // only invokes this after confirming this run's toCopy includes 0012)
@@ -842,7 +849,7 @@ function gitOps({ assignments, refreshes, supersedeResult, protocolVersion, fenc
 
   for (const a of refreshes)
     commit(
-      [`docs/gearbox-adr/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`],
+      [adrRelPath(a.gearbox)],
       `docs(adr): drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})
 
 Upstream gearbox ADR-${pad4(a.gearbox.num)} has been revised (hash drift); rerunning the
@@ -856,7 +863,7 @@ Provenance: ${GEARBOX_GITHUB_BASE}/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`,
   for (const action of assignments) {
     const g = action.gearbox;
     commit(
-      [`docs/gearbox-adr/${pad4(g.num)}-${g.slug}.md`],
+      [adrRelPath(g)],
       `docs(adr): backfill gearbox ADR-${pad4(g.num)} (${g.slug})
 
 by gearbox-update tool.
@@ -867,7 +874,7 @@ Provenance: ${GEARBOX_GITHUB_BASE}/${pad4(g.num)}-${g.slug}.md`,
 
   if (supersedeResult && !supersedeResult.alreadyApplied)
     commit(
-      ["docs/gearbox-adr/0006-tiered-change-authority.md"],
+      [SUPERSEDE_PATH],
       `docs(adr): sync 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
 
 gearbox 0012 supersedes 0006; this commit syncs downstream 0006's status line to
@@ -1098,6 +1105,17 @@ async function main() {
   }
   if (redo) stdout.write(`${C.yellow("✓ deleted")} the old ${branchName} (--force-redo), rebuilding from ${branch}\n`);
 
+  // Every file this run writes goes through writeOwn, which records the ones it CREATES, as exact
+  // paths: the failure hint's `git clean` may delete those and nothing else — never a user's own
+  // untracked file beside ours (a local ADR draft in docs/gearbox-adr/, say), never a directory.
+  const created = [];
+  const writeOwn = (rel, text) => {
+    const abs = join(downDir, rel);
+    if (!existsSync(abs)) created.push(rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, text);
+  };
+
   if (toCopy.length > 0) {
     stdout.write(C.yellow(`⚠️  ${toCopy.length} to backfill:\n`));
     for (const a of toCopy) {
@@ -1139,22 +1157,13 @@ async function main() {
       await tui.progress(
         "backfill",
         toCopy.map((a) => `${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`),
-        (name, i) => {
-          const gearboxAdr = toCopy[i].gearbox;
-          const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
-          writeFileSync(dstPath, transformAdrContent(gearboxAdr));
-        },
+        (name, i) => writeOwn(adrRelPath(toCopy[i].gearbox), transformAdrContent(toCopy[i].gearbox)),
         { perItemMs: 60, doneNote: `(${toCopy.length} ADRs copied under their upstream numbers)` },
       );
     } else {
       for (const action of toCopy) {
-        const gearboxAdr = action.gearbox;
-        const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
-        const transformed = transformAdrContent(gearboxAdr);
-        writeFileSync(dstPath, transformed);
-        stdout.write(
-          `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")}\n`,
-        );
+        writeOwn(adrRelPath(action.gearbox), transformAdrContent(action.gearbox));
+        stdout.write(`  ${C.green("✓")} ${adrRelPath(action.gearbox)}\n`);
       }
     }
     stdout.write("\n");
@@ -1165,15 +1174,8 @@ async function main() {
   if (toRefresh.length > 0) {
     stdout.write(C.bold("Drift re-copy (overwrite, stamp refreshed):\n"));
     for (const a of toRefresh) {
-      const dstPath = join(
-        downAdrDir,
-        `${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`,
-      );
-      const transformed = transformAdrContent(a.gearbox);
-      writeFileSync(dstPath, transformed);
-      stdout.write(
-        `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")} ${C.dim(`(upstream sha256:${sha12(a.gearbox.content)})`)}\n`,
-      );
+      writeOwn(adrRelPath(a.gearbox), transformAdrContent(a.gearbox));
+      stdout.write(`  ${C.green("✓")} ${adrRelPath(a.gearbox)} ${C.dim(`(upstream sha256:${sha12(a.gearbox.content)})`)}\n`);
     }
     stdout.write("\n");
   }
@@ -1201,20 +1203,14 @@ async function main() {
     stdout.write("\n");
   }
 
-  for (const w of fenceWrites) writeFileSync(join(downDir, w.file), w.text);
+  for (const w of fenceWrites) writeOwn(w.file, w.text);
   if (migration) {
-    writeFileSync(join(downDir, "AGENTS.md"), migration.agentsMd);
-    writeFileSync(join(downDir, "CONTEXT.md"), migration.contextMd);
-    if (migration.index) {
-      mkdirSync(dirname(join(downDir, migration.index.path)), { recursive: true });
-      writeFileSync(join(downDir, migration.index.path), migration.index.text);
-    }
+    writeOwn("AGENTS.md", migration.agentsMd);
+    writeOwn("CONTEXT.md", migration.contextMd);
+    if (migration.index) writeOwn(migration.index.path, migration.index.text);
   }
-  for (const w of workflowWrites) {
-    mkdirSync(dirname(join(downDir, w.path)), { recursive: true });
-    writeFileSync(join(downDir, w.path), w.text);
-  }
-  if (!stampCurrent) writeFileSync(stampPath, protocolVersion + "\n");
+  for (const w of workflowWrites) writeOwn(w.path, w.text);
+  if (!stampCurrent) writeOwn(".gearbox-version", protocolVersion + "\n");
 
   const reportDate = new Date().toISOString().slice(0, 10);
   // --force-redo rebuilt the branch → overwrite the remote (ADR-0025); every push hint uses this too
@@ -1249,9 +1245,13 @@ async function main() {
     else if (pushResult) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
     else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     ${pushCmd}\n`);
   } catch (e) {
-    // Only the paths this run wrote — like the tool itself, never sweep in the user's untracked files.
+    // Exact files, in gitOps' commit order — never a directory, which would sweep a user's own
+    // untracked file into `git add` (#92). `git clean` gets only what this run created: tracked
+    // files are restored by `git checkout -f`, and anything else was there before this run.
     const own = [
-      ...(toCopy.length > 0 || toRefresh.length > 0 || (supersedeResult && !supersedeResult.alreadyApplied) ? ["docs/gearbox-adr/"] : []),
+      ...toRefresh.map((a) => adrRelPath(a.gearbox)),
+      ...toCopy.map((a) => adrRelPath(a.gearbox)),
+      ...(supersedeResult && !supersedeResult.alreadyApplied ? [SUPERSEDE_PATH] : []),
       ...(migration ? migrationPaths(migration) : []),
       ...fenceWrites.map((w) => w.file),
       ...workflowWrites.map((w) => w.path),
@@ -1265,8 +1265,11 @@ async function main() {
         `  git add -- ${own.join(" ")}`,
         "  git commit",
         `  ${pushCmd}`,
-        "or start over — --force-redo deletes and rebuilds today's branch, once this run's writes are gone:",
-        `  git checkout -f ${branch} && git clean -fd -- ${own.join(" ")}`,
+        created.length > 0
+          ? "or start over: drop this run's edits, delete only the files it created (the dry run lists them first), then --force-redo deletes and rebuilds today's branch:"
+          : "or start over: drop this run's edits, then --force-redo deletes and rebuilds today's branch:",
+        `  git checkout -f ${branch}`,
+        ...(created.length > 0 ? [`  git clean -n -- ${created.join(" ")}`, `  git clean -f -- ${created.join(" ")}`] : []),
         "  gearbox-update --force-redo",
       ].join("\n"),
     );

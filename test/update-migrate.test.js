@@ -307,3 +307,41 @@ test("a same-day rerun resumes the migration branch with nothing to do; --force-
   assert.equal(git(down, "rev-list", "--count", "main"), "1");
   assert.match(read(down, "gearbox-update-report.md"), /v1 → v2 layout migration/);
 });
+
+// The failure hint's paths are exact files, never a directory. `git clean -fd -- docs/gearbox-adr/`
+// deleted a user's untracked ADR draft (unrecoverable), and — with nothing else in that directory
+// tracked — the directory itself, so the --force-redo it recommended died on "no docs/gearbox-adr/".
+// `git add -- docs/gearbox-adr/` would have swept the draft into the follow-up commit.
+test("the start-over hint deletes only files this run created: a local ADR draft survives, --force-redo then succeeds", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up);
+  git(down, "rm", "-rq", "docs/gearbox-adr");
+  git(down, "commit", "-q", "-m", "no tracked protocol ADRs");
+  const draft = "docs/gearbox-adr/0099-my-local-draft.md";
+  write(down, draft, "# ADR-0099: My local draft\n\n- Status: proposed\n");
+  write(down, ".git/hooks/pre-commit", "#!/bin/sh\nexit 1\n");
+  chmodSync(join(down, ".git/hooks/pre-commit"), 0o755);
+  git(down, "config", "core.hooksPath", join(down, ".git/hooks")); // beats any global hooksPath
+  const r = update(down, up);
+  assert.equal(r.code, 1, r.out);
+
+  const lines = r.out.split("\n").map((l) => l.trim());
+  const add = lines.find((l) => l.startsWith("git add -- "));
+  assert.ok(add.split(" ").slice(3).every((p) => !p.endsWith("/")), add);
+  assert.ok(add.includes("docs/gearbox-adr/0001-adr-template.md docs/gearbox-adr/0002-self-check-as-gate.md"), add);
+  assert.ok(!add.includes(draft), add);
+  const startOver = lines.slice(lines.findIndex((l) => l.startsWith("or start over")) + 1);
+  const cmds = startOver.slice(0, startOver.indexOf(""));
+  assert.equal(cmds.at(-1), "gearbox-update --force-redo");
+  for (const cmd of cmds.slice(0, -1)) execSync(cmd, { cwd: down, stdio: "pipe" }); // verbatim
+
+  assert.equal(read(down, draft), "# ADR-0099: My local draft\n\n- Status: proposed\n");
+  assert.equal(git(down, "rev-parse", "--abbrev-ref", "HEAD"), "main");
+  assert.equal(git(down, "status", "--porcelain", "--untracked-files=all"), `?? ${draft}\n?? gearbox-update-report.md`);
+  rmSync(join(down, ".git/hooks/pre-commit"));
+  const redo = update(down, up, ["--force-redo"]);
+  assert.equal(redo.code, 0, redo.out);
+  assert.equal(runTool("gearbox-check", [], { cwd: down }).code, 0);
+  assert.equal(git(down, "ls-files", "--", draft), "");
+  assert.equal(read(down, draft), "# ADR-0099: My local draft\n\n- Status: proposed\n");
+});
