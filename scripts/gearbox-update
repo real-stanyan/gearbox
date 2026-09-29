@@ -340,7 +340,7 @@ function validateContext() {
   // merged into base = stale leftover, its work is already in the base → safe-delete and run
   // fresh; unmerged = an earlier run today → switch back onto it and continue (backfills are
   // idempotent, new commits stack on top, manual edits survive). --force-redo deletes and
-  // rebuilds (ADR-0025), but the delete waits in gitOps until every refusal (a stale upstream,
+  // rebuilds (ADR-0025), but the delete waits in main() until every refusal (a stale upstream,
   // a hand-edited fence) has passed — a refused run never costs the branch.
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
@@ -681,9 +681,7 @@ function commitPaths(paths, message) {
 
 // Returns `made`: one display line per commit that landed, in commit order (a commit skipped by
 // commitPaths lands in `unchanged` instead), so the printed list never claims a commit that isn't there.
-function gitOps({ assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd }) {
-  if (redo) run(`git branch -D ${branchName}`); // --force-redo: only now, past every refusal
-  if (!resume) run(`git checkout -b ${branchName}`);
+function gitOps({ assignments, refreshes, supersedeResult, protocolVersion, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd }) {
   const made = [];
   const unchanged = [];
   const commit = (paths, message, label) => {
@@ -906,6 +904,21 @@ async function main() {
     return;
   }
 
+  // Branch first, files second — and only now, past every refusal above: a failing
+  // `git branch -D` / `checkout -b` leaves the tree untouched, and a failure mid-commit leaves
+  // you on the backfill branch, never with half a sync written onto main.
+  const branchName = plannedBranch; // one name for resume, --force-redo's delete and the new branch
+  try {
+    if (redo) run(`git branch -D ${branchName}`);
+    if (!resume) run(`git checkout -b ${branchName}`);
+  } catch (e) {
+    die(
+      `Can't ${redo ? "rebuild" : "create"} ${branchName}: ${e.message}`,
+      "nothing was written or committed — a branch checked out in another worktree can't be deleted (git worktree list)",
+    );
+  }
+  if (redo) stdout.write(`${C.yellow("✓ deleted")} the old ${branchName} (--force-redo), rebuilding from ${branch}\n`);
+
   if (toCopy.length > 0) {
     stdout.write(C.yellow(`⚠️  ${toCopy.length} to backfill:\n`));
     for (const a of toCopy) {
@@ -1018,15 +1031,13 @@ async function main() {
 
   // git operations
   const reportDate = new Date().toISOString().slice(0, 10);
-  const branchName = plannedBranch; // one name for resume, --force-redo's delete and the new branch
   // --force-redo rebuilt the branch → overwrite the remote (ADR-0025); every push hint uses this too
   const pushCmd = `git push ${forceRedo ? "--force-with-lease " : ""}-u origin ${branchName}`;
 
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   let pushResult = null;
   try {
-    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd });
-    if (redo) stdout.write(`  ${C.yellow("✓ deleted")} the old ${branchName} (--force-redo), rebuilt from ${branch}\n`);
+    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, protocolVersion, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd });
     pushResult = ops.pushResult;
     for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
     for (const u of ops.unchanged) stdout.write(`  ${C.dim(`· ${u} — already matched the index, nothing to commit`)}\n`);

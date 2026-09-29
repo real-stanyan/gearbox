@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { findFence } from "../scripts/lib/fence.js";
+import { join } from "node:path";
 import { makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
 function v2Downstream(up, { autocrlf = false } = {}) {
@@ -184,4 +185,17 @@ test("after --force-redo, every push hint says --force-with-lease", () => {
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /push failed[^\n]*\n\s*git push --force-with-lease -u origin docs\/gearbox-backfill-/);
   assert.match(read(down, "gearbox-update-report.md"), /push the branch: `git push --force-with-lease -u origin docs\/gearbox-backfill-/);
+});
+
+// Branch first, files second: a branch step that fails (here: today's branch is checked out in
+// another worktree, so --force-redo can't delete it) must not leave main's tree half-written.
+test("a failing branch step leaves the working tree untouched", () => {
+  const down = v2Downstream(makeUpstream());
+  const today = `docs/gearbox-backfill-${new Date().toISOString().slice(0, 10)}`;
+  git(down, "branch", today);
+  git(down, "worktree", "add", "-q", join(tmp(), "wt"), today);
+  const r = update(down, makeUpstream({ version: "v2.1.0" }), ["--force-redo"]);
+  assert.equal(r.code, 1, r.out);
+  assert.equal(git(down, "status", "--porcelain"), "");
+  assert.equal(git(down, "rev-parse", "--abbrev-ref", "HEAD"), "main");
 });
