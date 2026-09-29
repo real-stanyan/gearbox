@@ -143,6 +143,8 @@ test("the migration report lists what moved where and every item that needs a hu
   assert.match(report, /- \[ \] `gate` — [^\n]*product term/);
   assert.match(report, /- \[ \] [^\n]*edited locally[^\n]*`handoff`/);
   assert.match(report, /## Protocol check on this branch\n\n✅/);
+  // ... and where "the check job stays red" doesn't hold: a PR the sync Action opened runs no checks
+  assert.match(report, /^> A PR opened by the gearbox-sync Action runs no checks: events made with the Actions `GITHUB_TOKEN` don't trigger workflows\. To run them, close and reopen the PR, push a commit to it, or run `npx gearbox-agents@2 check` locally\.$/m);
   // The flagged subsection's lines aren't carried: the report is where they are named.
   assert.doesNotMatch(read(down, "AGENTS.md"), /Post a summary in the team channel/);
 });

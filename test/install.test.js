@@ -31,6 +31,21 @@ test("install names the project after the git remote, not the directory (#133)",
   assert.ok(read(target, "AGENTS.md").startsWith("# atlas-method\n"));
 });
 
+// The backup notice says where a hand-written glossary goes: `## Project terms`, never into the fence.
+test("install backs up a hand-written CONTEXT.md and points its entries at Project terms, outside the fence", () => {
+  const up = makeUpstream();
+  const target = tmp();
+  gitInit(target);
+  write(target, "CONTEXT.md", "# Glossary\n\n- widget: a thing we sell\n");
+  const r = runTool("gearbox-install", [target, "--name", "demo", "--maintainer", "octo", "--gate", "npm test"], { env: { GEARBOX_DIR: up } });
+  assert.equal(r.code, 0, r.out);
+  assert.equal(read(target, "CONTEXT-backup.md"), "# Glossary\n\n- widget: a thing we sell\n");
+  assert.ok(
+    read(target, "AGENTS.md").includes("> - `CONTEXT-backup.md` — its glossary entries go under `## Project terms` in the new CONTEXT.md, outside the `gearbox:glossary` fence"),
+    read(target, "AGENTS.md").slice(0, 800),
+  );
+});
+
 test("install refuses a tree that already carries a gearbox fence", () => {
   const up = makeUpstream();
   const target = tmp();

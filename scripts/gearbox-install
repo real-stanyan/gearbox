@@ -157,7 +157,7 @@ if (existsSync(join(targetDir, "AGENTS.md"))) {
 const backupPlan = [
   { src: "AGENTS.md", bak: "AGENTS-backup.md", merge: "its rules go into the Hard rules / Tech stack sections" },
   { src: "CLAUDE.md", bak: "CLAUDE-backup.md", merge: "its content belongs in AGENTS.md (CLAUDE.md stays the @AGENTS.md shell)" },
-  { src: "CONTEXT.md", bak: "CONTEXT-backup.md", merge: "its glossary entries go below the protocol entries in the new CONTEXT.md" },
+  { src: "CONTEXT.md", bak: "CONTEXT-backup.md", merge: "its glossary entries go under `## Project terms` in the new CONTEXT.md, outside the `gearbox:glossary` fence" },
   { src: ".github/workflows/ci.yml", bak: ".github/workflows/ci.yml.bak", merge: "re-add its jobs alongside the gate job in the new ci.yml" },
   { src: ".github/workflows/gearbox-sync.yml", bak: ".github/workflows/gearbox-sync.yml.bak", merge: "re-apply its customizations (cron cadence etc.) onto the regenerated gearbox-sync.yml" },
   { src: ".github/workflows/gearbox-check.yml", bak: ".github/workflows/gearbox-check.yml.bak", merge: "re-apply its customizations onto the regenerated gearbox-check.yml" },

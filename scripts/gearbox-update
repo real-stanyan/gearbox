@@ -754,6 +754,11 @@ function generateReport({
     for (const e of checkResult.errors) lines.push(`- [ ] ${e}`);
   }
   for (const w of checkResult.warnings) lines.push(`- ⚠️ ${w}`);
+  // The case "stays red" misses: on a PR the sync Action opened, no check runs at all.
+  lines.push(
+    "",
+    "> A PR opened by the gearbox-sync Action runs no checks: events made with the Actions `GITHUB_TOKEN` don't trigger workflows. To run them, close and reopen the PR, push a commit to it, or run `npx gearbox-agents@2 check` locally.",
+  );
   lines.push("", "## Next steps", "");
   if (!pushed) lines.push(`- [ ] push the branch: \`${pushCmd}\``);
   lines.push(
