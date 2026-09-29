@@ -69,6 +69,7 @@ import { CHECK_YML, pinSyncYml } from "./lib/workflows.js";
 import { runProtocolChecks } from "./lib/protocol-check.js";
 import { loadKnown } from "./lib/v1-known.js";
 import { migrateV1, MigrationError } from "./lib/migrate-v1.js";
+import { splitByLevel, baseTitle } from "./lib/sections.js";
 
 // ============== Config ==============
 
@@ -565,6 +566,7 @@ function readStamp(path, protocolVersion) {
 
 // v1 → v2 migration plan (ADR-0050): a v1 AGENTS.md has no protocol fence. Read-only and run
 // before the branch step, like planFences, so every refusal leaves the repo as it was. Refused:
+// no (or an empty) AGENTS.md — never onboarded, so install's job, not a titleless skeleton;
 // a CONTEXT.md that already has its fence (half-migrated — migrating it again would add a second
 // glossary fence); an uncommitted file the migration rewrites (a v1 AGENTS.md / CONTEXT.md must
 // stay in git history — the report points there — and an untracked docs/INDEX.md would be swept
@@ -575,6 +577,13 @@ const INDEX_MOVED_HEADING = "## Moved from AGENTS.md (Gearbox v2 migration)";
 
 function planMigration(downDir, files) {
   const [agentsFile, contextFile] = files;
+  if (!agentsFile.text.trim())
+    die(
+      existsSync(join(downDir, "AGENTS.md"))
+        ? "AGENTS.md is empty — this isn't an onboarded Gearbox repo; run npx gearbox-agents install instead"
+        : "no AGENTS.md — this isn't an onboarded Gearbox repo; run npx gearbox-agents install instead",
+      "nothing was written",
+    );
   if (contextFile.status.state !== "missing")
     die(
       "CONTEXT.md has a gearbox:glossary fence while AGENTS.md has no gearbox:protocol fence",
@@ -618,7 +627,20 @@ function planMigration(downDir, files) {
     };
   }
   // The commit holding the v1 text, for the report's `git show <base>:AGENTS.md`.
-  return { ...m, index, base: run("git rev-parse --short=12 HEAD") };
+  return { ...m, index, base: run("git rev-parse --short=12 HEAD"), sections: projectSections(agentsFile.text, Boolean(index)) };
+}
+
+// The v1 project sections the migration keeps in place (spec §4), read the way migrateV1 reads
+// them, and those the v2 skeleton fills with a placeholder because the v1 file had none. A moved
+// index is reported on its own line.
+function projectSections(agentsV1, indexMoved) {
+  const chunks = splitByLevel(agentsV1, 2);
+  const has = (key) => chunks.slice(1).some((c) => baseTitle(c.title).toLowerCase() === key);
+  const kept = chunks[0].lines.some((l) => l.trim() && !l.trim().startsWith(">")) ? ["the title and intro"] : [];
+  const added = [];
+  for (const title of ["Tech stack", "Hard rules", ...(indexMoved ? [] : ["Where to find things"])])
+    (has(title.toLowerCase()) ? kept : added).push(`\`## ${title}\``);
+  return { kept, added };
 }
 
 function migrationPaths(migration) {
@@ -742,11 +764,12 @@ function migrationReportLines(m) {
     "",
     `This repo's AGENTS.md held the v1 protocol text, merged by hand. It is now a tool-managed fence — as are CONTEXT.md's protocol terms — and project content lives in the sections around it. Every line that wasn't known upstream text is accounted for below — nothing was dropped silently. The pre-migration text: ${oldText}.`,
     "",
-    `- Kept in place: the title and intro, \`## Tech stack\`, \`## Hard rules\`${m.index ? "" : ", `## Where to find things`"} (v1 template notes dropped)`,
+    ...(m.sections.kept.length ? [`- Kept in place: ${m.sections.kept.join(", ")} (v1 template notes dropped)`] : []),
+    ...(m.sections.added.length ? [`- [ ] Not in the v1 file, so added with a placeholder: ${m.sections.added.join(", ")} — fill in`] : []),
     r.maintainer ? `- Maintainer: \`${r.maintainer}\`` : "- [ ] Maintainer: **not detected** — fill in `## Maintainer` (the GitHub account whose PR-comment agreement counts for L1)",
     r.gateMoved
       ? `- Gate command: moved to \`## Gate\`${notes}`
-      : `- [ ] Gate command: **not found** — fill in \`## Gate\`, byte-identical to \`.github/workflows/ci.yml\`${notes}`,
+      : "- [ ] Gate command: **not found** — fill in `## Gate`, byte-identical to `.github/workflows/ci.yml`",
     `- Division of labor: ${r.divisionOfLabor === "kept" ? "your v1 choice, kept in `## Division of labor`" : "none chosen in v1 — `## Division of labor` states the default (claim-based ownership)"}`,
   ];
   if (m.index)

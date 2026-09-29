@@ -244,3 +244,37 @@ test("a v1 downstream in a subdirectory of its git repo migrates, and the report
   const c = runTool("gearbox-check", [], { cwd: down });
   assert.equal(c.code, 0, c.out);
 });
+
+// The report lists only what the v1 file had: a section it lacked gets a v2 placeholder (a TODO),
+// and with no gate command found, v1 gate notes are no "lines below the command".
+test("the report's kept sections and gate line say only what the v1 file had", () => {
+  const up = makeUpstream();
+  const agents = AGENTS_V1
+    .replace("## Tech stack\n\n<Project tech stack, one per line. Example: Next.js 15 / TypeScript / Postgres>\n\n", "")
+    .replace("```bash\nnpm test\n```", "```bash\n<gate command, e.g.: npx tsc --noEmit && npx vitest run>\n```\n\n`npm test` also type-checks mobile/.");
+  assert.doesNotMatch(agents, /## Tech stack/);
+  const down = v1Downstream(up, { agents });
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  const report = read(down, "gearbox-update-report.md");
+  assert.match(report, /^- Kept in place: the title and intro, `## Hard rules`, `## Where to find things` \(v1 template notes dropped\)$/m);
+  assert.match(report, /^- \[ \] [^\n]*placeholder[^\n]*`## Tech stack`/m);
+  assert.match(report, /^- \[ \] Gate command: \*\*not found\*\* — fill in `## Gate`[^\n]*$/m);
+  assert.doesNotMatch(report, /below the command/);
+  assert.match(sectionBody(read(down, "AGENTS.md"), 2, "Gate"), /also type-checks mobile/);
+});
+
+// No AGENTS.md at all isn't a v1 layout: it was never onboarded. Migrating it would make a
+// titleless skeleton; install is the tool for that.
+test("a repo with no AGENTS.md is refused, not migrated into a skeleton", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up);
+  git(down, "rm", "-q", "AGENTS.md");
+  git(down, "commit", "-q", "-m", "no AGENTS.md");
+  const r = update(down, up);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /no AGENTS\.md — this isn't an onboarded Gearbox repo; run npx gearbox-agents install instead/);
+  assert.ok(!existsSync(join(down, "AGENTS.md")));
+  assert.equal(git(down, "branch", "--list", BRANCHES), "");
+  assert.equal(git(down, "status", "--porcelain"), "");
+});
