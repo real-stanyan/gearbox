@@ -94,6 +94,15 @@ test("a missing fence is an error that names the fence", () => {
   const c = errorsOf(noGlossary);
   assert.equal(c.length, 1);
   assert.match(c[0], /CONTEXT\.md has no gearbox:glossary fence/);
+
+  // both gone is a v1 layout — update migrates it — one error per file; one gone is another case
+  const neither = v2Repo();
+  write(neither, "AGENTS.md", agents.replace(findFence(agents, "protocol").block, ""));
+  write(neither, "CONTEXT.md", context.replace(findFence(context, "glossary").block, ""));
+  const n = errorsOf(neither);
+  assert.equal(n.length, 2);
+  for (const e of n) assert.match(e, /has no gearbox:\w+ fence — run `npx gearbox-agents update` \(a v1 layout is migrated automatically/);
+  assert.match(a[0], /^only one fence is present/);
 });
 
 test("duplicate and malformed markers are reported, not swallowed", () => {

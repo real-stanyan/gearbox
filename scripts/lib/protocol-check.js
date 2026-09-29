@@ -4,7 +4,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-import { findFence, FenceError } from "./fence.js";
+import { findFence, FenceError, oneFenceAdvice } from "./fence.js";
 import { baseTitle, fenceRun, headings, sectionBody, sectionSizes, splitByLevel } from "./sections.js";
 import { planWorkflowFixes, CHECK_PATH } from "./workflows.js";
 
@@ -84,11 +84,12 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
   if (agents === null) errors.push("AGENTS.md is missing");
   if (context === null) errors.push("CONTEXT.md is missing");
 
+  const noFence = []; // files that were read and hold no marker of their fence
   const fenceOf = (text, file, name) => {
     if (text === null) return null;
     try {
       const f = findFence(text, name);
-      if (!f) errors.push(`${file} has no gearbox:${name} fence — run \`npx gearbox-agents update\` (a v1 layout is migrated automatically, ADR-0050)`);
+      if (!f) noFence.push({ file, name });
       return f;
     } catch (e) {
       if (!(e instanceof FenceError)) throw e;
@@ -98,6 +99,14 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
   };
   const protocol = fenceOf(agents, "AGENTS.md", "protocol");
   const glossary = fenceOf(context, "CONTEXT.md", "glossary");
+  // One fence gone while the other is there: the advice update and version give too. Otherwise a
+  // missing fence is a v1 layout, which update migrates.
+  if (noFence.length === 1 && (protocol || glossary)) {
+    const { what, fix } = oneFenceAdvice(noFence[0].file);
+    errors.push(`${what} — ${fix}`);
+  } else
+    for (const { file, name } of noFence)
+      errors.push(`${file} has no gearbox:${name} fence — run \`npx gearbox-agents update\` (a v1 layout is migrated automatically, ADR-0050)`);
 
   for (const [file, f, home] of [["AGENTS.md", protocol, "## Local protocol extensions"], ["CONTEXT.md", glossary, "## Project terms"]]) {
     if (!f || f.actualHash === f.hash) continue;

@@ -71,7 +71,7 @@ import { execSync, execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 import * as tui from "./lib/tui.js";
-import { fenceStatus, replaceFence } from "./lib/fence.js";
+import { fenceStatus, replaceFence, oneFenceAdvice } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
 import { planWorkflowFixes } from "./lib/workflows.js";
 import { runProtocolChecks } from "./lib/protocol-check.js";
@@ -595,8 +595,9 @@ function readStamp(path, protocolVersion) {
 // v1 → v2 migration plan (ADR-0050): a v1 AGENTS.md has no protocol fence. Read-only and run
 // before the branch step, like planFences, so every refusal leaves the repo as it was. Refused:
 // no (or an empty) AGENTS.md — never onboarded, so install's job, not a titleless skeleton;
-// a CONTEXT.md that already has its fence (half-migrated — migrating it again would add a second
-// glossary fence); an uncommitted file the migration rewrites (a v1 AGENTS.md / CONTEXT.md must
+// a CONTEXT.md that already has its fence (only one fence present: markers lost from a v2 tree, or
+// an interrupted migration — migrating it again would add a second glossary fence, oneFenceAdvice
+// says what to do); an uncommitted file the migration rewrites (a v1 AGENTS.md / CONTEXT.md must
 // stay in git history — the report points there — and an untracked docs/INDEX.md would be swept
 // whole into the commit, which untracked files never are, #92); a file whose code fences don't
 // pair up (MigrationError, which names the line to fix).
@@ -612,11 +613,10 @@ function planMigration(downDir, files) {
         : "no AGENTS.md — this isn't an onboarded Gearbox repo; run npx gearbox-agents install instead",
       "nothing was written",
     );
-  if (contextFile.status.state !== "missing")
-    die(
-      "CONTEXT.md has a gearbox:glossary fence while AGENTS.md has no gearbox:protocol fence",
-      "a half-migrated tree — restore the v1 CONTEXT.md (git log -p -- CONTEXT.md) so update migrates both files together, or finish AGENTS.md by hand from a fresh `npx gearbox-agents install` in a scratch dir",
-    );
+  if (contextFile.status.state !== "missing") {
+    const { what, fix } = oneFenceAdvice("AGENTS.md");
+    die(what, `${fix} — nothing was written`);
+  }
   // `HEAD:./path` resolves from the cwd: the downstream may be a package in a subdirectory of its repo.
   const uncommitted = (rel) => existsSync(join(downDir, rel)) && tryRun(`git cat-file -e "HEAD:./${rel}"`) === null;
   for (const f of files)
@@ -1108,8 +1108,10 @@ async function main() {
           handEdited.map((f) => `${f.file}:\n${lineDiff(f.status.local.content, f.status.upstream.content)}`).join("\n"),
       );
     for (const f of fences.files) {
-      if (f.status.state === "missing")
-        die(`${f.file} has no gearbox:${f.name} fence while AGENTS.md has one`, "a half-migrated tree — copy the fence from a fresh `npx gearbox-agents install` into a scratch dir");
+      if (f.status.state === "missing") {
+        const { what, fix } = oneFenceAdvice(f.file);
+        die(what, `${fix} — nothing was written`);
+      }
       if (f.status.state === "synced") continue;
       fenceWrites.push({
         file: f.file,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, cpSync, existsSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-import { findFence } from "../scripts/lib/fence.js";
+import { findFence, oneFenceAdvice } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
 import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, guardedOrigin } from "./helpers.js";
@@ -218,13 +218,15 @@ test("a failed migration commit keeps the report and names the migration's paths
 });
 
 // The mirror of the v2 path's "CONTEXT.md has no fence while AGENTS.md has one": migrating
-// CONTEXT.md again would write a second glossary fence next to the first.
-test("a glossary fence without a protocol fence is refused as a half-migrated tree", () => {
+// CONTEXT.md again would write a second glossary fence next to the first. Only one fence present:
+// restore the missing markers, or — an interrupted migration — the v1 CONTEXT.md, then rerun.
+test("a glossary fence without a protocol fence is refused before any branch or write", () => {
   const up = makeUpstream();
   const down = v1Downstream(up, { context: `${CONTEXT_V1}\n${findFence(read(up, "CONTEXT.md"), "glossary").block}\n` });
   const r = update(down, up);
   assert.equal(r.code, 1, r.out);
-  assert.match(r.out, /half-migrated/);
+  assert.ok(r.out.includes(oneFenceAdvice("AGENTS.md").what), r.out);
+  assert.match(r.out, /restore the v1 CONTEXT\.md from git and rerun `npx gearbox-agents update`/);
   assert.equal(git(down, "branch", "--list", BRANCHES), "");
   assert.equal(git(down, "status", "--porcelain"), "");
 });

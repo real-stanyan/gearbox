@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { AGENTS_MAX_BYTES } from "../scripts/lib/protocol-check.js";
-import { makeUpstream, runTool, gitInit, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
+import { oneFenceAdvice } from "../scripts/lib/fence.js";
+import { makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
 function installed(up) {
   const down = tmp("gearbox-ver-");
@@ -69,9 +70,39 @@ test("behind, hand-edited and v1 layout are each reported, never as fully synced
 
   const v1 = installed(up);
   write(v1, "AGENTS.md", "# old\n\n## Working agreement (multi-agent)\n");
+  write(v1, "CONTEXT.md", "# Domain context\n"); // a v1 layout lacks both fences; one alone is another case
   const v1Out = version(v1, up).out;
   assert.match(v1Out, /v1 layout/);
   assert.doesNotMatch(v1Out, /fully synced/);
+});
+
+// Exactly one fence present — a v2 tree whose markers were tidied away, or an interrupted v1 → v2
+// migration. version and check said "run update (migrates v1)", while update refused with a hint
+// that assumed a v1 CONTEXT.md. All three now give the same advice, and update writes nothing.
+test("exactly one fence present: version, check and update give one piece of advice", () => {
+  const up = makeUpstream();
+  for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"]]) {
+    const down = installed(up);
+    const markers = [`<!-- gearbox:${name} `, `<!-- /gearbox:${name} -->`];
+    write(down, file, read(down, file).split("\n").filter((l) => !markers.some((m) => l.startsWith(m))).join("\n"));
+    commitAll(down, "tidy the markers away"); // update refuses a dirty tree
+    const { what, fix } = oneFenceAdvice(file);
+    const v = version(down, up);
+    const c = runTool("gearbox-check", [], { cwd: down });
+    const u = runTool("gearbox-update", ["--no-push"], { cwd: down, env: { GEARBOX_DIR: up } });
+    assert.equal(v.code, 0, v.out);
+    assert.equal(c.code, 1, c.out);
+    assert.equal(u.code, 1, u.out);
+    for (const out of [v.out, c.out, u.out]) {
+      assert.ok(out.includes(what), `${file}: ${out}`);
+      assert.ok(out.includes(fix), `${file}: ${out}`);
+    }
+    assert.doesNotMatch(v.out, /v1 layout|to migrate/);
+    assert.doesNotMatch(c.out, /a v1 layout is migrated/);
+    assert.doesNotMatch(u.out, /half-migrated|migrating/);
+    assert.equal(git(down, "branch", "--list", "docs/gearbox-backfill-*"), "");
+    assert.equal(git(down, "status", "--porcelain"), "");
+  }
 });
 
 test("warns when AGENTS.md is over the 32 KiB budget", () => {
@@ -421,11 +452,11 @@ test("when one row says refresh first, the other rows' update advice waits for i
   const r2 = version(installed(makeUpstream()), up2);
   assert.match(r2.out, /CONTEXT\.md gearbox:glossary behind \(v2\.0\.0 → v2\.1\.0\) — refresh your upstream first, then run npx gearbox-agents update/);
 
-  // a half-migrated repo: the protocol fence is gone (v1 layout) while the glossary is NEWER than upstream's
+  // only one fence present: the protocol fence is gone while the glossary is NEWER than upstream's
   const d3 = installed(makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- new` }));
   write(d3, "AGENTS.md", "# old\n\n## Working agreement (multi-agent)\n");
   const r3 = version(d3, makeUpstream());
-  assert.match(r3.out, /AGENTS\.md has no gearbox:protocol fence \(v1 layout\) — refresh your upstream first, then run npx gearbox-agents update to migrate/);
+  assert.ok(r3.out.includes(`${oneFenceAdvice("AGENTS.md").what} — refresh your upstream first, then ${oneFenceAdvice("AGENTS.md").fix}`), r3.out);
   assert.match(r3.out, /CONTEXT\.md gearbox:glossary is NEWER than upstream/);
 
   for (const r of [r1, r2, r3]) {

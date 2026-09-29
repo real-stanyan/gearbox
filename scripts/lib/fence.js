@@ -95,6 +95,18 @@ export function replaceFence(text, name, block) {
   return [...lines.slice(0, fence.beginLine), block, ...lines.slice(fence.endLine + 1)].join("\n");
 }
 
+// Exactly one of the two fences present: a v2 tree that lost one pair of markers, or an interrupted
+// v1 → v2 migration — they look the same. update, version and check all give this one piece of
+// advice (ADR-0050); a v1 layout lacks both fences, and update migrates that.
+export function oneFenceAdvice(missingFile) {
+  const fence = { "AGENTS.md": "protocol", "CONTEXT.md": "glossary" };
+  const present = missingFile === "AGENTS.md" ? "CONTEXT.md" : "AGENTS.md";
+  return {
+    what: `only one fence is present: ${missingFile} has no gearbox:${fence[missingFile]} fence, ${present} has its gearbox:${fence[present]} fence`,
+    fix: `either restore the missing markers from git history (\`git log -p -- ${missingFile}\`), or, if a v1 → v2 migration was interrupted, restore the v1 ${present} from git and rerun \`npx gearbox-agents update\``,
+  };
+}
+
 export function fenceStatus(localText, upstreamText, name) {
   const upstream = findFence(upstreamText, name);
   if (!upstream) throw new FenceError(`upstream has no gearbox:${name} fence`);

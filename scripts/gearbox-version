@@ -79,7 +79,7 @@ import { execSync } from "node:child_process";
 import { join, basename } from "node:path";
 import { env, exit, cwd, stdout } from "node:process";
 import * as tui from "./lib/tui.js";
-import { fenceStatus, findFence, FenceError } from "./lib/fence.js";
+import { fenceStatus, findFence, FenceError, oneFenceAdvice } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
 import { AGENTS_MAX_BYTES } from "./lib/protocol-check.js";
 import { planWorkflowFixes } from "./lib/workflows.js";
@@ -270,6 +270,10 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
   if (st.state !== "synced") fencesSynced = false;
   fenceRows.push({ file, name, st, newer });
 }
+// Exactly one fence present — the other one's row has a local fence: not a v1 layout (both missing),
+// so its row gives the advice update and check give (ADR-0050), not "run update to migrate".
+for (const r of fenceRows)
+  if (r.st.state === "missing" && fenceRows.some((o) => o !== r && o.st.local)) r.st = { ...r.st, state: "one-fence" };
 // The protocol version is the fence's (ADR-0050); fall back to the tag for a pre-v2 upstream.
 if (upstreamProtocolVersion) upstreamVersion = upstreamProtocolVersion;
 const FENCE_LOCAL = { protocol: 'rules to "## Local protocol extensions"', glossary: 'terms to "## Project terms"' };
@@ -285,6 +289,10 @@ const FENCE_TEXT = {
       ? `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited, and NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — refresh your upstream first; update refuses to downgrade${RESET}`
       : `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, ${FIRST || "then "}npx gearbox-agents update --force${RESET}`,
   missing: (r) => `${YELLOW}⚠️  ${r.file} has no gearbox:${r.name} fence (v1 layout) — ${FIRST}run npx gearbox-agents update to migrate (ADR-0050)${RESET}`,
+  "one-fence": (r) => {
+    const { what, fix } = oneFenceAdvice(r.file);
+    return `${YELLOW}⚠️  ${what} — ${FIRST}${fix}${RESET}`;
+  },
   error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${r.st.fix ? ` — ${r.st.fix}` : ""}${RESET}`,
 };
 
