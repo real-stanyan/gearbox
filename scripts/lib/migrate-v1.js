@@ -141,14 +141,30 @@ function extension(title, extendsSection, lines) {
   return [`### ${title}`, "", `- Extends: ${extendsSection}`, "- Upstream: undecided", "", ...trimBlank(lines)].join("\n");
 }
 
+// A heading is recognized by its base title, so wording of its own in the trailing parenthetical
+// ("### While working (plus: never force-push)") would vanish with the v1 heading. Unless the heading
+// is template text (closing #s aside), that wording comes along as a plain line wherever the
+// section's content goes.
+function headingNote(chunk, isKnown) {
+  if (chunk.title === baseTitle(chunk.title)) return null;
+  const known = isKnown(chunk.heading) || isKnown(`${"#".repeat(chunk.level)} ${chunk.title}`);
+  return known ? null : `v1 heading: ${chunk.title}`;
+}
+
+function withNote(note, lines) {
+  return note ? [note, "", ...lines] : lines;
+}
+
 // One `## Working agreement` section. A v1 file can hold more than one (say, "(project additions)"),
 // so results accumulate in `wa` — a later section never overwrites an earlier one.
-function migrateWorkingAgreement(lines, isKnown, wa, report) {
-  const subs = splitByLevel(lines.join("\n"), 3);
+function migrateWorkingAgreement(chunk, isKnown, wa, report) {
+  const subs = splitByLevel(chunk.lines.join("\n"), 3);
+  const leadNote = headingNote(chunk, isKnown);
   const lead = carry(subs[0].lines, isKnown);
-  if (lead.unknown) {
-    wa.extensions.push(extension("From v1: Working agreement (multi-agent)", "Working agreement (multi-agent)", lead.lines));
-    report.carried.push({ section: "Working agreement (multi-agent)", lines: lead.unknown });
+  const leadCount = lead.unknown + (leadNote ? 1 : 0);
+  if (leadCount) {
+    wa.extensions.push(extension("From v1: Working agreement (multi-agent)", "Working agreement (multi-agent)", withNote(leadNote, lead.lines)));
+    report.carried.push({ section: "Working agreement (multi-agent)", lines: leadCount });
   }
   for (const s of subs.slice(1)) {
     const canonical = ALIASES.get(baseTitle(s.title).toLowerCase());
@@ -158,6 +174,7 @@ function migrateWorkingAgreement(lines, isKnown, wa, report) {
       report.moved.push(s.title);
       continue;
     }
+    const note = headingNote(s, isKnown);
     if (canonical === "Gate") {
       wa.gateSeen = true;
       const { code, rest } = splitGateCommand(s.lines);
@@ -166,26 +183,27 @@ function migrateWorkingAgreement(lines, isKnown, wa, report) {
         report.gateMoved = true;
       }
       const notes = carry(rest, isKnown);
-      wa.gateNotes.push(...notes.lines);
-      report.gateNotes += notes.unknown;
+      wa.gateNotes.push(...withNote(note, notes.lines));
+      report.gateNotes += notes.unknown + (note ? 1 : 0);
       continue;
     }
     const kept = carry(s.lines, isKnown);
     if (canonical === "Division of labor") {
-      if (kept.unknown) {
-        wa.divisionOfLabor.push(trimBlank(s.lines).join("\n"));
+      if (kept.unknown || note) {
+        wa.divisionOfLabor.push(withNote(note, trimBlank(s.lines)).join("\n"));
         report.divisionOfLabor = "kept";
       }
       continue;
     }
-    if (kept.unknown === 0) continue;
+    if (kept.unknown === 0 && !note) continue;
+    // The > 50% rule counts the body only (spec §4); a flagged subsection is named whole, heading too.
     const total = s.lines.filter((l) => l.trim() !== "").length;
     if (kept.unknown / total > 0.5) {
       report.flagged.push({ section: canonical, unknown: kept.unknown, total });
       continue;
     }
-    wa.extensions.push(extension(`From v1: ${canonical}`, canonical, kept.lines));
-    report.carried.push({ section: canonical, lines: kept.unknown });
+    wa.extensions.push(extension(`From v1: ${canonical}`, canonical, withNote(note, kept.lines)));
+    report.carried.push({ section: canonical, lines: kept.unknown + (note ? 1 : 0) });
   }
 }
 
@@ -253,11 +271,11 @@ export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryB
   const extraSections = [];
   for (const c of chunks.slice(1)) {
     const key = baseTitle(c.title).toLowerCase();
-    if (key === "tech stack") techStackParts.push(trimBlank(c.lines).join("\n"));
-    else if (key === "hard rules")
-      hardRulesParts.push(trimBlank(c.lines.filter((l) => !(l.trim().startsWith(">") && isKnown(l)))).join("\n"));
-    else if (key === "where to find things") whereToFindParts.push(trimBlank(c.lines).join("\n"));
-    else if (key === "working agreement") migrateWorkingAgreement(c.lines, isKnown, wa, report);
+    const kept = (lines) => withNote(headingNote(c, isKnown), trimBlank(lines)).join("\n");
+    if (key === "tech stack") techStackParts.push(kept(c.lines));
+    else if (key === "hard rules") hardRulesParts.push(kept(c.lines.filter((l) => !(l.trim().startsWith(">") && isKnown(l)))));
+    else if (key === "where to find things") whereToFindParts.push(kept(c.lines));
+    else if (key === "working agreement") migrateWorkingAgreement(c, isKnown, wa, report);
     else {
       extraSections.push([c.heading, ...c.lines].join("\n"));
       report.extraSections.push(c.title);

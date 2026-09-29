@@ -230,6 +230,44 @@ test("a repeated project section is merged in order, not overwritten", () => {
   assert.match(sectionBody(agentsMd, 2, "Hard rules"), /integer cents\.\n\n- Never log card numbers\./);
 });
 
+test("a recognized ### heading's own wording is carried as a line into its From v1 entry", () => {
+  const { agentsMd, report } = migrate(nearTemplate.replace("### While working", "### While working (plus: never force-push)"));
+  assert.deepEqual(report.carried, [{ section: "While working", lines: 1 }]);
+  assert.match(
+    sectionBody(agentsMd, 2, "Local protocol extensions"),
+    /### From v1: While working\n\n- Extends: While working\n- Upstream: undecided\n\nv1 heading: While working \(plus: never force-push\)/,
+  );
+  // wording only: closing #s aren't wording, and a bare title has none beyond the recognized name
+  assert.deepEqual(migrate(nearTemplate.replace("### PR disposition (merge rules)", "### PR disposition (merge rules) ##")).report.carried, []);
+  assert.deepEqual(migrate(nearTemplate.replace("### PR disposition (merge rules)", "### PR disposition")).report.carried, []);
+});
+
+test("a recognized Gate heading's own wording goes to the gate notes", () => {
+  const gate = "### Gate (the hard gate — must be all-green before shift-end)";
+  const { agentsMd, report } = migrate(nearTemplate.replace(gate, "### Gate (the hard gate — must be all-green before shift-end; e2e included)"));
+  assert.deepEqual([report.gateMoved, report.gateNotes], [true, 1]);
+  assert.deepEqual(gateCommand(agentsMd), ["npx tsc --noEmit"]);
+  assert.match(sectionBody(agentsMd, 2, "Gate"), /v1 heading: Gate \(the hard gate — must be all-green before shift-end; e2e included\)/);
+});
+
+test("the ## Working agreement heading's own wording goes to the lead entry", () => {
+  const { agentsMd, report } = migrate(nearTemplate.replace("## Working agreement (multi-agent)", "## Working agreement (multi-agent; the mobile team follows it too)"));
+  assert.deepEqual(report.carried, [{ section: "Working agreement (multi-agent)", lines: 1 }]);
+  assert.match(
+    sectionBody(agentsMd, 2, "Local protocol extensions"),
+    /### From v1: Working agreement \(multi-agent\)\n\n- Extends: Working agreement \(multi-agent\)\n- Upstream: undecided\n\nv1 heading: Working agreement \(multi-agent; the mobile team follows it too\)/,
+  );
+});
+
+test("a reworded Division of labor or project-section heading keeps its wording in that section", () => {
+  const { agentsMd, report } = migrate(
+    TEMPLATE.replace("### Division of labor (optional, fill in as needed)", "### Division of labor (single agent, no routing)").replace("## Hard rules", "## Hard rules (the security team owns these)"),
+  );
+  assert.equal(report.divisionOfLabor, "kept");
+  assert.match(sectionBody(agentsMd, 2, "Division of labor"), /^\n?v1 heading: Division of labor \(single agent, no routing\)\n\n1\. \*\*Fill it in\*\*/);
+  assert.match(sectionBody(agentsMd, 2, "Hard rules"), /v1 heading: Hard rules \(the security team owns these\)\n\n<Project rules/);
+});
+
 test("an unfilled v1 gate placeholder is not reported as a moved gate", () => {
   const { agentsMd, report } = migrate(TEMPLATE);
   assert.equal(report.gateMoved, false);
