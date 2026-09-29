@@ -67,7 +67,7 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 import * as tui from "./lib/tui.js";
@@ -688,7 +688,7 @@ function lineDiff(localContent, upstreamContent, max = 20) {
 
 function generateReport({
   downstreamRepo, assignments, refreshes, supersedeResult, branchName, reportDate, baseBranch,
-  fenceWrites, migration, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
+  fenceWrites, migration, earlier, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
 }) {
   const lines = [
     "# gearbox-update report",
@@ -700,6 +700,7 @@ function generateReport({
     "",
   ];
   if (migration) lines.push(...migrationReportLines(migration));
+  else if (earlier) lines.push(...earlierMigrationLines(earlier));
   if (fenceWrites.length > 0) {
     lines.push("## Protocol fences rewritten", "", "| File | Fence | From | To | Note |", "|---|---|---|---|---|");
     for (const w of fenceWrites)
@@ -763,6 +764,52 @@ function generateReport({
     "",
   );
   return lines.join("\n");
+}
+
+// The migration commit's subject (a basic regex matching itself: no BRE metacharacter in it) and the
+// line that opens the migration record in its message.
+const MIGRATION_SUBJECT = "docs(protocol): migrate to the Gearbox v2 layout";
+const MIGRATION_RECORD = "Migration record:";
+
+// The migration record (spec §4): everything the report's migration section names, one line per
+// item. The migration commit's message carries it, so it outlives the report.
+function migrationRecordLines(m) {
+  const r = m.report;
+  const c = r.context;
+  const ext = "`## Local protocol extensions`";
+  return [
+    ...(m.sections.kept.length ? [`- Kept in place: ${m.sections.kept.join(", ")}`] : []),
+    ...(m.sections.added.length ? [`- Added with a placeholder (not in the v1 file): ${m.sections.added.join(", ")}`] : []),
+    r.maintainer ? `- Maintainer: \`${r.maintainer}\` (detected in the v1 protocol text — to be confirmed)` : "- Maintainer: not detected",
+    r.gateMoved
+      ? `- Gate command: moved to \`## Gate\`${r.gateNotes ? ` (+${r.gateNotes} project note line(s) below it)` : ""}`
+      : "- Gate command: not found",
+    `- Division of labor: ${r.divisionOfLabor === "kept" ? "the v1 choice, kept" : "none chosen in v1 — the default"}`,
+    ...(m.index
+      ? [`- Where to find things: ${r.indexMoved.bytes} bytes ${m.index.appended ? "appended to the existing" : "moved to a new"} \`${m.index.path}\``]
+      : []),
+    ...(r.oversize ? [`- Oversize: AGENTS.md is still ${r.oversize} bytes (> 32768)`] : []),
+    ...r.moved.map((t) => `- Moved verbatim into ${ext}: ${t}`),
+    ...r.carried.map((x) => `- Carried into ${ext}: ${x.section} — ${x.lines} line(s)`),
+    ...r.flagged.map((f) => `- Flagged for manual review (not carried): ${f.section} — ${f.unknown}/${f.total} unknown lines`),
+    ...r.extraSections.map((t) => `- Other top-level section kept as it was: ${t}`),
+    `- CONTEXT.md: ${c.removedTerms} protocol term row(s) replaced by the glossary fence; ${c.keptRows} project row(s) kept`,
+    ...c.editedTerms.map((t) => `- CONTEXT.md: protocol term \`${t}\` had been edited locally (the fence now carries upstream's)`),
+    ...[...new Set(c.collisions)].map((t) => `- CONTEXT.md collision: \`${t}\` is a project row and a protocol term`),
+  ];
+}
+
+// A resumed branch's report: the migration section from the record an earlier run committed. The v1
+// text is in the commit's parent, named `~1` — cmd.exe would eat a `^`.
+function earlierMigrationLines({ sha, record }) {
+  return [
+    "## ⚠️ v1 → v2 layout migration (ADR-0050)",
+    "",
+    `From an earlier run on this branch: commit \`${sha}\` migrated AGENTS.md / CONTEXT.md to the v2 layout, and below is the record from its message — every flagged, carried or moved item in it still needs the human pass. The pre-migration text: \`git show ${sha}~1:./AGENTS.md\`.`,
+    "",
+    ...(record.length > 0 ? record : [`- (no record in that commit's message — see \`git show ${sha}\`)`]),
+    "",
+  ];
 }
 
 // The v1 → v2 migration's part of the PR body (spec §4): what moved where, and a checklist of
@@ -940,23 +987,52 @@ by gearbox-update tool.`,
 }
 
 // The v1 → v2 layout change as one commit (ADR-0050), through gitOps' `commit` (commitPaths).
+// The message carries the migration record (migrationRecordLines): the report is a disposable file,
+// and a same-day rerun regenerates it from a tree that is already v2 — earlierMigration reads the
+// record back from here.
 function commitMigration(commit, migration, protocolVersion) {
-  const r = migration.report;
-  const carried = r.carried.reduce((n, c) => n + c.lines, 0);
   const body = [
     "The protocol body now sits in a tool-managed fence and project content in project",
-    `sections (gearbox ADR-0050). Local protocol extensions: ${carried} carried line(s), ${r.moved.length} moved`,
-    `subsection(s); ${r.flagged.length} subsection(s) flagged for manual review.`,
-    ...(migration.index ? [`"Where to find things" moved to ${migration.index.path} (the 32 KiB AGENTS.md budget).`] : []),
-    "The PR body (gearbox-update-report.md) lists what moved where and what needs a",
-    "human; the v1 text is this commit's parent.",
+    "sections (gearbox ADR-0050). The v1 text is this commit's parent. The PR body",
+    "(gearbox-update-report.md) turns the record below into a checklist for a human.",
+    "",
+    MIGRATION_RECORD,
+    ...migrationRecordLines(migration),
+    "",
     "by gearbox-update tool.",
   ];
   commit(
     migrationPaths(migration),
-    `docs(protocol): migrate to the Gearbox v2 layout (${protocolVersion})\n\n${body.join("\n")}`,
+    `${MIGRATION_SUBJECT} (${protocolVersion})\n\n${body.join("\n")}`,
     `${migrationPaths(migration).join(" / ")} → the Gearbox v2 layout ${C.dim("(ADR-0050)")}`,
   );
+}
+
+// The record of a migration commit an earlier run made on today's branch (commitMigration), read back
+// when this run resumes the branch and migrates nothing itself — so the regenerated report still names
+// every flagged subsection (spec §4). The newest commit with the migration subject that isn't on
+// `base`; null when there is none. No shell: `%` and parentheses stay literal on every platform.
+function earlierMigration(base) {
+  let out;
+  try {
+    out = execFileSync(
+      "git",
+      ["log", "-1", "--format=%h%n%B", "--basic-regexp", `--grep=^${MIGRATION_SUBJECT}`, base ? `${base}..HEAD` : "HEAD"],
+      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    return null;
+  }
+  if (!out) return null;
+  const [sha, ...message] = out.split("\n");
+  const start = message.indexOf(MIGRATION_RECORD);
+  const record = [];
+  if (start !== -1)
+    for (const line of message.slice(start + 1)) {
+      if (!line.trim()) break;
+      record.push(line);
+    }
+  return { sha, record };
 }
 
 // ============== main flow ==============
@@ -1255,13 +1331,21 @@ async function main() {
   // protocol check reads the working tree, which committing doesn't change; once gitOps has run,
   // only the push line can differ, so the same inputs regenerate it.
   const checkResult = runProtocolChecks(downDir);
+  // Resumed onto a branch an earlier run migrated: its record goes back into the report — only when
+  // this run doesn't migrate itself, whose own section would otherwise be doubled. The base is the
+  // branch this run came from; already sitting on today's branch (--allow-branch), main or master.
+  const earlier =
+    resume && !migration
+      ? earlierMigration(branch !== plannedBranch ? branch : ["main", "master"].find((b) => tryRun(`git rev-parse --verify --quiet ${b}`)))
+      : null;
+  if (earlier) stdout.write(C.dim(`  the report re-includes the v1 → v2 migration record of ${earlier.sha} (an earlier run on this branch)\n\n`));
   const reportPath = join(downDir, "gearbox-update-report.md");
   const writeReport = (pushed) =>
     writeFileSync(
       reportPath,
       generateReport({
         downstreamRepo: downRepo, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, reportDate, baseBranch,
-        fenceWrites, migration, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
+        fenceWrites, migration, earlier, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
       }),
     );
   writeReport(false);

@@ -333,6 +333,51 @@ test("a same-day rerun resumes the migration branch with nothing to do; --force-
   assert.match(read(down, "gearbox-update-report.md"), /v1 → v2 layout migration/);
 });
 
+// A same-day rerun resumes today's branch, whose tree is already v2: no migration is planned, and the
+// regenerated report lost its migration section — the only place a flagged (uncarried) v1 subsection
+// is named (spec §4). The migration commit's message carries the record; a resumed report re-includes it.
+test("a same-day rerun that resumes the migration branch keeps the migration record — flagged subsections included — in its report", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { agents: rewriteShiftEnd(AGENTS_V1) });
+  const first = update(down, up);
+  assert.equal(first.code, 0, first.out);
+  const migration = git(down, "log", "-1", "--format=%B", "--grep=migrate to the Gearbox v2 layout");
+  assert.match(migration, /^- Flagged for manual review \(not carried\): On ending a shift — 3\/3 unknown lines$/m);
+  assert.match(migration, /^- Maintainer: `octo-owner`/m);
+
+  // same day: upstream gains one ADR; back on main, rerun
+  write(up, "docs/gearbox-adr/0003-new-rule.md", "# ADR-0003: New rule\n\n- Date: 2026-09-29\n- Status: accepted\n");
+  git(down, "checkout", "-q", "main");
+  const again = update(down, up);
+  assert.equal(again.code, 0, again.out);
+  assert.match(again.out, /resuming on docs\/gearbox-backfill-/);
+  const report = read(down, "gearbox-update-report.md");
+  assert.match(report, /## Backfilled ADRs\n\n\| gearbox \| slug \|\n\|---\|---\|\n\| ADR-0003 \| new-rule \|/);
+  assert.match(report, /## ⚠️ v1 → v2 layout migration \(ADR-0050\)\n\nFrom an earlier run on this branch/);
+  assert.match(report, /^- Flagged for manual review \(not carried\): On ending a shift — 3\/3 unknown lines$/m);
+  assert.equal(report.match(/v1 → v2 layout migration/g).length, 1);
+  // its pointer to the pre-migration text works, verbatim
+  const cmd = report.match(/`(git show [0-9a-f]+~1:\S+)`/)[1];
+  assert.equal(execSync(cmd, { cwd: down, encoding: "utf8" }).trim(), rewriteShiftEnd(AGENTS_V1).trim());
+});
+
+// The carried-forward record is for a run that doesn't migrate: when this run migrates again (the
+// branch's migration commit was reverted), the report holds one migration section — this run's own.
+test("a resumed run that migrates again reports one migration section, its own", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { agents: rewriteShiftEnd(AGENTS_V1) });
+  assert.equal(update(down, up).code, 0);
+  git(down, "revert", "--no-edit", git(down, "log", "-1", "--format=%H", "--grep=migrate to the Gearbox v2 layout"));
+  git(down, "checkout", "-q", "main");
+  const again = update(down, up);
+  assert.equal(again.code, 0, again.out);
+  assert.match(again.out, /resuming on docs\/gearbox-backfill-/);
+  const report = read(down, "gearbox-update-report.md");
+  assert.equal(report.match(/v1 → v2 layout migration/g).length, 1);
+  assert.doesNotMatch(report, /earlier run on this branch/);
+  assert.match(report, /- \[ \] On ending a shift — 3\/3 unknown lines/);
+});
+
 // The failure hint's paths are exact files, never a directory. `git clean -fd -- docs/gearbox-adr/`
 // deleted a user's untracked ADR draft (unrecoverable), and — with nothing else in that directory
 // tracked — the directory itself, so the --force-redo it recommended died on "no docs/gearbox-adr/".

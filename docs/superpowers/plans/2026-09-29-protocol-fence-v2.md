@@ -3486,7 +3486,7 @@ The procedure is the same for each repo (Mandy-s-Bubble-Tea-App first, then Mr-O
 
 ```bash
 SP=/private/tmp/claude-501/-Users-stanyan-Github-gearbox--claude-worktrees-gearbox-promo-video-262514/c1f5fbdb-f596-403a-a497-897c263932bc/scratchpad
-git clone -q https://github.com/real-stanyan/<REPO>.git "$SP/migrate/<REPO>" && cd "$SP/migrate/<REPO>" && npx -y gearbox-agents@2 update --no-push
+git clone -q https://github.com/real-stanyan/<REPO>.git "$SP/migrate/<REPO>" && cd "$SP/migrate/<REPO>" && npx -y gearbox-agents@2 update --no-push --refresh-drift
 ```
 
 - [ ] **Step 3: Manual pass.** Work through the report checklist in `gearbox-update-report.md`.
