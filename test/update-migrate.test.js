@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, cpSync, existsSync, chmodSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 import { findFence } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
@@ -15,10 +16,12 @@ const CONTEXT_V1 = readFileSync(join(FX, "CONTEXT.md"), "utf8");
 const WHILE_WORKING = "- Commit in small steps; the message should spell out the **why**, not just the what";
 const BRANCHES = "docs/gearbox-backfill-*";
 
-// A v1 downstream as the v1.15.2 installer left it, committed on main. `files` adds paths.
-function v1Downstream(up, { agents = AGENTS_V1, context = CONTEXT_V1, files = {} } = {}) {
-  const down = tmp("gearbox-v1-");
-  gitInit(down);
+// A v1 downstream as the v1.15.2 installer left it, committed on main. `files` adds paths; `sub`
+// puts the downstream in a subdirectory of its git repo (a monorepo package).
+function v1Downstream(up, { agents = AGENTS_V1, context = CONTEXT_V1, files = {}, sub = "" } = {}) {
+  const root = tmp("gearbox-v1-");
+  gitInit(root);
+  const down = join(root, sub);
   write(down, "AGENTS.md", agents);
   write(down, "CONTEXT.md", context);
   write(down, "CLAUDE.md", "@AGENTS.md\n");
@@ -27,7 +30,7 @@ function v1Downstream(up, { agents = AGENTS_V1, context = CONTEXT_V1, files = {}
   write(down, ".gearbox-version", "v1.15.2\n");
   cpSync(join(up, "docs/gearbox-adr"), join(down, "docs/gearbox-adr"), { recursive: true });
   for (const [rel, text] of Object.entries(files)) write(down, rel, text);
-  commitAll(down, "a v1 downstream");
+  commitAll(root, "a v1 downstream");
   return down;
 }
 const update = (down, up, args = []) => runTool("gearbox-update", ["--no-push", ...args], { cwd: down, env: { GEARBOX_DIR: up } });
@@ -110,7 +113,7 @@ test("the migration report lists what moved where and every item that needs a hu
   assert.match(report, /### Subsections moved verbatim into `## Local protocol extensions`\n\n- \[ \] Worktree discipline \(project ADR-0149\) — /);
   assert.match(report, /- \[ \] From v1: While working — 1 line\(s\)/);
   assert.match(report, /### ⚠️ Subsections flagged for manual review[^\n]*\n[\s\S]*- \[ \] On ending a shift — 3\/3 unknown lines/);
-  assert.ok(report.includes(`git show ${base}:AGENTS.md`), report);
+  assert.ok(report.includes(`git show ${base}:./AGENTS.md`), report);
   assert.match(report, /### Other top-level sections kept as they were\n\n- Runbook\n/);
   assert.match(report, /- \[ \] `gate` — [^\n]*product term/);
   assert.match(report, /- \[ \] [^\n]*edited locally[^\n]*`handoff`/);
@@ -224,4 +227,20 @@ test("an uncommitted file the migration would rewrite is refused: AGENTS.md alwa
   assert.equal(read(down2, "docs/INDEX.md"), "# Index\n\n- scratch notes\n");
   assert.equal(git(down2, "branch", "--list", BRANCHES), "");
   assert.equal(git(down2, "status", "--porcelain"), "?? docs/INDEX.md");
+});
+
+// A downstream can be a package in a subdirectory of its git repo: every path the tool hands to
+// git must resolve from there, not from the repo root — the committed-file check, and the report's
+// `git show <base>:…` (run from the downstream dir, where the report is).
+test("a v1 downstream in a subdirectory of its git repo migrates, and the report's git show works from there", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { sub: "pkg" });
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(findFence(read(down, "AGENTS.md"), "protocol"));
+  assert.equal(git(down, "show", "main:pkg/AGENTS.md"), AGENTS_V1.trim());
+  const cmd = read(down, "gearbox-update-report.md").match(/`(git show [0-9a-f]+:\S+)`/)[1];
+  assert.equal(execSync(cmd, { cwd: down, encoding: "utf8" }).trim(), AGENTS_V1.trim());
+  const c = runTool("gearbox-check", [], { cwd: down });
+  assert.equal(c.code, 0, c.out);
 });

@@ -580,7 +580,8 @@ function planMigration(downDir, files) {
       "CONTEXT.md has a gearbox:glossary fence while AGENTS.md has no gearbox:protocol fence",
       "a half-migrated tree — restore the v1 CONTEXT.md (git log -p -- CONTEXT.md) so update migrates both files together, or finish AGENTS.md by hand from a fresh `npx gearbox-agents install` in a scratch dir",
     );
-  const uncommitted = (rel) => existsSync(join(downDir, rel)) && tryRun(`git cat-file -e "HEAD:${rel}"`) === null;
+  // `HEAD:./path` resolves from the cwd: the downstream may be a package in a subdirectory of its repo.
+  const uncommitted = (rel) => existsSync(join(downDir, rel)) && tryRun(`git cat-file -e "HEAD:./${rel}"`) === null;
   for (const f of files)
     if (uncommitted(f.file))
       die(
@@ -734,7 +735,7 @@ function generateReport({
 // or named here (a flagged subsection) — this is where "nothing dropped silently" is kept.
 function migrationReportLines(m) {
   const r = m.report;
-  const oldText = `\`git show ${m.base}:AGENTS.md\``;
+  const oldText = `\`git show ${m.base}:./AGENTS.md\``; // ./ = from the downstream dir, where this report is
   const notes = r.gateNotes ? ` (+${r.gateNotes} project note line(s) below the command)` : "";
   const L = [
     "## ⚠️ v1 → v2 layout migration (ADR-0050)",
