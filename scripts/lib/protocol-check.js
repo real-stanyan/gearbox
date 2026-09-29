@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { findFence, FenceError } from "./fence.js";
 import { baseTitle, fenceRun, headings, sectionBody, sectionSizes, splitByLevel } from "./sections.js";
+import { planWorkflowFixes, CHECK_PATH } from "./workflows.js";
 
 export const AGENTS_MAX_BYTES = 32768;
 export const PROTOCOL_FENCE_MAX_BYTES = 20480;
@@ -159,6 +160,16 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
           warnings.push(`local extension "${title}" is "Upstream: undecided" — decide: an upstream issue link, or project-specific`);
       }
     }
+  }
+
+  // Downstream, the tool-owned gearbox-check.yml as update would write it (ADR-0051). A warning, not
+  // an error: the sync Action can't write workflow files, so only a local update run fixes it.
+  if (!upstream) {
+    const fix = planWorkflowFixes(root).find((w) => w.path === CHECK_PATH);
+    if (fix)
+      warnings.push(
+        `${CHECK_PATH} ${fix.why === "added" ? "is missing" : "differs from the template"} — run \`npx gearbox-agents@2 update\` locally to ${fix.why === "added" ? "write" : "rewrite"} it (the sync Action can't write workflow files, ADR-0051)`,
+      );
   }
 
   const claude = read("CLAUDE.md");

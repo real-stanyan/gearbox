@@ -48,8 +48,10 @@
 // file can't hide it behind the tag / GEARBOX_UPSTREAM_VERSION (the PACKAGE version under npx).
 // When one row says "refresh your upstream first", `update` refuses or dies whatever the other row
 // needs, so the other rows' update advice is worded "refresh your upstream first, then …".
-// "Fully synced" requires both fences synced, no missing or revised ADR, AND `.gearbox-version`
-// equal to upstream's protocol version; it used to count ADR files only, and could print
+// "Fully synced" requires both fences synced, no missing or revised ADR, `.gearbox-version`
+// equal to upstream's protocol version, AND no tool-owned workflow file that update would write
+// (ADR-0051: the sync Action can't write workflow files, so this row is how an unattended
+// downstream learns it needs one local run); it used to count ADR files only, and could print
 // "behind by patch" and "fully synced" in the same run. A size line warns when AGENTS.md is
 // past the 32 KiB budget (ADR-0051); it is advisory and doesn't affect the sync status.
 //
@@ -80,6 +82,7 @@ import * as tui from "./lib/tui.js";
 import { fenceStatus, findFence, FenceError } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
 import { AGENTS_MAX_BYTES } from "./lib/protocol-check.js";
+import { planWorkflowFixes } from "./lib/workflows.js";
 
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -285,6 +288,17 @@ const FENCE_TEXT = {
   error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${r.st.fix ? ` — ${r.st.fix}` : ""}${RESET}`,
 };
 
+// Tool-owned workflow files (ADR-0051): what update would write. Read like every file here — a
+// failure is a row, never a stack trace.
+let workflowFixes = [];
+let workflowError = null;
+try {
+  workflowFixes = planWorkflowFixes(cwd());
+} catch (e) {
+  workflowError = e.message;
+}
+const workflowsOk = !workflowError && workflowFixes.length === 0;
+
 console.log("");
 console.log(`${DIM}repo:${RESET}      ${repoName}`);
 if (isRemote) {
@@ -314,6 +328,11 @@ if (upstreamVersion) {
   }
 }
 for (const r of fenceRows) console.log(`${DIM}fence:${RESET}     ${FENCE_TEXT[r.st.state](r)}`);
+if (workflowError) console.log(`${DIM}workflows:${RESET} ${YELLOW}⚠️  can't read the workflow files: ${workflowError}${RESET}`);
+else if (workflowFixes.length > 0)
+  console.log(
+    `${DIM}workflows:${RESET} ${YELLOW}⚠️  update would write ${workflowFixes.map((w) => `${w.path} (${w.why})`).join(", ")} — ${FIRST}run npx gearbox-agents@2 update locally (the sync Action can't write workflow files)${RESET}`,
+  );
 if (agentsBytes > AGENTS_MAX_BYTES)
   console.log(`${DIM}size:${RESET}      ${YELLOW}⚠️  AGENTS.md is ${agentsBytes} bytes — over the ${AGENTS_MAX_BYTES}-byte budget (ADR-0051); move long maps to docs/INDEX.md${RESET}`);
 console.log("");
@@ -416,13 +435,15 @@ if (tui.isTTY) {
 }
 
 console.log("");
-// "Fully synced" = fences, ADRs and stamp all match; the stamp is the protocol version (ADR-0050).
+// "Fully synced" = fences, ADRs, stamp and workflow files all match; the stamp is the protocol
+// version (ADR-0050), the workflow files are what update would write (ADR-0051).
 const stampOk = !upstreamVersion || localVersion === upstreamVersion;
-if (missingCount === 0 && driftCount === 0 && fencesSynced && stampOk) {
+if (missingCount === 0 && driftCount === 0 && fencesSynced && stampOk && workflowsOk) {
   console.log(`${DIM}status:${RESET}    ${GREEN}✅ fully synced (${syncedCount})${RESET}`);
   if (tui.isTTY) console.log("\n  " + tui.grad("⚙ downstream in sync"));
 } else {
   if (!fencesSynced) console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  protocol fences not synced (see fence: lines above)${RESET}`);
+  if (!workflowsOk) console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  workflow files not current (see the workflows: line above)${RESET}`);
   // With no usable upstream fence there is no protocol version to hold the stamp against — the
   // fallback is the tag/env, under npx the PACKAGE version — so the fence: lines' "refresh" stands alone.
   if (!stampOk && !fenceRows.some((r) => r.st.upstreamUnusable)) {

@@ -23,6 +23,38 @@ test("fully synced only when fences, ADRs and stamp all match", () => {
   assert.match(r.out, /fully synced/);
 });
 
+// The sync Action never writes workflow files (ADR-0051), so an unattended downstream gets them only
+// from a local run — and version at shift start is the recurring signal to make it.
+test("a workflow file update would write is never 'fully synced': the row names it and the local run", () => {
+  const up = makeUpstream();
+  const noCheck = installed(up);
+  rmSync(join(noCheck, ".github/workflows/gearbox-check.yml"));
+  commitAll(noCheck, "drop gearbox-check.yml"); // update refuses a dirty tree
+  const r = version(noCheck, up);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol synced/);
+  assert.match(r.out, /update would write \.github\/workflows\/gearbox-check\.yml \(added\) — run npx gearbox-agents@2 update locally \(the sync Action can't write workflow files\)/);
+  assert.doesNotMatch(r.out, /fully synced/);
+  // the advice works: a local update writes the file, and then the repo is fully synced
+  const u = runTool("gearbox-update", ["--no-push"], { cwd: noCheck, env: { GEARBOX_DIR: up } });
+  assert.equal(u.code, 0, u.out);
+  assert.match(version(noCheck, up).out, /fully synced/);
+
+  const stale = installed(up);
+  write(stale, ".github/workflows/gearbox-sync.yml", read(stale, ".github/workflows/gearbox-sync.yml").replaceAll("gearbox-agents@2", "gearbox-agents@latest"));
+  write(stale, ".github/workflows/gearbox-check.yml", `${read(stale, ".github/workflows/gearbox-check.yml")}# a local tweak\n`);
+  const s = version(stale, up);
+  assert.match(s.out, /update would write \.github\/workflows\/gearbox-check\.yml \(refreshed to the template\), \.github\/workflows\/gearbox-sync\.yml \(npx pin @latest → @2\)/);
+  assert.doesNotMatch(s.out, /fully synced/);
+
+  // CRLF on disk (core.autocrlf) is the same file
+  const crlf = installed(up);
+  for (const f of [".github/workflows/gearbox-check.yml", ".github/workflows/gearbox-sync.yml"]) write(crlf, f, read(crlf, f).replace(/\n/g, "\r\n"));
+  const c = version(crlf, up);
+  assert.doesNotMatch(c.out, /update would write/);
+  assert.match(c.out, /fully synced/);
+});
+
 test("behind, hand-edited and v1 layout are each reported, never as fully synced", () => {
   const up = makeUpstream();
   const behind = version(installed(up), makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- new` }));

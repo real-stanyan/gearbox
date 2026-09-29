@@ -5,7 +5,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { findFence, renderFence, replaceFence } from "../scripts/lib/fence.js";
 import { buildAgentsMd, buildContextMd } from "../scripts/lib/skeleton.js";
-import { ciYml } from "../scripts/lib/workflows.js";
+import { ciYml, SYNC_YML, CHECK_YML } from "../scripts/lib/workflows.js";
 
 export const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const GIT_ENV = {
@@ -85,13 +85,16 @@ export const PROTOCOL = [
 ].join("\n");
 export const GLOSSARY = "## Protocol terms\n\n| Term | Definition | Notes |\n|---|---|---|\n| handoff | a baton passed at merge | — |";
 
-// A downstream-shaped v2 repo on disk (no git unless the caller adds it).
+// A downstream-shaped v2 repo on disk (no git unless the caller adds it), with the workflow files a
+// real install writes: ci.yml plus the tool-owned gearbox-sync.yml and gearbox-check.yml.
 export function v2Repo({ gate = "npm test", ci = null, version = "v2.0.0", glossaryVersion = version, stamp = version, maintainer = "octo", localExtensions, whereToFind } = {}) {
   const dir = tmp("gearbox-v2-");
   write(dir, "AGENTS.md", buildAgentsMd({ title: "demo", gate, maintainer, localExtensions, whereToFind, protocolBlock: renderFence("protocol", version, PROTOCOL) }));
   write(dir, "CONTEXT.md", buildContextMd({ title: "demo", glossaryBlock: renderFence("glossary", glossaryVersion, GLOSSARY) }));
   write(dir, "CLAUDE.md", "@AGENTS.md\n");
   write(dir, ".github/workflows/ci.yml", ci ?? ciYml(gate));
+  write(dir, ".github/workflows/gearbox-sync.yml", SYNC_YML);
+  write(dir, ".github/workflows/gearbox-check.yml", CHECK_YML);
   if (stamp) write(dir, ".gearbox-version", `${stamp}\n`);
   return dir;
 }

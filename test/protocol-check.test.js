@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { runProtocolChecks, gateCommand, maintainerAccount, AGENTS_MAX_BYTES, PROTOCOL_FENCE_MAX_BYTES } from "../scripts/lib/protocol-check.js";
 import { renderFence, findFence, replaceFence } from "../scripts/lib/fence.js";
+import { CHECK_YML } from "../scripts/lib/workflows.js";
 import { v2Repo, write, read, gitInit, runTool, tmp, PROTOCOL } from "./helpers.js";
 
 const errorsOf = (dir, opts) => runProtocolChecks(dir, opts).errors;
@@ -312,6 +313,33 @@ test("gateCommand reads the first fenced block like CommonMark", () => {
   assert.equal(gateCommand("## Gate\n\nrun the tests\n"), null);
   assert.equal(gateCommand(gate("```sh", "npm test")), null);
   assert.equal(gateCommand("## Elsewhere\n\n```sh\nnpm test\n```\n"), null);
+});
+
+// CI can't run the protocol check once its workflow is gone, and a stale copy runs a stale check —
+// but the sync Action can't write workflow files (ADR-0051): a warning pointing at a local update.
+test("downstream: a missing or outdated gearbox-check.yml warns, never errors; CRLF is the same file; upstream mode doesn't look", () => {
+  const missing = v2Repo();
+  rmSync(join(missing, ".github/workflows/gearbox-check.yml"));
+  const m = runProtocolChecks(missing);
+  assert.deepEqual(m.errors, []);
+  assert.deepEqual(m.warnings, [
+    ".github/workflows/gearbox-check.yml is missing — run `npx gearbox-agents@2 update` locally to write it (the sync Action can't write workflow files, ADR-0051)",
+  ]);
+  assert.deepEqual(runProtocolChecks(missing, { upstream: true }).warnings, []);
+
+  const outdated = v2Repo();
+  write(outdated, ".github/workflows/gearbox-check.yml", CHECK_YML.replace("node-version: 24", "node-version: 20"));
+  const o = runProtocolChecks(outdated);
+  assert.deepEqual(o.errors, []);
+  assert.match(o.warnings.join("\n"), /^\.github\/workflows\/gearbox-check\.yml differs from the template — run `npx gearbox-agents@2 update` locally/);
+
+  const crlf = v2Repo();
+  write(crlf, ".github/workflows/gearbox-check.yml", CHECK_YML.replace(/\n/g, "\r\n"));
+  assert.deepEqual(runProtocolChecks(crlf).warnings, []);
+
+  const cli = runTool("gearbox-check", [], { cwd: missing });
+  assert.equal(cli.code, 0, cli.out);
+  assert.match(cli.out, /⚠ \.github\/workflows\/gearbox-check\.yml is missing/);
 });
 
 test("gearbox-check CLI exits 0 on a clean repo and 1 with errors", () => {
