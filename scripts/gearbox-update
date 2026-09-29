@@ -1046,9 +1046,16 @@ async function main() {
     else if (pushResult) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
     else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     ${pushCmd}\n`);
   } catch (e) {
+    // Only the paths this run wrote — like the tool itself, never sweep in the user's untracked files.
+    const own = [
+      ...(toCopy.length > 0 || toRefresh.length > 0 || (supersedeResult && !supersedeResult.alreadyApplied) ? ["docs/gearbox-adr/"] : []),
+      ...fenceWrites.map((w) => w.file),
+      ...workflowWrites.map((w) => w.path),
+      ...(stampCurrent ? [] : [".gearbox-version"]),
+    ];
     die(
       `git operation failed: ${e.message}`,
-      "local files were written but not committed/pushed, handle it manually:\n  git status\n  git add -A\n  git commit\n  git push",
+      `the files are written on ${branchName} but not all committed — finish by hand:\n  git status\n  git add -- ${own.join(" ")}\n  git commit\n  ${pushCmd}`,
     );
   }
   stdout.write("\n");

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { findFence } from "../scripts/lib/fence.js";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
@@ -198,4 +199,18 @@ test("a failing branch step leaves the working tree untouched", () => {
   assert.equal(r.code, 1, r.out);
   assert.equal(git(down, "status", "--porcelain"), "");
   assert.equal(git(down, "rev-parse", "--abbrev-ref", "HEAD"), "main");
+});
+
+// validateContext never sweeps untracked files into a commit, and neither may the recovery hint.
+test("a failed commit names the tool's own paths to finish by hand", () => {
+  const down = v2Downstream(makeUpstream());
+  write(down, ".git/hooks/pre-commit", "#!/bin/sh\nexit 1\n");
+  chmodSync(join(down, ".git/hooks/pre-commit"), 0o755);
+  git(down, "config", "core.hooksPath", join(down, ".git/hooks")); // beats any global hooksPath
+  const r = update(down, makeUpstream({ version: "v2.1.0" }));
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /git operation failed/);
+  assert.match(r.out, /git add -- AGENTS\.md CONTEXT\.md \.gearbox-version\n/);
+  assert.doesNotMatch(r.out, /git add -A/);
+  assert.match(git(down, "rev-parse", "--abbrev-ref", "HEAD"), /^docs\/gearbox-backfill-/);
 });
