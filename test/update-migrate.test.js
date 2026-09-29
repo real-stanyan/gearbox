@@ -278,3 +278,32 @@ test("a repo with no AGENTS.md is refused, not migrated into a skeleton", () => 
   assert.equal(git(down, "branch", "--list", BRANCHES), "");
   assert.equal(git(down, "status", "--porcelain"), "");
 });
+
+// The same-day paths (#96, ADR-0025) on a migration branch: a rerun resumes today's branch and
+// finds nothing to do; --force-redo deletes it and rebuilds the same tree from main.
+test("a same-day rerun resumes the migration branch with nothing to do; --force-redo rebuilds the same tree", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up);
+  const first = update(down, up);
+  assert.equal(first.code, 0, first.out);
+  const today = git(down, "rev-parse", "--abbrev-ref", "HEAD");
+  assert.match(today, /^docs\/gearbox-backfill-/);
+  const tip = git(down, "rev-parse", today);
+  const tree = git(down, "rev-parse", `${today}^{tree}`);
+
+  git(down, "checkout", "-q", "main");
+  const again = update(down, up);
+  assert.equal(again.code, 0, again.out);
+  assert.match(again.out, /resuming on docs\/gearbox-backfill-/);
+  assert.match(again.out, /Nothing to do/);
+  assert.equal(git(down, "rev-parse", today), tip);
+
+  git(down, "checkout", "-q", "main");
+  const redo = update(down, up, ["--force-redo"]);
+  assert.equal(redo.code, 0, redo.out);
+  assert.match(redo.out, /deleted[^\n]* the old docs\/gearbox-backfill-[^\n]* \(--force-redo\)/);
+  assert.equal(git(down, "rev-parse", `${today}^{tree}`), tree);
+  assert.match(git(down, "log", "--format=%s", `main..${today}`), /^docs\(protocol\): migrate to the Gearbox v2 layout/m);
+  assert.equal(git(down, "rev-list", "--count", "main"), "1");
+  assert.match(read(down, "gearbox-update-report.md"), /v1 → v2 layout migration/);
+});
