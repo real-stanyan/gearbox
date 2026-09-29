@@ -69,7 +69,7 @@ import { execSync } from "node:child_process";
 import { join, basename } from "node:path";
 import { env, exit, cwd, stdout } from "node:process";
 import * as tui from "./lib/tui.js";
-import { fenceStatus } from "./lib/fence.js";
+import { fenceStatus, findFence } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
 import { AGENTS_MAX_BYTES } from "./lib/protocol-check.js";
 
@@ -207,6 +207,16 @@ let upstreamProtocolVersion = "";
 for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"]]) {
   const upText = existsSync(join(gearboxDir, file)) ? readFileSync(join(gearboxDir, file), "utf8") : "";
   const localText = existsSync(file) ? readFileSync(file, "utf8") : "";
+  if (name === "protocol") {
+    // Upstream's protocol version comes from upstream's own text: a malformed LOCAL marker makes
+    // fenceStatus throw before it hands upstream's fence back, and the fallback (the tag, or
+    // GEARBOX_UPSTREAM_VERSION — the PACKAGE version under npx) moves independently of the protocol.
+    try {
+      upstreamProtocolVersion = findFence(upText, "protocol")?.version || "";
+    } catch {
+      // a malformed upstream marker: the row below reports it; the tag stays the fallback
+    }
+  }
   let st;
   try {
     st = fenceStatus(localText, upText, name);
@@ -220,7 +230,6 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
   // of advice to run a backfill.
   const newer = Boolean(st.local && st.upstream && semverGreater(st.local.version, st.upstream.version));
   if (st.state === "behind" && newer) st = { ...st, state: "ahead" };
-  if (name === "protocol" && st.upstream) upstreamProtocolVersion = st.upstream.version;
   if (st.state !== "synced") fencesSynced = false;
   fenceRows.push({ file, name, st, newer });
 }

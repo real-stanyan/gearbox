@@ -180,3 +180,32 @@ test("a hand-edited fence that is also newer than upstream's is told to refresh 
   assert.doesNotMatch(b.out, /run npx gearbox-agents update/);
   assert.doesNotMatch(b.out, /fully synced/);
 });
+
+// Under npx GEARBOX_UPSTREAM_VERSION is the PACKAGE version (bin/gearbox.js always sets it), which
+// moves independently of the protocol. fenceStatus throws on a malformed LOCAL marker before it
+// hands upstream's fence back, so upstream's protocol version has to be read from upstream's own text.
+test("a malformed local marker doesn't hide upstream's protocol version behind the package version", () => {
+  const up = makeUpstream(); // protocol v2.0.0
+  const down = installed(up);
+  write(down, "AGENTS.md", read(down, "AGENTS.md").replace("<!-- /gearbox:protocol -->", ""));
+  const r = version(down, up, { GEARBOX_UPSTREAM_VERSION: "v2.5.0" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol: .*has no end marker/);
+  assert.match(r.out, /upstream v2\.0\.0 \/ local v2\.0\.0 \(in sync\)/);
+  assert.doesNotMatch(r.out, /v2\.5\.0/);
+  assert.doesNotMatch(r.out, /behind by/);
+  assert.doesNotMatch(r.out, /run npx gearbox-agents update/);
+  assert.doesNotMatch(r.out, /fully synced/);
+});
+
+// The same read of upstream's own text must survive a malformed UPSTREAM marker: an error row, not a crash.
+test("a malformed upstream marker is an error row, not a crash; the version falls back to the env/tag", () => {
+  const down = installed(makeUpstream());
+  const broken = makeUpstream();
+  write(broken, "AGENTS.md", read(broken, "AGENTS.md").replace("<!-- /gearbox:protocol -->", ""));
+  const r = version(down, broken, { GEARBOX_UPSTREAM_VERSION: "v2.5.0" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol: .*has no end marker/);
+  assert.match(r.out, /upstream v2\.5\.0 \/ local v2\.0\.0/);
+  assert.doesNotMatch(r.out, /fully synced/);
+});
