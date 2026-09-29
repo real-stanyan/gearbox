@@ -15,7 +15,7 @@ Every agent loads `AGENTS.md` whole at session start — one repo was paying abo
 - **`gearbox-agents check`** (`scripts/gearbox-check`; the assertions live in `scripts/lib/protocol-check.js`) is an offline, read-only command. Downstream it is the CI job below; upstream, `scripts/check-gearbox.js` runs the same assertions in upstream mode. It fails on:
   1. A missing or edited fence (content hash ≠ marker hash).
   2. Unequal fence versions, or (downstream) a `.gearbox-version` that differs from them.
-  3. An `AGENTS.md` over 32768 bytes; the message lists the largest sections.
+  3. An `AGENTS.md` over 32768 bytes, counted on LF content as CI checks it out (a `core.autocrlf` checkout adds a byte per line on disk); the message lists the largest sections.
   4. A missing required project section outside the fence, or protocol section inside it — matched by heading level and title, never by substring.
   5. A `CLAUDE.md` that isn't the `@AGENTS.md` shell, a `HANDOFF.md`, or a gitignored protocol file.
   6. A broken CI == Gate contract: `ci.yml` must contain every command line of the `## Gate` block, and the block must not still be the placeholder. The block is read the CommonMark way — the first ``` or ~~~ fence, closed by the same character at least as long. `# comments` are stripped, whole-line and trailing, because downstream Gate blocks annotate their lines.
