@@ -2,7 +2,7 @@
 
 Domain glossary. All agents' understanding of domain terms is grounded here; code naming stays consistent with the terms defined here.
 
-<!-- gearbox:glossary v2.0.0 sha256:89e2c4bc9f0f; managed by gearbox-agents, do not edit by hand; project terms go in "## Project terms" -->
+<!-- gearbox:glossary v2.0.0 sha256:fff2054e6480; managed by gearbox-agents, do not edit by hand; project terms go in "## Project terms" -->
 ## Protocol terms
 
 | Term | Definition | Notes |
@@ -13,7 +13,7 @@ Domain glossary. All agents' understanding of domain terms is grounded here; cod
 | protocol gap | A question the repo's persistent artifacts (AGENTS.md / ADR / CONTEXT.md) can't answer | Hitting one requires opening an issue — silent judgment calls are not allowed |
 | The three issue roles | The three non-overlapping uses of issues/PRs in this protocol: **Task** / **Memory** (handoff memory) / **Protocol gap** | Every issue should fall into exactly one of these — see AGENTS.md |
 | gate | The command that must be all-green before merging and before ending a shift. Each repo writes its own in the `## Gate` section of AGENTS.md | CI runs the same command (CI == Gate contract) — red means no merge |
-| L1/L2 tiers | Two authorization tiers for protocol changes: **L1 strict tier** (Hard rules / Gate / Tech stack / the "Changing the protocol itself" section itself) requires explicit maintainer agreement before merging; **L2 autonomous tier** (the rest of Working agreement / indexes) the agent can merge on its own | ADR-0006; boundary criteria in ADR-0012 |
+| L1/L2 tiers | Two authorization tiers for protocol changes: **L1 strict tier** (Hard rules / Gate / Tech stack / Maintainer / the "Changing the protocol itself" section itself) requires explicit maintainer agreement before merging; **L2 autonomous tier** (the rest of Working agreement / Division of labor / indexes) the agent can merge on its own | ADR-0006; boundary criteria in ADR-0012 |
 | Mechanism reference (criterion) | Any new content that references L1/L2, Hard rules, Working agreement, or other protocol mechanisms (by keyword or semantic dependency) is treated as L1 | ADR-0012, "mechanism reference takes priority"; guards against using "optional + pure addition" as an L2 loophole to expand the protocol |
 | Memory five-part format | The minimum valid format for a handoff comment: ① what's done ② what's blocked ③ what's next ④ close the issue if the task is complete ⑤ rationale/trade-offs (write "none" if no decision was made) | ADR-0004; missing any item makes the handoff invalid |
 | terminal shift | The form a shift ends in when archiving / confirming there's no next shift: a handoff issue may be skipped, but the last closed issue must explicitly declare "no next shift" + a reason. Repo-level, not lane-level — invalid while another lane is still live | ADR-0009; a silent ending doesn't count as terminal; repo-level scope per ADR-0048 |

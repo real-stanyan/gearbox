@@ -28,7 +28,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 GitHub account: `real-stanyan`
 
-<!-- gearbox:protocol v2.0.0 sha256:7e9e8d887507; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:5db571e68f0c; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -96,7 +96,7 @@ Agents can modify AGENTS.md, but **the change is tiered by its content** (ADR-00
 | Tier | Content | Process |
 |---|---|---|
 | **L1 strict tier** | Hard rules / Gate command / Tech stack / Maintainer / this section itself | issue + ADR + PR, **and the agent may only merge after the maintainer explicitly agrees, in the session or in a PR comment** |
-| **L2 autonomous tier** | Working agreement (except the Gate contract) / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
+| **L2 autonomous tier** | Working agreement (except the Gate contract) / Division of labor / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
 
 The boundary of "Gate command" (ADR-0010): the command line itself, and **loosening/deleting/rewriting an existing gate-script assertion** = L1; **adding a new, stricter assertion** = L2, riding along with its own PR. Pure refactors (behavior unchanged) count as L2, with the burden of proof on the agent making the change.
 
