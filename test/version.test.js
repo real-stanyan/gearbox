@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { makeUpstream, runTool, gitInit, tmp, read, write, commitAll, PROTOCOL } from "./helpers.js";
+import { makeUpstream, runTool, gitInit, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
 function installed(up) {
   const down = tmp("gearbox-ver-");
@@ -350,4 +350,43 @@ test("an error row's remedy is always for the problem its message names", () => 
   assert.match(r.out, /AGENTS\.md gearbox:protocol: EISDIR[^\n]*/);
   assert.doesNotMatch(r.out.match(/AGENTS\.md gearbox:protocol: EISDIR[^\n]*/)[0], /predates v2|refresh|fix the marker/);
   assert.match(r.out, /CONTEXT\.md gearbox:glossary: upstream has no gearbox:glossary fence — your gearbox upstream predates v2/);
+});
+
+// A run where one fence row says "refresh your upstream first" (NEWER, or an upstream that can't be
+// used) can't also tell the OTHER row to run update — update refuses or dies there. The other row's
+// advice keeps its place but waits: "refresh your upstream first, then …".
+test("when one row says refresh first, the other rows' update advice waits for it", () => {
+  const brokenAgents = (up) => write(up, "AGENTS.md", read(up, "AGENTS.md").replace("<!-- /gearbox:protocol -->", ""));
+
+  // upstream's AGENTS.md can't be used; the local glossary is hand-edited
+  const up1 = makeUpstream();
+  brokenAgents(up1);
+  const d1 = installed(makeUpstream());
+  write(d1, "CONTEXT.md", read(d1, "CONTEXT.md").replace("a baton passed at merge", "edited by hand"));
+  const r1 = version(d1, up1);
+  assert.equal(r1.code, 0, r1.out);
+  assert.match(r1.out, /AGENTS\.md gearbox:protocol: .* — upstream's fence can't be used — refresh the package\/checkout/);
+  assert.match(r1.out, /CONTEXT\.md gearbox:glossary hand-edited — move local terms to "## Project terms", refresh your upstream first, then npx gearbox-agents update --force/);
+
+  // ... the glossary is behind (upstream's glossary moved on)
+  const up2 = makeUpstream({ version: "v2.1.0", glossary: `${GLOSSARY}\n| lane | one shift + its claims | — |` });
+  brokenAgents(up2);
+  const r2 = version(installed(makeUpstream()), up2);
+  assert.match(r2.out, /CONTEXT\.md gearbox:glossary behind \(v2\.0\.0 → v2\.1\.0\) — refresh your upstream first, then run npx gearbox-agents update/);
+
+  // a half-migrated repo: the protocol fence is gone (v1 layout) while the glossary is NEWER than upstream's
+  const d3 = installed(makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- new` }));
+  write(d3, "AGENTS.md", "# old\n\n## Working agreement (multi-agent)\n");
+  const r3 = version(d3, makeUpstream());
+  assert.match(r3.out, /AGENTS\.md has no gearbox:protocol fence \(v1 layout\) — refresh your upstream first, then run npx gearbox-agents update to migrate/);
+  assert.match(r3.out, /CONTEXT\.md gearbox:glossary is NEWER than upstream/);
+
+  for (const r of [r1, r2, r3]) {
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /fully synced/);
+    // every "update" instruction on a fence: line in these runs comes with a "refresh your upstream first"
+    const advising = r.out.split("\n").filter((l) => /fence:/.test(l) && /update( --force| to migrate)?\b/.test(l));
+    assert.ok(advising.length > 0, r.out);
+    for (const line of advising) assert.match(line, /refresh|don't run update|update refuses/, line);
+  }
 });

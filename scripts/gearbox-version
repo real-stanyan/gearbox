@@ -46,6 +46,8 @@
 // upstream fence there is no protocol version to hold the stamp against, so the stamp line is
 // left out. Upstream's protocol version is read from upstream's own fence, so a broken local
 // file can't hide it behind the tag / GEARBOX_UPSTREAM_VERSION (the PACKAGE version under npx).
+// When one row says "refresh your upstream first", `update` refuses or dies whatever the other row
+// needs, so the other rows' update advice is worded "refresh your upstream first, then …".
 // "Fully synced" requires both fences synced, no missing or revised ADR, AND `.gearbox-version`
 // equal to upstream's protocol version; it used to count ADR files only, and could print
 // "behind by patch" and "fully synced" in the same run. A size line warns when AGENTS.md is
@@ -268,15 +270,18 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
 // The protocol version is the fence's (ADR-0050); fall back to the tag for a pre-v2 upstream.
 if (upstreamProtocolVersion) upstreamVersion = upstreamProtocolVersion;
 const FENCE_LOCAL = { protocol: 'rules to "## Local protocol extensions"', glossary: 'terms to "## Project terms"' };
+// A row that says "refresh your upstream first" (NEWER, or an upstream that can't be used) leaves
+// `update` refusing or dying, whatever the OTHER row needs — so the other rows' update advice waits.
+const FIRST = fenceRows.some((r) => r.newer || r.st.upstreamUnusable) ? "refresh your upstream first, then " : "";
 const FENCE_TEXT = {
   synced: (r) => `${GREEN}✅ ${r.file} gearbox:${r.name} synced (${r.st.local.version})${RESET}`,
-  behind: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} behind (${r.st.local.version} → ${r.st.upstream.version}) — run npx gearbox-agents update${RESET}`,
+  behind: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} behind (${r.st.local.version} → ${r.st.upstream.version}) — ${FIRST}run npx gearbox-agents update${RESET}`,
   ahead: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name} is NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — your upstream gearbox is older; refresh it (git pull / npx -y gearbox-agents@2), don't run update${RESET}`,
   "hand-edited": (r) =>
     r.newer
       ? `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited, and NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — refresh your upstream first; update refuses to downgrade${RESET}`
-      : `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, then npx gearbox-agents update --force${RESET}`,
-  missing: (r) => `${YELLOW}⚠️  ${r.file} has no gearbox:${r.name} fence (v1 layout) — run npx gearbox-agents update to migrate (ADR-0050)${RESET}`,
+      : `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, ${FIRST || "then "}npx gearbox-agents update --force${RESET}`,
+  missing: (r) => `${YELLOW}⚠️  ${r.file} has no gearbox:${r.name} fence (v1 layout) — ${FIRST}run npx gearbox-agents update to migrate (ADR-0050)${RESET}`,
   error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${r.st.fix ? ` — ${r.st.fix}` : ""}${RESET}`,
 };
 
