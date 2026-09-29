@@ -173,7 +173,7 @@ Division of labor is a project property, declared in the project's `## Division 
 - Extends: Changing the protocol itself
 - Upstream: n/a — this is the upstream
 
-**Editing the fences** (ADR-0050): after changing anything between the `gearbox:` markers in `AGENTS.md` or `CONTEXT.md`, set `package.json`'s version to this change's target version, then run `node scripts/dev/rehash-fences.js` — it rewrites both markers' hash and, when content changed, their version. The self-check fails when a marker's hash doesn't match its content, and when fence content differs from the latest tag's while the marker version ≠ `package.json`'s.
+**Editing the fences** (ADR-0050): after changing anything between the `gearbox:` markers in `AGENTS.md` or `CONTEXT.md`, set `package.json`'s version to this change's target version, then run `node scripts/dev/rehash-fences.js` — it rewrites both markers' hash and version (`package.json`'s when fence content changed since the latest tag, else the tag's), and refuses until `package.json` is bumped past that tag. The self-check applies the same rule (`scripts/lib/fence-release.js`): it fails when a marker's hash doesn't match its content, when changed content isn't stamped with a `package.json` version bumped past the tag, and when unchanged content carries a version other than the tag's.
 
 **Downstream impact declaration** (ADR-0013, pull model ADR-0026): every protocol-change PR declares `Affects downstream` in the PR body (`yes`/`no` + one reason). It's informational — it helps gauge blast radius, it opens no per-downstream issues and doesn't block merge. A maintainer running a private fleet may optionally open notification issues against known downstream projects (fleet notes live outside the template, ADR-0033).
 
