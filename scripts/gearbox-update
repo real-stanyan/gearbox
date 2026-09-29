@@ -10,9 +10,10 @@
 //                    stamp gets refreshed). This drops any local edits the downstream made to
 //                    the copy — a branch + PR review is the safety net, so it's opt-in.
 //   --force-redo     if today's backfill branch already exists, delete and rebuild it
-//                    (ADR-0025); push uses --force-with-lease to overwrite the remote. Manual
-//                    edits on that branch are lost — confirm there are none before using this.
-//                    Default (no flag): error out, don't delete.
+//                    (ADR-0025) — the delete waits until every refusal has passed; push uses
+//                    --force-with-lease to overwrite the remote. Manual edits on that branch
+//                    are lost — confirm there are none before using this.
+//                    Default (no flag): resume on it if unmerged, clean it up if merged (#96).
 //   --allow-branch   skip the "auto-switch back to main/master" step (ADR-0025) and run
 //                    against the current branch. Base-branch correctness is on you — if the
 //                    base is wrong, the output isn't trustworthy.
@@ -338,17 +339,21 @@ function validateContext() {
   // Pre-check: does today's branch name already exist? Auto-resolve instead of erroring (#96):
   // merged into base = stale leftover, its work is already in the base → safe-delete and run
   // fresh; unmerged = an earlier run today → switch back onto it and continue (backfills are
-  // idempotent, new commits stack on top, manual edits survive). --force-redo still deletes
-  // and rebuilds unconditionally (ADR-0025).
+  // idempotent, new commits stack on top, manual edits survive). --force-redo deletes and
+  // rebuilds (ADR-0025), but the delete waits in gitOps until every refusal (a stale upstream,
+  // a hand-edited fence) has passed — a refused run never costs the branch.
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
   const branchExists = tryRun(`git rev-parse --verify ${plannedBranch} 2>/dev/null`);
   let resume = false;
+  let redo = false;
   if (branchExists) {
     if (forceRedo) {
-      run(`git branch -D ${plannedBranch}`);
+      if (branch === plannedBranch)
+        die(`--force-redo can't rebuild ${plannedBranch} while it's checked out`, "switch to main first (or drop --allow-branch)");
+      redo = true;
       stdout.write(
-        C.yellow(`⚠️  --force-redo: deleted local branch ${plannedBranch}, rebuilding\n`) +
+        C.yellow(`⚠️  --force-redo: ${plannedBranch} will be deleted and rebuilt once the checks pass\n`) +
           C.dim("  push will use --force-with-lease to overwrite the remote (if it exists)\n"),
       );
     } else if (branch === plannedBranch) {
@@ -372,7 +377,7 @@ function validateContext() {
     }
   }
 
-  return { downDir, downAdrDir, branch, resume, plannedBranch };
+  return { downDir, downAdrDir, branch, resume, redo, plannedBranch };
 }
 
 // ============== matching algorithm ==============
@@ -669,7 +674,8 @@ function commitPaths(paths, message) {
 
 // Returns `made`: one display line per commit that landed, in commit order (a commit skipped by
 // commitPaths lands in `unchanged` instead), so the printed list never claims a commit that isn't there.
-function gitOps({ assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites, stampCurrent }) {
+function gitOps({ assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent }) {
+  if (redo) run(`git branch -D ${branchName}`); // --force-redo: only now, past every refusal
   if (!resume) run(`git checkout -b ${branchName}`);
   const made = [];
   const unchanged = [];
@@ -769,7 +775,7 @@ async function main() {
   stdout.write(C.dim("  aggressive downstream ADR sync tool\n\n"));
 
   resolveUpstream(); // upstream addressing (local/remote), overwrites GEARBOX_DIR (ADR-0027)
-  const { downDir, downAdrDir, branch, resume, plannedBranch } = validateContext();
+  const { downDir, downAdrDir, branch, resume, redo, plannedBranch } = validateContext();
   // PR base uses the detected main branch; if running on some other branch, falls back to master
   const baseBranch = branch === "main" || branch === "master" ? branch : "master";
 
@@ -873,6 +879,7 @@ async function main() {
         C.dim(`  resumed ${plannedBranch}: nothing new to commit — if its PR isn't open yet: gh pr create --base ${baseBranch} --head ${plannedBranch}\n`),
       );
     }
+    if (redo) stdout.write(C.dim(`  --force-redo: nothing to rebuild — ${plannedBranch} is left as it was\n`));
     // Non-TTY (CI, pipes): full listing, unchanged. TTY: the scan bar already said it.
     if (!tui.isTTY) {
       stdout.write(C.dim("Already skipped (downstream already has these):\n"));
@@ -1005,12 +1012,13 @@ async function main() {
 
   // git operations
   const reportDate = new Date().toISOString().slice(0, 10);
-  const branchName = `docs/gearbox-backfill-${reportDate}`;
+  const branchName = plannedBranch; // one name for resume, --force-redo's delete and the new branch
 
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   let pushResult = null;
   try {
-    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, fenceWrites, migration, workflowWrites, stampCurrent });
+    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent });
+    if (redo) stdout.write(`  ${C.yellow("✓ deleted")} the old ${branchName} (--force-redo), rebuilt from ${branch}\n`);
     pushResult = ops.pushResult;
     for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
     for (const u of ops.unchanged) stdout.write(`  ${C.dim(`· ${u} — already matched the index, nothing to commit`)}\n`);

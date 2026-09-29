@@ -135,3 +135,28 @@ test("CRLF checkout, behind: completes with the stamp committed", () => {
   assert.equal(findFence(git(down, "show", "HEAD:AGENTS.md"), "protocol").version, "v2.1.0");
   assert.equal(git(down, "status", "--porcelain"), "?? gearbox-update-report.md");
 });
+
+// --force-redo used to delete today's branch in the preflight, before any refusal had run.
+test("--force-redo deletes today's branch only after every refusal has passed", () => {
+  const down = v2Downstream(makeUpstream({ version: "v2.1.0" }));
+  const today = `docs/gearbox-backfill-${new Date().toISOString().slice(0, 10)}`;
+  git(down, "checkout", "-q", "-b", today);
+  write(down, "notes.md", "manual work\n");
+  commitAll(down, "manual work on today's branch");
+  git(down, "checkout", "-q", "main");
+  const stale = update(down, makeUpstream(), ["--force-redo"]);
+  assert.equal(stale.code, 1, stale.out);
+  assert.match(stale.out, /older than this repo/);
+  assert.equal(git(down, "log", "-1", "--format=%s", today), "manual work on today's branch");
+  write(down, "AGENTS.md", read(down, "AGENTS.md").replace("Commit in small steps.", "Commit whenever."));
+  commitAll(down, "hand edit");
+  const handEdited = update(down, makeUpstream({ version: "v2.1.0" }), ["--force-redo"]);
+  assert.equal(handEdited.code, 1, handEdited.out);
+  assert.match(handEdited.out, /Hand-edited gearbox fence/);
+  assert.equal(git(down, "log", "-1", "--format=%s", today), "manual work on today's branch");
+  const redone = update(down, makeUpstream({ version: "v2.2.0" }), ["--force-redo", "--force"]);
+  assert.equal(redone.code, 0, redone.out);
+  const rebuilt = git(down, "log", "--format=%s", `main..${today}`);
+  assert.doesNotMatch(rebuilt, /manual work/);
+  assert.match(rebuilt, /sync the gearbox fences → v2\.2\.0/);
+});
