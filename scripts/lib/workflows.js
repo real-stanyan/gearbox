@@ -1,5 +1,7 @@
 // Workflow templates written into downstream repos. gearbox-check.yml is tool-owned
 // (ADR-0051): gearbox-update rewrites it whenever it differs from CHECK_YML.
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 export function ciYml(gateCmd) {
   const cmd = gateCmd || "echo '<fill in the Gate command, byte-identical to the Gate section in AGENTS.md>' && exit 1";
@@ -129,4 +131,26 @@ jobs:
 
 export function pinSyncYml(text) {
   return text.replace(/gearbox-agents@latest/g, "gearbox-agents@2");
+}
+
+export const CHECK_PATH = ".github/workflows/gearbox-check.yml";
+export const SYNC_PATH = ".github/workflows/gearbox-sync.yml";
+
+// What update would write to the tool-owned workflow files under `root` (ADR-0051) — one plan for
+// update (writes it), version (reports it) and check (warns about gearbox-check.yml):
+// gearbox-check.yml always matches the template; gearbox-sync.yml's npx pin moves from @latest to
+// the major version. Compared with CRLF normalized: a core.autocrlf / eol=crlf checkout has CRLF on
+// disk but LF in the index, so a byte compare plans a rewrite that stages nothing.
+export function planWorkflowFixes(root) {
+  const lf = (text) => text.replace(/\r\n/g, "\n");
+  const writes = [];
+  const current = existsSync(join(root, CHECK_PATH)) ? readFileSync(join(root, CHECK_PATH), "utf8") : null;
+  if (current === null || lf(current) !== CHECK_YML)
+    writes.push({ path: CHECK_PATH, text: CHECK_YML, why: current === null ? "added" : "refreshed to the template" });
+  if (existsSync(join(root, SYNC_PATH))) {
+    const s = readFileSync(join(root, SYNC_PATH), "utf8");
+    const pinned = pinSyncYml(s); // keeps the file's own line endings
+    if (lf(pinned) !== lf(s)) writes.push({ path: SYNC_PATH, text: pinned, why: "npx pin @latest → @2" });
+  }
+  return writes;
 }

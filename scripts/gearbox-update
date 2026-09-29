@@ -65,7 +65,7 @@ import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 import * as tui from "./lib/tui.js";
 import { fenceStatus, replaceFence } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
-import { CHECK_YML, pinSyncYml } from "./lib/workflows.js";
+import { planWorkflowFixes } from "./lib/workflows.js";
 import { runProtocolChecks } from "./lib/protocol-check.js";
 import { loadKnown } from "./lib/v1-known.js";
 import { migrateV1, MigrationError } from "./lib/migrate-v1.js";
@@ -664,26 +664,6 @@ function lineDiff(localContent, upstreamContent, max = 20) {
   const fmt = (arr, sign) =>
     arr.slice(0, max).map((l) => `${sign} ${l}`).concat(arr.length > max ? [`${sign} … ${arr.length - max} more`] : []);
   return [...fmt(a.filter((l) => l.trim() && !sb.has(l)), "-"), ...fmt(b.filter((l) => l.trim() && !sa.has(l)), "+")].join("\n");
-}
-
-// Tool-owned workflow files (ADR-0051): gearbox-check.yml always matches the template;
-// gearbox-sync.yml's npx pin moves from @latest to the major version. Compared with CRLF
-// normalized: a core.autocrlf / eol=crlf checkout has CRLF on disk but LF in the index, so a
-// byte compare plans a rewrite that stages nothing.
-function planWorkflowFixes(downDir) {
-  const lf = (text) => text.replace(/\r\n/g, "\n");
-  const writes = [];
-  const checkPath = ".github/workflows/gearbox-check.yml";
-  const current = existsSync(join(downDir, checkPath)) ? readFileSync(join(downDir, checkPath), "utf8") : null;
-  if (current === null || lf(current) !== CHECK_YML)
-    writes.push({ path: checkPath, text: CHECK_YML, why: current === null ? "added" : "refreshed to the template" });
-  const syncPath = ".github/workflows/gearbox-sync.yml";
-  if (existsSync(join(downDir, syncPath))) {
-    const s = readFileSync(join(downDir, syncPath), "utf8");
-    const pinned = pinSyncYml(s); // keeps the file's own line endings
-    if (lf(pinned) !== lf(s)) writes.push({ path: syncPath, text: pinned, why: "npx pin @latest → @2" });
-  }
-  return writes;
 }
 
 function generateReport({
