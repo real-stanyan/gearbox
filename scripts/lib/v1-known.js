@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 export const KNOWN_PATH = join(dirname(fileURLToPath(import.meta.url)), "v1-known-lines.json");
 export const SEPARATOR_ROW = /^\|?\s*:?-{3,}/;
+const ZH_MAINTAINER = "<维护者>";
 
 export function normalizeKnownLine(line, maintainer = null) {
   let l = line.trim();
@@ -42,7 +43,12 @@ export function buildKnown(texts) {
   for (const text of texts) {
     for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
       const n = normalizeKnownLine(raw);
-      if (n) lines.add(knownLineHash(n));
+      if (!n) continue;
+      lines.add(knownLineHash(n));
+      // Chinese-era templates (v1.0.0–v1.3.x) spell the placeholder <维护者>. The migration folds a
+      // bound maintainer name to <maintainer> before lookup, whatever the era, so such a line is
+      // also known in its <maintainer> form.
+      if (n.includes(ZH_MAINTAINER)) lines.add(knownLineHash(n.split(ZH_MAINTAINER).join("<maintainer>")));
     }
     for (const t of tableTerms(text)) terms.add(t);
   }

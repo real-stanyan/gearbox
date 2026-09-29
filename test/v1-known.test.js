@@ -24,6 +24,13 @@ test("buildKnown → serialize → load round-trips", () => {
   assert.equal(termKey(" `L1/L2 tiers` "), "l1/l2 tiers");
 });
 
+test("buildKnown hashes a Chinese-era <维护者> line as written and in its <maintainer> form", () => {
+  const k = buildKnown(["- L1 等 `<维护者>` 同意\n- an ordinary line\n"]);
+  assert.ok(k.lines.has(knownLineHash("- L1 等 `<维护者>` 同意")));
+  assert.ok(k.lines.has(knownLineHash("- L1 等 `<maintainer>` 同意")));
+  assert.equal(k.lines.size, 3); // the placeholder line twice, the ordinary line once
+});
+
 test("the shipped fingerprint knows v1 protocol text in both languages", () => {
   const k = loadKnown();
   assert.ok(k.lines.has(knownLineHash("### While working")));
@@ -31,4 +38,11 @@ test("the shipped fingerprint knows v1 protocol text in both languages", () => {
   assert.ok(k.lines.has(knownLineHash("### 协议自身的变更（改本文件的规则）")));
   assert.ok(k.terms.has("handoff"));
   assert.ok(k.terms.has("交接（handoff）"));
+});
+
+test("the shipped fingerprint knows a Chinese-era maintainer line once the maintainer is folded to <maintainer>", () => {
+  const k = loadKnown();
+  // v1.0.0–v1.3.x spell the placeholder <维护者>; the migration folds a bound maintainer name to <maintainer> before lookup.
+  assert.ok(k.lines.has(knownLineHash("- **谁 merge**：PR 作者 agent 在 CI 绿后自行 merge。协议改动按分级走（见「协议自身的变更」）：L1 等 `<维护者>` 同意，L2 自主。")));
+  assert.ok(k.lines.has(knownLineHash("- **谁 merge**：PR 作者 agent 在 CI 绿后自行 merge。协议改动按分级走（见「协议自身的变更」）：L1 等 `<maintainer>` 同意，L2 自主。")));
 });
