@@ -582,7 +582,7 @@ function planWorkflowFixes(downDir) {
 
 function generateReport({
   downstreamRepo, assignments, refreshes, supersedeResult, branchName, reportDate, baseBranch,
-  fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed,
+  fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed, pushCmd,
 }) {
   const lines = [
     "# gearbox-update report",
@@ -643,7 +643,7 @@ function generateReport({
   }
   for (const w of checkResult.warnings) lines.push(`- ⚠️ ${w}`);
   lines.push("", "## Next steps", "");
-  if (!pushed) lines.push(`- [ ] push the branch: \`git push -u origin ${branchName}\``);
+  if (!pushed) lines.push(`- [ ] push the branch: \`${pushCmd}\``);
   lines.push(
     "- [ ] review the diff; run the Gate and `npx gearbox-agents check`",
     `- [ ] open the PR (the scheduled gearbox-sync Action does this itself): \`gh pr create --base ${baseBranch} --head ${branchName} --body-file gearbox-update-report.md\``,
@@ -674,7 +674,7 @@ function commitPaths(paths, message) {
 
 // Returns `made`: one display line per commit that landed, in commit order (a commit skipped by
 // commitPaths lands in `unchanged` instead), so the printed list never claims a commit that isn't there.
-function gitOps({ assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent }) {
+function gitOps({ assignments, refreshes, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd }) {
   if (redo) run(`git branch -D ${branchName}`); // --force-redo: only now, past every refusal
   if (!resume) run(`git checkout -b ${branchName}`);
   const made = [];
@@ -759,8 +759,7 @@ by gearbox-update tool.`,
     );
 
   let pushResult = null;
-  if (!noPush)
-    pushResult = tryRun(forceRedo ? `git push --force-with-lease -u origin ${branchName} 2>&1` : `git push -u origin ${branchName} 2>&1`);
+  if (!noPush) pushResult = tryRun(`${pushCmd} 2>&1`);
   return { pushResult, made, unchanged };
 }
 
@@ -1013,11 +1012,13 @@ async function main() {
   // git operations
   const reportDate = new Date().toISOString().slice(0, 10);
   const branchName = plannedBranch; // one name for resume, --force-redo's delete and the new branch
+  // --force-redo rebuilt the branch → overwrite the remote (ADR-0025); every push hint uses this too
+  const pushCmd = `git push ${forceRedo ? "--force-with-lease " : ""}-u origin ${branchName}`;
 
   stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
   let pushResult = null;
   try {
-    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent });
+    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, protocolVersion, resume, redo, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd });
     if (redo) stdout.write(`  ${C.yellow("✓ deleted")} the old ${branchName} (--force-redo), rebuilt from ${branch}\n`);
     pushResult = ops.pushResult;
     for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
@@ -1025,7 +1026,7 @@ async function main() {
     if (stampCurrent) stdout.write(`  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`);
     if (noPush) stdout.write(`  ${C.dim("push skipped (--no-push)")}\n`);
     else if (pushResult) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
-    else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     git push -u origin ${branchName}\n`);
+    else stdout.write(`  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n     ${pushCmd}\n`);
   } catch (e) {
     die(
       `git operation failed: ${e.message}`,
@@ -1038,7 +1039,7 @@ async function main() {
   const checkResult = runProtocolChecks(downDir);
   const report = generateReport({
     downstreamRepo: downRepo, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, reportDate, baseBranch,
-    fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed: Boolean(pushResult),
+    fenceWrites, migration, workflowWrites, protocolVersion, localStamp, checkResult, pushed: Boolean(pushResult), pushCmd,
   });
   const reportPath = join(downDir, "gearbox-update-report.md");
   writeFileSync(reportPath, report);

@@ -160,3 +160,13 @@ test("--force-redo deletes today's branch only after every refusal has passed", 
   assert.doesNotMatch(rebuilt, /manual work/);
   assert.match(rebuilt, /sync the gearbox fences → v2\.2\.0/);
 });
+
+test("after --force-redo, every push hint says --force-with-lease", () => {
+  const down = v2Downstream(makeUpstream());
+  git(down, "branch", `docs/gearbox-backfill-${new Date().toISOString().slice(0, 10)}`);
+  // no --no-push: this repo has no origin, so the push fails and prints its hint
+  const r = runTool("gearbox-update", ["--force-redo"], { cwd: down, env: { GEARBOX_DIR: makeUpstream({ version: "v2.1.0" }) } });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /push failed[^\n]*\n\s*git push --force-with-lease -u origin docs\/gearbox-backfill-/);
+  assert.match(read(down, "gearbox-update-report.md"), /push the branch: `git push --force-with-lease -u origin docs\/gearbox-backfill-/);
+});
