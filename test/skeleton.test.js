@@ -7,7 +7,7 @@ import { buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS } from "../script
 import { ciYml, SYNC_YML, CHECK_YML, pinSyncYml } from "../scripts/lib/workflows.js";
 import { headings } from "../scripts/lib/sections.js";
 import { renderFence, findFence } from "../scripts/lib/fence.js";
-import { tmp, write, gitInit, git, commitAll } from "./helpers.js";
+import { tmp, write, gitInit, git, commitAll, childEnv } from "./helpers.js";
 
 const PROTOCOL = renderFence("protocol", "v2.0.0", "## Working agreement (multi-agent)\n\n- rule");
 const GLOSSARY = renderFence("glossary", "v2.0.0", "## Protocol terms\n\n| Term | Definition | Notes |\n|---|---|---|\n| handoff | x | y |");
@@ -75,7 +75,7 @@ test("gearbox-sync.yml: a failed PR step is an ::error:: and a red job; no branc
   gitInit(repo);
   write(repo, "README.md", "x\n");
   commitAll(repo);
-  const step = () => spawnSync("bash", ["-e", "-c", prStepScript()], { cwd: repo, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  const step = () => spawnSync("bash", ["-e", "-c", prStepScript()], { cwd: repo, encoding: "utf8", env: childEnv({ PATH: `${bin}:${process.env.PATH}` }) });
   const none = step();
   assert.equal(none.status, 0, none.stdout + none.stderr);
   assert.match(none.stdout, /Nothing to sync — protocol is current\./);

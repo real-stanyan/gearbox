@@ -4,7 +4,7 @@ import { readFileSync, existsSync, cpSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { findFence } from "../scripts/lib/fence.js";
-import { REPO, runTool, tmp, read, write } from "./helpers.js";
+import { REPO, runTool, tmp, read, write, childEnv } from "./helpers.js";
 
 // scripts/dev/migrate-preview.js: a maintainer's dry run of the v1 → v2 migration. It only reads the
 // downstream, and writes only into out-dir.
@@ -48,7 +48,7 @@ test("preview refuses an out-dir that is the downstream (however spelled) or the
   const gearbox = tmp("gearbox-preview-self-");
   cpSync(join(REPO, "scripts"), join(gearbox, "scripts"), { recursive: true });
   for (const f of ["AGENTS.md", "CONTEXT.md"]) write(gearbox, f, read(REPO, f));
-  const r = spawnSync(process.execPath, [join(gearbox, "scripts/dev/migrate-preview.js"), down, gearbox], { encoding: "utf8" });
+  const r = spawnSync(process.execPath, [join(gearbox, "scripts/dev/migrate-preview.js"), down, gearbox], { encoding: "utf8", env: childEnv() });
   refused({ code: r.status, out: `${r.stdout}${r.stderr}` }, /out-dir is the Gearbox checkout/);
   assert.equal(read(gearbox, "AGENTS.md"), read(REPO, "AGENTS.md"));
 });

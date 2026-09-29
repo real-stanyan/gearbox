@@ -25,8 +25,15 @@ export function write(dir, rel, text) {
 export function read(dir, rel) {
   return readFileSync(join(dir, rel), "utf8");
 }
+// The environment of every child process a test starts: the parent's, minus GITHUB_ACTIONS — it
+// changes what update writes (it skips workflow files, ADR-0051), and this suite may itself run in
+// GitHub CI. A test opts in explicitly, through `extra`.
+export function childEnv(extra = {}) {
+  const { GITHUB_ACTIONS, ...parent } = process.env;
+  return { ...parent, ...extra };
+}
 export function git(dir, ...args) {
-  return execFileSync("git", args, { cwd: dir, encoding: "utf8", env: { ...process.env, ...GIT_ENV }, stdio: ["ignore", "pipe", "pipe"] }).trim();
+  return execFileSync("git", args, { cwd: dir, encoding: "utf8", env: childEnv(GIT_ENV), stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 export function gitInit(dir) {
   git(dir, "init", "-q", "-b", "main");
@@ -36,13 +43,11 @@ export function commitAll(dir, msg = "init") {
   git(dir, "add", "-A");
   git(dir, "commit", "-q", "-m", msg);
 }
-// GITHUB_ACTIONS changes what update writes (it skips workflow files, ADR-0051): a test opts in
-// through `env`, and the parent's never leaks in — this suite may itself run in GitHub CI.
+// A tool under test. GITHUB_ACTIONS reaches it only when the test sets it in `env` (childEnv).
 export function runTool(script, args = [], { cwd = REPO, env = {} } = {}) {
-  const { GITHUB_ACTIONS, ...parent } = process.env;
   const r = spawnSync(process.execPath, [join(REPO, "scripts", script), ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    env: { ...parent, ...GIT_ENV, NO_COLOR: "1", ...env },
+    env: childEnv({ ...GIT_ENV, NO_COLOR: "1", ...env }),
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }

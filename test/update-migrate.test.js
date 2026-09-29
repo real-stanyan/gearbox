@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { findFence, oneFenceAdvice } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
-import { REPO, makeUpstream, runTool, runBin, gitInit, git, tmp, read, write, commitAll, guardedOrigin } from "./helpers.js";
+import { REPO, makeUpstream, runTool, runBin, gitInit, git, tmp, read, write, commitAll, guardedOrigin, childEnv } from "./helpers.js";
 
 // The real output of the v1.15.2 installer (--name example-project --maintainer octo-owner
 // --gate "npm test"): Gearbox's own public template text, generated from the v1.15.2 tag.
@@ -289,7 +289,7 @@ test("a v1 downstream in a subdirectory of its git repo migrates, and the report
   assert.ok(findFence(read(down, "AGENTS.md"), "protocol"));
   assert.equal(git(down, "show", "main:pkg/AGENTS.md"), AGENTS_V1.trim());
   const cmd = read(down, "gearbox-update-report.md").match(/`(git show [0-9a-f]+:\S+)`/)[1];
-  assert.equal(execSync(cmd, { cwd: down, encoding: "utf8" }).trim(), AGENTS_V1.trim());
+  assert.equal(execSync(cmd, { cwd: down, encoding: "utf8", env: childEnv() }).trim(), AGENTS_V1.trim());
   const c = runTool("gearbox-check", [], { cwd: down });
   assert.equal(c.code, 0, c.out);
 });
@@ -395,7 +395,7 @@ test("a same-day rerun that resumes the migration branch keeps the migration rec
   assert.equal(report.match(/v1 → v2 layout migration/g).length, 1);
   // its pointer to the pre-migration text works, verbatim
   const cmd = report.match(/`(git show [0-9a-f]+~1:\S+)`/)[1];
-  assert.equal(execSync(cmd, { cwd: down, encoding: "utf8" }).trim(), rewriteShiftEnd(AGENTS_V1).trim());
+  assert.equal(execSync(cmd, { cwd: down, encoding: "utf8", env: childEnv() }).trim(), rewriteShiftEnd(AGENTS_V1).trim());
 });
 
 // The carried-forward record is for a run that doesn't migrate: when this run migrates again (the
@@ -440,7 +440,7 @@ test("the start-over hint deletes only files this run created: a local ADR draft
   const startOver = lines.slice(lines.findIndex((l) => l.startsWith("or start over")) + 1);
   const cmds = startOver.slice(0, startOver.indexOf(""));
   assert.equal(cmds.at(-1), "gearbox-update --force-redo");
-  for (const cmd of cmds.slice(0, -1)) execSync(cmd, { cwd: down, stdio: "pipe" }); // verbatim
+  for (const cmd of cmds.slice(0, -1)) execSync(cmd, { cwd: down, stdio: "pipe", env: childEnv() }); // verbatim
 
   assert.equal(read(down, draft), "# ADR-0099: My local draft\n\n- Status: proposed\n");
   assert.equal(git(down, "rev-parse", "--abbrev-ref", "HEAD"), "main");
