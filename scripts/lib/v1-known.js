@@ -1,6 +1,7 @@
 // Known v1 upstream text (ADR-0050 migration): which lines of a v1 AGENTS.md / CONTEXT.md came
-// from Gearbox rather than from the project. Shipped as hashes (v1-known-lines.json), so the
-// package carries a fingerprint of the old protocol text, not the text itself.
+// from Gearbox rather than from the project, and which glossary terms (CONTEXT.md table rows)
+// are Gearbox's. Shipped as hashes (v1-known-lines.json), so the package carries a fingerprint
+// of the old protocol text, not the text itself.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -37,10 +38,13 @@ export function tableTerms(text) {
   return out;
 }
 
-export function buildKnown(texts) {
+// Lines are hashed from both files' texts; terms come from the CONTEXT.md texts only. The
+// migration deletes glossary rows by term, so a first cell of an AGENTS.md table (its roles
+// table has "Task") must not become a term, or a project's own "task" row would be deleted.
+export function buildKnown(agentsTexts, contextTexts) {
   const lines = new Set();
   const terms = new Set();
-  for (const text of texts) {
+  for (const text of [...agentsTexts, ...contextTexts]) {
     for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
       const n = normalizeKnownLine(raw);
       if (!n) continue;
@@ -50,8 +54,8 @@ export function buildKnown(texts) {
       // also known in its <maintainer> form.
       if (n.includes(ZH_MAINTAINER)) lines.add(knownLineHash(n.split(ZH_MAINTAINER).join("<maintainer>")));
     }
-    for (const t of tableTerms(text)) terms.add(t);
   }
+  for (const text of contextTexts) for (const t of tableTerms(text)) terms.add(t);
   return { lines, terms };
 }
 
