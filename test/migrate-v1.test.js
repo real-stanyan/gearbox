@@ -109,7 +109,19 @@ test("CONTEXT.md: protocol rows replaced by the fence, project rows kept, edits 
   assert.match(contextMd, /## Project terms\n\n\| Term \| Definition \| Notes \|\n\|---\|---\|---\|\n\| star \| loyalty point \| — \|/);
   assert.doesNotMatch(contextMd, /\| gate \| the command/);
   assert.doesNotMatch(contextMd, /## Key invariants/);
-  assert.deepEqual(report.context, { removedTerms: 2, editedTerms: ["handoff"], keptRows: 1 });
+  assert.deepEqual(report.context, { removedTerms: 2, editedTerms: ["handoff"], keptRows: 1, collisions: [] });
+});
+
+test("CONTEXT.md: a project table's row named like a protocol term is kept and reported as a collision", () => {
+  const ctxTemplate = CONTEXT_TEMPLATE.replace("| gate | the command | — |", "| gate | the command | — |\n| claim | self-assignment | — |");
+  const k = buildKnown([TEMPLATE], [ctxTemplate]);
+  const table = (rows) => `| Term | Definition | Notes |\n|---|---|---|\n${rows}`;
+  const ctx = `${ctxTemplate}\n## Insurance domain\n\n${table("| claim | a request for payout | — |\n| policy | the contract | — |")}\n\n## Airport\n\n${table("| gate | where you board | — |")}\n`;
+  const { contextMd, report } = migrateV1({ agentsMd: nearTemplate, contextMd: ctx, known: k, protocolBlock, glossaryBlock });
+  assert.ok(contextMd.includes(`## Insurance domain\n\n${table("| claim | a request for payout | — |\n| policy | the contract | — |")}`));
+  assert.ok(contextMd.includes(`## Airport\n\n${table("| gate | where you board | — |")}`));
+  assert.doesNotMatch(contextMd, /self-assignment|the command/); // the template table still loses its protocol rows
+  assert.deepEqual(report.context, { removedTerms: 3, editedTerms: [], keptRows: 3, collisions: ["claim", "gate"] });
 });
 
 test("no Working agreement at all: skeleton with placeholders, gate reported missing", () => {

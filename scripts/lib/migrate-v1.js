@@ -175,14 +175,17 @@ function extension(title, extendsSection, lines) {
   return [`### ${title}`, "", `- Extends: ${extendsSection}`, "- Upstream: undecided", "", ...trimBlank(lines)].join("\n");
 }
 
+// Is this section's heading v1 template text? Closing #s and indentation aside.
+function isTemplateHeading(chunk, isKnown) {
+  return isKnown(chunk.heading) || isKnown(`${"#".repeat(chunk.level)} ${chunk.title}`);
+}
+
 // A heading is recognized by its base title, so wording of its own in the trailing parenthetical
 // ("### While working (plus: never force-push)") would vanish with the v1 heading. Unless the heading
-// is template text (closing #s aside), that wording comes along as a plain line wherever the
-// section's content goes.
+// is template text, that wording comes along as a plain line wherever the section's content goes.
 function headingNote(chunk, isKnown) {
-  if (chunk.title === baseTitle(chunk.title)) return null;
-  const known = isKnown(chunk.heading) || isKnown(`${"#".repeat(chunk.level)} ${chunk.title}`);
-  return known ? null : `v1 heading: ${chunk.title}`;
+  if (chunk.title === baseTitle(chunk.title) || isTemplateHeading(chunk, isKnown)) return null;
+  return `v1 heading: ${chunk.title}`;
 }
 
 function withNote(note, lines) {
@@ -247,6 +250,10 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
   const kept = [];
   let renamed = false;
   for (const c of chunks.slice(1)) {
+    // Protocol-term rows leave only a v1 template section (e.g. "## Terms"): the glossary fence
+    // carries them now. A project's own table may use the same word for something else ("claim",
+    // "gate") — that row stays, and is reported as a collision.
+    const template = isTemplateHeading(c, isKnown);
     const body = [];
     let rows = 0;
     for (let i = 0; i < c.lines.length; i++) {
@@ -261,9 +268,12 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
         }
         const key = termKey(t.split("|")[1] || "");
         if (known.terms.has(key)) {
-          report.context.removedTerms++;
-          if (!isKnown(line)) report.context.editedTerms.push(key);
-          continue;
+          if (template) {
+            report.context.removedTerms++;
+            if (!isKnown(line)) report.context.editedTerms.push(key);
+            continue;
+          }
+          report.context.collisions.push(key);
         }
         body.push(line);
         rows++;
@@ -276,7 +286,7 @@ function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
     if (rows === 0 && prose.length === 0) continue;
     const cleaned = rows === 0 ? body.filter((l) => !l.trim().startsWith("|")) : body;
     let heading = c.heading;
-    if (rows > 0 && !renamed && isKnown(c.heading)) {
+    if (rows > 0 && !renamed && template) {
       heading = "## Project terms";
       renamed = true;
     }
@@ -292,7 +302,7 @@ export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryB
   const report = {
     maintainer: null, gateMoved: false, gateNotes: 0, divisionOfLabor: "default",
     carried: [], moved: [], flagged: [], extraSections: [], indexMoved: null, oversize: null,
-    context: { removedTerms: 0, editedTerms: [], keptRows: 0 },
+    context: { removedTerms: 0, editedTerms: [], keptRows: 0, collisions: [] },
   };
   const maintainer = detectMaintainer(agentsMd);
   report.maintainer = maintainer;
