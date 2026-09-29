@@ -95,10 +95,10 @@ No change. The glossary has no row about ADR numbering (checked: its "claim" row
 ## 3. Templates and scaffolding
 
 - **ADR template** (`docs/gearbox-adr/0001-adr-template.md`):
-  - The title becomes `# ADR-<id>: <decision title>`.
+  - It keeps its own title `# ADR-0001: <decision title>`, because update's ADR parser reads each file's own number from its title.
   - Add `- Issue: #<issue>` under `- Date:`.
-  - Add a one-line note: `<id>` is the issue number in a project repo, and the next sequential number in the Gearbox repo.
-  - Only the example header changes.
+  - Add a one-line note: a copy in a project repo is named `docs/adr/<issue>-<slug>.md` and titled `# ADR-<issue>: …`; in the Gearbox repo, a protocol ADR takes the next number.
+  - Only the header changes.
 - **Skeleton placeholder** (`scripts/lib/skeleton.js`, both occurrences): `` - `docs/adr/` — this project's own architectural decisions, one file per decision named `<issue>-<slug>.md` (not listed here one by one) ``. The index no longer enumerates ADRs; `docs/adr/` is their index. Two parallel PRs that each append an index line conflict textually, so this removes a merge-conflict hotspot.
 - **install's closing hint** (`scripts/gearbox-install`, "Write your first own decision to …"): name `docs/adr/<issue>-<slug>.md` and say it is named after the issue that settles it.
 - **README:** any sentence that describes `docs/adr/` numbering follows §1.
