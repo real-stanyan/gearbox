@@ -1,0 +1,299 @@
+// v1 → v2 migration (ADR-0050): turns a v1-layout AGENTS.md / CONTEXT.md — protocol text merged
+// by hand — into the fenced v2 layout. Pure: strings in, strings + report out.
+// Invariant: every line of the v1 protocol region that isn't known upstream text ends up in
+// `## Gate`, in `## Local protocol extensions`, or named in the report (flagged subsections).
+import { splitByLevel, baseTitle, fenceRun } from "./sections.js";
+import {
+  buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS, DEFAULT_DIVISION, INDEX_POINTERS, CONTEXT_INTRO, PROJECT_TERMS,
+} from "./skeleton.js";
+import { AGENTS_MAX_BYTES } from "./protocol-check.js";
+import { normalizeKnownLine, knownLineHash, termKey, SEPARATOR_ROW } from "./v1-known.js";
+
+// v1 `###` headings (baseTitle, lowercased) → canonical section. Exact match only.
+const ALIASES = new Map([
+  ["on starting a shift", "On starting a shift"],
+  ["while working", "While working"],
+  ["roles of issues & prs", "Roles of issues & PRs"],
+  ["issue & pr 的角色", "Roles of issues & PRs"],
+  ["pr disposition", "PR disposition"],
+  ["pr 处置", "PR disposition"],
+  ["changing the protocol itself", "Changing the protocol itself"],
+  ["协议自身的变更", "Changing the protocol itself"],
+  ["gate", "Gate"],
+  ["on ending a shift", "On ending a shift"],
+  ["parallel shifts", "Parallel shifts"],
+  ["branch hygiene", "Branch hygiene"],
+  ["分支卫生", "Branch hygiene"],
+  ["division of labor", "Division of labor"],
+]);
+
+// Where a v1 install wrote the maintainer into the protocol text in place of `<maintainer>` — or of
+// `<维护者>`, in the Chinese-era v1.0.0–v1.3.x templates. English forms first.
+const MAINTAINER_PATTERNS = [
+  /L1 waits for `([^`<>]+)` agreement/,
+  /after the `([^`<>]+)` explicitly agrees/,
+  /authored by the GitHub account `([^`<>]+)`/,
+  /it's enough for the `([^`<>]+)` to say/,
+  /L1 等 `([^`<>]+)` 同意/,
+  /必须 `([^`<>]+)` 在会话/,
+  /`([^`<>]+)` 事后否决权/,
+];
+
+function detectMaintainer(text) {
+  for (const p of MAINTAINER_PATTERNS) {
+    const m = text.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// Is this line v1 upstream text? A v1 install replaced `<maintainer>` with the login, so the login
+// is folded back before lookup. normalizeKnownLine folds by substring, which also rewrites the login
+// inside other words (login "ed": "merged" → "merg<maintainer>"), so the line is also tried as
+// written, and with only the backticked login folded — every v1 template backticks the placeholder.
+function knownLineTest(known, maintainer) {
+  const has = (normalized) => known.lines.has(knownLineHash(normalized));
+  return (line) => {
+    const raw = normalizeKnownLine(line);
+    if (has(raw)) return true;
+    if (!maintainer) return false;
+    return has(normalizeKnownLine(line, maintainer)) || has(raw.split(`\`${maintainer}\``).join("`<maintainer>`"));
+  };
+}
+
+// A line with no project content: blank, a code-fence delimiter (bare or with a language tag), a
+// table separator row, a thematic break. It is never "unknown", and travels only inside a carried
+// code block. Anything else is content — "--- note ---" included — so it can't vanish as structure.
+function isStructural(line) {
+  const t = line.trim();
+  if (t === "") return true;
+  const run = fenceRun(line);
+  if (run) return /^[\w.+#-]*$/.test(t.slice(run.len).trim());
+  return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(t) || /^([-*_])(\s*\1){2,}$/.test(t);
+}
+
+function trimBlank(lines) {
+  const out = [...lines];
+  while (out.length && out[0].trim() === "") out.shift();
+  while (out.length && out[out.length - 1].trim() === "") out.pop();
+  return out;
+}
+
+// Fenced code blocks, read the way sections.js reads them (``` or ~~~, closed by the same character
+// at least as long), so a block here is a block there. `end` is the closing line — or the last line,
+// for a block left open.
+function fencedBlocks(lines) {
+  const blocks = [];
+  for (let i = 0; i < lines.length; i++) {
+    const open = fenceRun(lines[i]);
+    if (!open) continue;
+    let end = i + 1;
+    while (end < lines.length) {
+      const run = fenceRun(lines[end]);
+      if (run && run.char === open.char && run.len >= open.len) break;
+      end++;
+    }
+    blocks.push({ start: i, end: Math.min(end, lines.length - 1), open, closed: end < lines.length });
+    i = end;
+  }
+  return blocks;
+}
+
+// What of a v1 protocol subsection must survive, in order: each unknown line, and each code block
+// holding one — whole, so the code keeps its fence and a `# comment` in it can't become a heading
+// (a block left open is closed). `unknown` counts the unknown lines: the > 50% rule and the report.
+function carry(lines, isKnown) {
+  const isUnknown = (l) => !isStructural(l) && !isKnown(l);
+  const blocks = new Map(fencedBlocks(lines).map((b) => [b.start, b]));
+  const out = [];
+  let unknown = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const b = blocks.get(i);
+    if (!b) {
+      if (isUnknown(lines[i])) {
+        out.push(lines[i]);
+        unknown++;
+      }
+      continue;
+    }
+    const block = lines.slice(b.start, b.end + 1);
+    const n = block.filter(isUnknown).length;
+    if (n) {
+      out.push(...block);
+      if (!b.closed) out.push(lines[b.start].match(/^ */)[0] + b.open.char.repeat(b.open.len));
+      unknown += n;
+    }
+    i = b.end;
+  }
+  return { lines: out, unknown };
+}
+
+// The v1 `### Gate` command: the first closed code block that holds a command line — the template's
+// `<gate command …>` placeholder isn't one. The subsection's other lines are left for gate notes.
+function splitGateCommand(lines) {
+  const isCommand = (l) => l.trim() !== "" && !/^<.*>$/.test(l.trim());
+  const b = fencedBlocks(lines).find((x) => x.closed && lines.slice(x.start + 1, x.end).some(isCommand));
+  if (!b) return { code: null, rest: lines };
+  return { code: lines.slice(b.start + 1, b.end).join("\n"), rest: [...lines.slice(0, b.start), ...lines.slice(b.end + 1)] };
+}
+
+function extension(title, extendsSection, lines) {
+  return [`### ${title}`, "", `- Extends: ${extendsSection}`, "- Upstream: undecided", "", ...trimBlank(lines)].join("\n");
+}
+
+// One `## Working agreement` section. A v1 file can hold more than one (say, "(project additions)"),
+// so results accumulate in `wa` — a later section never overwrites an earlier one.
+function migrateWorkingAgreement(lines, isKnown, wa, report) {
+  const subs = splitByLevel(lines.join("\n"), 3);
+  const lead = carry(subs[0].lines, isKnown);
+  if (lead.unknown) {
+    wa.extensions.push(extension("From v1: Working agreement (multi-agent)", "Working agreement (multi-agent)", lead.lines));
+    report.carried.push({ section: "Working agreement (multi-agent)", lines: lead.unknown });
+  }
+  for (const s of subs.slice(1)) {
+    const canonical = ALIASES.get(baseTitle(s.title).toLowerCase());
+    // There is one gate command: a second Gate subsection moves whole, like an unrecognized one.
+    if (!canonical || (canonical === "Gate" && wa.gateSeen)) {
+      wa.extensions.push(extension(s.title, "Working agreement (multi-agent)", s.lines));
+      report.moved.push(s.title);
+      continue;
+    }
+    if (canonical === "Gate") {
+      wa.gateSeen = true;
+      const { code, rest } = splitGateCommand(s.lines);
+      if (code !== null) {
+        wa.gate = code;
+        report.gateMoved = true;
+      }
+      const notes = carry(rest, isKnown);
+      wa.gateNotes.push(...notes.lines);
+      report.gateNotes += notes.unknown;
+      continue;
+    }
+    const kept = carry(s.lines, isKnown);
+    if (canonical === "Division of labor") {
+      if (kept.unknown) {
+        wa.divisionOfLabor.push(trimBlank(s.lines).join("\n"));
+        report.divisionOfLabor = "kept";
+      }
+      continue;
+    }
+    if (kept.unknown === 0) continue;
+    const total = s.lines.filter((l) => l.trim() !== "").length;
+    if (kept.unknown / total > 0.5) {
+      report.flagged.push({ section: canonical, unknown: kept.unknown, total });
+      continue;
+    }
+    wa.extensions.push(extension(`From v1: ${canonical}`, canonical, kept.lines));
+    report.carried.push({ section: canonical, lines: kept.unknown });
+  }
+}
+
+function migrateContext(contextMd, known, isKnown, glossaryBlock, report) {
+  const chunks = splitByLevel(contextMd || "", 2);
+  const head = trimBlank(chunks[0].lines).join("\n") || `# Domain context\n\n${CONTEXT_INTRO}`;
+  const kept = [];
+  let renamed = false;
+  for (const c of chunks.slice(1)) {
+    const body = [];
+    let rows = 0;
+    for (let i = 0; i < c.lines.length; i++) {
+      const line = c.lines[i];
+      const t = line.trim();
+      if (t.startsWith("|")) {
+        const isSep = SEPARATOR_ROW.test(t);
+        const isHeader = !isSep && SEPARATOR_ROW.test((c.lines[i + 1] || "").trim());
+        if (isSep || isHeader) {
+          body.push(line);
+          continue;
+        }
+        const key = termKey(t.split("|")[1] || "");
+        if (known.terms.has(key)) {
+          report.context.removedTerms++;
+          if (!isKnown(line)) report.context.editedTerms.push(key);
+          continue;
+        }
+        body.push(line);
+        rows++;
+        continue;
+      }
+      if (!isStructural(line) && isKnown(line)) continue;
+      body.push(line);
+    }
+    const prose = body.filter((l) => !l.trim().startsWith("|") && !isStructural(l));
+    if (rows === 0 && prose.length === 0) continue;
+    const cleaned = rows === 0 ? body.filter((l) => !l.trim().startsWith("|")) : body;
+    let heading = c.heading;
+    if (rows > 0 && !renamed && isKnown(c.heading)) {
+      heading = "## Project terms";
+      renamed = true;
+    }
+    report.context.keptRows += rows;
+    kept.push([heading, "", ...trimBlank(cleaned)].join("\n"));
+  }
+  return buildContextMd({ head, glossaryBlock, projectTerms: kept.length ? kept.join("\n\n") : PROJECT_TERMS });
+}
+
+export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryBlock }) {
+  const report = {
+    maintainer: null, gateMoved: false, gateNotes: 0, divisionOfLabor: "default",
+    carried: [], moved: [], flagged: [], extraSections: [], indexMoved: null, oversize: null,
+    context: { removedTerms: 0, editedTerms: [], keptRows: 0 },
+  };
+  const maintainer = detectMaintainer(agentsMd);
+  report.maintainer = maintainer;
+  const isKnown = knownLineTest(known, maintainer);
+
+  const chunks = splitByLevel(agentsMd, 2);
+  // A repeated project section is merged in order, never overwritten.
+  const techStackParts = [];
+  const hardRulesParts = [];
+  const whereToFindParts = [];
+  const wa = { gate: null, gateSeen: false, gateNotes: [], divisionOfLabor: [], extensions: [] };
+  const extraSections = [];
+  for (const c of chunks.slice(1)) {
+    const key = baseTitle(c.title).toLowerCase();
+    if (key === "tech stack") techStackParts.push(trimBlank(c.lines).join("\n"));
+    else if (key === "hard rules")
+      hardRulesParts.push(trimBlank(c.lines.filter((l) => !(l.trim().startsWith(">") && isKnown(l)))).join("\n"));
+    else if (key === "where to find things") whereToFindParts.push(trimBlank(c.lines).join("\n"));
+    else if (key === "working agreement") migrateWorkingAgreement(c.lines, isKnown, wa, report);
+    else {
+      extraSections.push([c.heading, ...c.lines].join("\n"));
+      report.extraSections.push(c.title);
+    }
+  }
+  const merged = (parts) => parts.filter(Boolean).join("\n\n");
+  const techStack = merged(techStackParts);
+  const hardRules = merged(hardRulesParts);
+  const whereToFind = merged(whereToFindParts);
+
+  const keptPreamble = trimBlank(chunks[0].lines.filter((l) => !(l.trim().startsWith(">") && isKnown(l))));
+  const head = [...keptPreamble, "", SOT_NOTE].join("\n");
+  const build = (where) =>
+    buildAgentsMd({
+      head,
+      techStack: techStack || PLACEHOLDERS.techStack,
+      hardRules: hardRules || PLACEHOLDERS.hardRules,
+      gate: wa.gate,
+      gateNotes: wa.gateNotes.join("\n"),
+      maintainer,
+      protocolBlock,
+      localExtensions: wa.extensions.length ? wa.extensions.join("\n\n") : PLACEHOLDERS.localExtensions,
+      divisionOfLabor: wa.divisionOfLabor.length ? wa.divisionOfLabor.join("\n\n") : DEFAULT_DIVISION,
+      extraSections,
+      whereToFind: where,
+    });
+
+  let agents = build(whereToFind || PLACEHOLDERS.whereToFind);
+  let indexMd = null;
+  if (Buffer.byteLength(agents) > AGENTS_MAX_BYTES && whereToFind) {
+    indexMd = `# Index\n\n> Moved out of AGENTS.md by the Gearbox v2 migration (ADR-0051): AGENTS.md is loaded into every agent session and capped at 32 KiB. Keep one line per entry here too.\n\n${whereToFind}\n`;
+    report.indexMoved = { bytes: Buffer.byteLength(whereToFind) };
+    agents = build(INDEX_POINTERS);
+  }
+  if (Buffer.byteLength(agents) > AGENTS_MAX_BYTES) report.oversize = Buffer.byteLength(agents);
+
+  const context = migrateContext(contextMd, known, isKnown, glossaryBlock, report);
+  return { agentsMd: agents, contextMd: context, indexMd, report };
+}
