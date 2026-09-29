@@ -133,7 +133,7 @@ test("the migration report lists what moved where and every item that needs a hu
   assert.equal(r.code, 0, r.out);
   const report = read(down, "gearbox-update-report.md");
   assert.match(report, /## ⚠️ v1 → v2 layout migration \(ADR-0050\)/);
-  assert.match(report, /- Maintainer: `octo-owner`/);
+  assert.ok(report.includes("- [ ] confirm `octo-owner` is the GitHub account whose PR comment counts as L1 approval (## Maintainer)\n"), report);
   assert.match(report, /- Gate command: moved to `## Gate`/);
   assert.match(report, /### Subsections moved verbatim into `## Local protocol extensions`\n\n- \[ \] Worktree discipline \(project ADR-0149\) — /);
   assert.match(report, /- \[ \] From v1: While working — 1 line\(s\)/);
@@ -287,6 +287,19 @@ test("the report's kept sections and gate line say only what the v1 file had", (
   assert.match(report, /^- \[ \] Gate command: \*\*not found\*\* — fill in `## Gate`[^\n]*$/m);
   assert.doesNotMatch(report, /below the command/);
   assert.match(sectionBody(read(down, "AGENTS.md"), 2, "Gate"), /also type-checks mobile/);
+});
+
+// The maintainer is a to-do, never a fact: a real dry run detected a login that belongs to an unrelated
+// person. Undetected (here: the v1 text still says `<maintainer>`), the item is to set it.
+test("the migration report makes the maintainer a checklist item: confirm the detected account, or set one", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { agents: AGENTS_V1.replaceAll("`octo-owner`", "`<maintainer>`") });
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  const report = read(down, "gearbox-update-report.md");
+  assert.match(report, /^- \[ \] set ## Maintainer$/m);
+  assert.doesNotMatch(report, /confirm `/);
+  assert.match(git(down, "log", "-1", "--format=%B", "--grep=migrate to the Gearbox v2 layout"), /^- Maintainer: not detected$/m);
 });
 
 // No AGENTS.md at all isn't a v1 layout: it was never onboarded. Migrating it would make a

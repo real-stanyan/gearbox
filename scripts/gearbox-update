@@ -826,7 +826,10 @@ function migrationReportLines(m) {
     "",
     ...(m.sections.kept.length ? [`- Kept in place: ${m.sections.kept.join(", ")} (v1 template notes dropped)`] : []),
     ...(m.sections.added.length ? [`- [ ] Not in the v1 file, so added with a placeholder: ${m.sections.added.join(", ")} — fill in`] : []),
-    r.maintainer ? `- Maintainer: \`${r.maintainer}\`` : "- [ ] Maintainer: **not detected** — fill in `## Maintainer` (the GitHub account whose PR-comment agreement counts for L1)",
+    // A to-do even when detected: a real dry run detected a login that belongs to an unrelated person.
+    r.maintainer
+      ? `- [ ] confirm \`${r.maintainer}\` is the GitHub account whose PR comment counts as L1 approval (## Maintainer)`
+      : "- [ ] set ## Maintainer",
     r.gateMoved
       ? `- Gate command: moved to \`## Gate\`${notes}`
       : "- [ ] Gate command: **not found** — fill in `## Gate`, byte-identical to `.github/workflows/ci.yml`",
