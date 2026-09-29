@@ -115,7 +115,8 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
   }
 
   if (agents !== null) {
-    const bytes = Buffer.byteLength(agents);
+    // LF content, as CI checks it out: a core.autocrlf checkout adds a byte per line on disk.
+    const bytes = Buffer.byteLength(agents.replace(/\r\n/g, "\n"));
     if (bytes > AGENTS_MAX_BYTES) {
       const top = sectionSizes(agents).slice(0, 4).map((s) => `${s.title} ${s.bytes} B`).join(", ");
       errors.push(`AGENTS.md is ${bytes} bytes, over the ${AGENTS_MAX_BYTES}-byte budget (ADR-0051; Codex reads only the first 32 KiB by default). Largest sections: ${top}. Move long maps to docs/INDEX.md and keep "Where to find things" to one line per entry`);

@@ -245,7 +245,7 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
   } catch (e) {
     localError = e;
   }
-  if (file === "AGENTS.md") agentsBytes = Buffer.byteLength(localText);
+  if (file === "AGENTS.md") agentsBytes = Buffer.byteLength(localText.replace(/\r\n/g, "\n")); // LF, as `check` counts
   let st;
   try {
     if (upError || localError) throw upError || localError;

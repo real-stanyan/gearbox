@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { AGENTS_MAX_BYTES } from "../scripts/lib/protocol-check.js";
 import { makeUpstream, runTool, gitInit, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
 function installed(up) {
@@ -46,6 +47,20 @@ test("warns when AGENTS.md is over the 32 KiB budget", () => {
   const down = installed(up);
   write(down, "AGENTS.md", read(down, "AGENTS.md") + `\n${"x".repeat(33000)}\n`);
   assert.match(version(down, up).out, /over the 32768-byte budget/);
+});
+
+// The size line measures what `check` measures — LF content — so a CRLF checkout (core.autocrlf)
+// at the limit isn't told it's over while the check and CI pass.
+test("the size line measures LF content, like the check: a CRLF AGENTS.md at the limit isn't over", () => {
+  const up = makeUpstream();
+  const down = installed(up);
+  const text = read(down, "AGENTS.md");
+  const atLimit = `${text}\n${"x".repeat(AGENTS_MAX_BYTES - Buffer.byteLength(text) - 2)}\n`;
+  assert.equal(Buffer.byteLength(atLimit), AGENTS_MAX_BYTES);
+  write(down, "AGENTS.md", atLimit.replace(/\n/g, "\r\n"));
+  const r = version(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.out, /over the 32768-byte budget/);
 });
 
 // fenceStatus says "behind" whenever the versions differ, in either direction. The tools default to

@@ -124,6 +124,18 @@ test("the AGENTS.md budget counts UTF-8 bytes: the limit passes, one more fails,
   assert.match(errorsOf(multibyte).join("\n"), /over the 32768-byte budget/);
 });
 
+// A Git for Windows checkout (core.autocrlf) has CRLF on disk, one byte more per line than the LF
+// blob CI checks out: measured raw, a file near the limit failed locally while CI passed.
+test("the AGENTS.md budget measures LF content: a CRLF checkout at the limit passes, as CI's LF checkout does", () => {
+  const at = repoWithAgentsBytes(AGENTS_MAX_BYTES);
+  write(at, "AGENTS.md", read(at, "AGENTS.md").replace(/\n/g, "\r\n"));
+  assert.ok(Buffer.byteLength(read(at, "AGENTS.md")) > AGENTS_MAX_BYTES);
+  assert.deepEqual(errorsOf(at), []);
+  const over = repoWithAgentsBytes(AGENTS_MAX_BYTES + 1);
+  write(over, "AGENTS.md", read(over, "AGENTS.md").replace(/\n/g, "\r\n"));
+  assert.match(errorsOf(over).join("\n"), /AGENTS\.md is 32769 bytes, over the 32768-byte budget/);
+});
+
 test("missing project sections and missing fence headings are errors", () => {
   const dir = v2Repo();
   write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("## Maintainer\n", "## Owner\n"));

@@ -352,7 +352,8 @@ function validateContext() {
   // a hand-edited fence) has passed — a refused run never costs the branch.
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
-  const branchExists = tryRun(`git rev-parse --verify ${plannedBranch} 2>/dev/null`);
+  // No stderr redirect: stdio is piped already, and a POSIX null-device path fails under cmd.exe.
+  const branchExists = tryRun(`git rev-parse --verify ${plannedBranch}`);
   let resume = false;
   let redo = false;
   if (branchExists) {

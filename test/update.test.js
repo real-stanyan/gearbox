@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { findFence } from "../scripts/lib/fence.js";
-import { chmodSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
+import { REPO, makeUpstream, runTool, gitInit, git, tmp, read, write, commitAll, PROTOCOL, GLOSSARY } from "./helpers.js";
 
 function v2Downstream(up, { autocrlf = false } = {}) {
   const down = tmp("gearbox-down-");
@@ -213,4 +213,15 @@ test("a failed commit names the tool's own paths to finish by hand", () => {
   assert.match(r.out, /git add -- AGENTS\.md CONTEXT\.md \.gearbox-version\n/);
   assert.doesNotMatch(r.out, /git add -A/);
   assert.match(git(down, "rev-parse", "--abbrev-ref", "HEAD"), /^docs\/gearbox-backfill-/);
+});
+
+// cmd.exe — the shell execSync uses on Windows — has no /dev/null: `2>/dev/null` fails the command
+// there, so tryRun read today's branch as absent on every run and the same-day rerun died on
+// `git checkout -b`. stdio is piped already, so no tool needs a redirect.
+test("no tool shells out with a POSIX-only /dev/null redirect", () => {
+  const files = [
+    ...["gearbox-install", "gearbox-update", "gearbox-version", "gearbox-check", "gearbox-prune"].map((f) => join("scripts", f)),
+    ...readdirSync(join(REPO, "scripts/lib")).filter((f) => f.endsWith(".js")).map((f) => join("scripts/lib", f)),
+  ];
+  for (const f of files) assert.doesNotMatch(readFileSync(join(REPO, f), "utf8"), /\/dev\/null/, f);
 });
