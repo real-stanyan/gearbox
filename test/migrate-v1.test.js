@@ -180,6 +180,15 @@ test("each Chinese-era maintainer form is recognized on its own", () => {
   }
 });
 
+test("the maintainer is read from the protocol region, not from a project rule quoting the same phrase", () => {
+  const text = nearTemplate.replace("- Money is always integer cents.", "- Money is always integer cents.\n- Payments code: L1 waits for `security-lead` agreement too.");
+  const { agentsMd, report } = migrate(text);
+  assert.equal(report.maintainer, "real-owner");
+  assert.match(agentsMd, /GitHub account: `real-owner`/);
+  assert.deepEqual([report.carried, report.flagged], [[], []]);
+  assert.match(sectionBody(agentsMd, 2, "Hard rules"), /security-lead/);
+});
+
 test("a v1 gate command in a ~~~ block moves to ## Gate", () => {
   const tilde = nearTemplate.replace("```bash\nnpx tsc --noEmit\n```", "~~~bash\nnpx tsc --noEmit\n~~~");
   const { agentsMd, report } = migrate(tilde);

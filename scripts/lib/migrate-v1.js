@@ -304,11 +304,15 @@ export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryB
     carried: [], moved: [], flagged: [], extraSections: [], indexMoved: null, oversize: null,
     context: { removedTerms: 0, editedTerms: [], keptRows: 0, collisions: [] },
   };
-  const maintainer = detectMaintainer(agentsMd);
+  const chunks = splitByLevel(agentsMd, 2);
+  const keyOf = (c) => baseTitle(c.title).toLowerCase();
+  // The maintainer is read from the protocol region only: a project rule may quote the same phrase
+  // ("L1 waits for `security-lead` agreement") about someone else.
+  const protocolRegion = chunks.slice(1).filter((c) => keyOf(c) === "working agreement");
+  const maintainer = detectMaintainer(protocolRegion.map((c) => c.lines.join("\n")).join("\n"));
   report.maintainer = maintainer;
   const isKnown = knownLineTest(known, maintainer);
 
-  const chunks = splitByLevel(agentsMd, 2);
   // A repeated project section is merged in order, never overwritten.
   const techStackParts = [];
   const hardRulesParts = [];
@@ -316,7 +320,7 @@ export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryB
   const wa = { gate: null, gateSeen: false, gateNotes: [], divisionOfLabor: [], extensions: [] };
   const extraSections = [];
   for (const c of chunks.slice(1)) {
-    const key = baseTitle(c.title).toLowerCase();
+    const key = keyOf(c);
     const kept = (lines) => withNote(headingNote(c, isKnown), trimBlank(lines)).join("\n");
     if (key === "tech stack") techStackParts.push(kept(c.lines));
     else if (key === "hard rules") hardRulesParts.push(kept(c.lines.filter((l) => !(l.trim().startsWith(">") && isKnown(l)))));
