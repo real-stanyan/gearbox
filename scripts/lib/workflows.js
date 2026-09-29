@@ -2,6 +2,19 @@
 // (ADR-0051): gearbox-update rewrites it whenever it differs from CHECK_YML.
 
 export function ciYml(gateCmd) {
+  const cmd = gateCmd || "echo '<fill in the Gate command, byte-identical to the Gate section in AGENTS.md>' && exit 1";
+  // Detect if cmd is safe for YAML plain scalar: single line, safe first char, no ": " or " #", doesn't end with ":"
+  const isSafeScalar =
+    !cmd.includes("\n") &&
+    /^[A-Za-z0-9_.\/-]/.test(cmd) &&
+    !cmd.includes(": ") &&
+    !cmd.includes(" #") &&
+    !cmd.endsWith(":");
+
+  const runLine = isSafeScalar
+    ? `      - run: ${cmd}`
+    : `      - run: |\n${cmd.split("\n").map((l) => "          " + l).join("\n")}`;
+
   return `name: gate
 
 on:
@@ -19,7 +32,7 @@ jobs:
           node-version: 24
       # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
       # That sameness is the contract that lets CI enforce what agents promise.
-      - run: ${gateCmd || "echo '<fill in the Gate command, byte-identical to the Gate section in AGENTS.md>' && exit 1"}
+${runLine}
 `;
 }
 

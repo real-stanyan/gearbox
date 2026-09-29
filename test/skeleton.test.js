@@ -44,3 +44,35 @@ test("workflow templates: gate in ci.yml, @2 pins, read-only check job", () => {
   assert.match(CHECK_YML, /contents: read/);
   assert.equal(pinSyncYml("npx -y gearbox-agents@latest update"), "npx -y gearbox-agents@2 update");
 });
+
+test("ciYml: multi-line gate uses block scalar (run: |)", () => {
+  const yml = ciYml("npx tsc --noEmit\nnpx vitest run");
+  assert.ok(yml.includes("- run: |"));
+  assert.ok(yml.includes("          npx tsc --noEmit"));
+  assert.ok(yml.includes("          npx vitest run"));
+  assert.doesNotMatch(yml, /- run: npx tsc/);
+});
+
+test("ciYml: gate with ': ' uses block scalar", () => {
+  const yml = ciYml('echo "step: one" && npm test');
+  assert.ok(yml.includes("- run: |"));
+  assert.ok(yml.includes('echo "step: one" && npm test'));
+});
+
+test("ciYml: gate with ' #' uses block scalar", () => {
+  const yml = ciYml("npm test # run tests");
+  assert.ok(yml.includes("- run: |"));
+  assert.ok(yml.includes("npm test # run tests"));
+});
+
+test("ciYml: gate with leading '!' uses block scalar", () => {
+  const yml = ciYml('! grep -rn "console.log" src');
+  assert.ok(yml.includes("- run: |"));
+  assert.ok(yml.includes('! grep -rn "console.log" src'));
+});
+
+test("ciYml: plain single-line gate uses plain scalar (- run: cmd)", () => {
+  const yml = ciYml("npm test");
+  assert.match(yml, /- run: npm test\n/);
+  assert.doesNotMatch(yml, /run: \|/);
+});

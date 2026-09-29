@@ -1,22 +1,34 @@
-// Markdown heading helpers for AGENTS.md / CONTEXT.md. A line inside a ``` block is never a
-// heading (a `# comment` in a bash block is not an H1).
+// Markdown heading helpers for AGENTS.md / CONTEXT.md. A line inside a ``` or ~~~ block is never a
+// heading (a `# comment` in a bash block is not an H1). Fences per CommonMark: track the opening
+// fence's character and length; close only on a line with the same character and >= length.
 
 function toLines(text) {
   return text.replace(/\r\n/g, "\n").split("\n");
 }
 
+export function fenceRun(line) {
+  const m = line.match(/^ {0,3}(`{3,}|~{3,})/);
+  if (!m) return null;
+  return { char: m[1][0], len: m[1].length };
+}
+
 export function headings(text) {
   const out = [];
-  let inCode = false;
+  let fenceState = null; // { char, len }
   const lines = toLines(text);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\s*```/.test(line)) {
-      inCode = !inCode;
+    const fence = fenceRun(line);
+    if (fence) {
+      if (fenceState && fence.char === fenceState.char && fence.len >= fenceState.len) {
+        fenceState = null;
+      } else if (!fenceState) {
+        fenceState = fence;
+      }
       continue;
     }
-    if (inCode) continue;
-    const m = line.match(/^(#{1,6}) (.+?)\s*$/);
+    if (fenceState) continue;
+    const m = line.match(/^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/);
     if (m) out.push({ index: i, level: m[1].length, title: m[2] });
   }
   return out;
