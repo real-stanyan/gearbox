@@ -40,6 +40,12 @@
 // checkout) is shown as NEWER, never as "behind". `update` refuses to downgrade in every fence
 // state, so that holds for a hand-edited fence too ("hand-edited, and NEWER"), and neither row
 // nor stamp advice then says to run `update`.
+// A file it can't read, a malformed marker, or an upstream without fences is an error row (never
+// a stack trace — the run still exits 0) that names the broken side and what to do: fix a local
+// marker by hand, or refresh an upstream that predates v2 or can't be used. With no usable
+// upstream fence there is no protocol version to hold the stamp against, so the stamp line is
+// left out. Upstream's protocol version is read from upstream's own fence, so a broken local
+// file can't hide it behind the tag / GEARBOX_UPSTREAM_VERSION (the PACKAGE version under npx).
 // "Fully synced" requires both fences synced, no missing or revised ADR, AND `.gearbox-version`
 // equal to upstream's protocol version; it used to count ADR files only, and could print
 // "behind by patch" and "fully synced" in the same run. A size line warns when AGENTS.md is
@@ -69,7 +75,7 @@ import { execSync } from "node:child_process";
 import { join, basename } from "node:path";
 import { env, exit, cwd, stdout } from "node:process";
 import * as tui from "./lib/tui.js";
-import { fenceStatus, findFence } from "./lib/fence.js";
+import { fenceStatus, findFence, FenceError } from "./lib/fence.js";
 import { semverGreater } from "./lib/fence-release.js";
 import { AGENTS_MAX_BYTES } from "./lib/protocol-check.js";
 
@@ -206,15 +212,27 @@ let fencesSynced = true;
 let upstreamProtocolVersion = "";
 let agentsBytes = 0; // AGENTS.md's size, for the budget warning — from this read, not a second one
 const readText = (path) => (existsSync(path) ? readFileSync(path, "utf8") : "");
+const REFRESH = "refresh the package/checkout (npx -y gearbox-agents@2 / git pull)";
+// What to do about an error row — the remedy names the side that is broken, and always the one
+// its message names. upstreamUnusable marks the rows no `update` gets past until upstream is refreshed.
+function errorFix(e, upError, upFence, localError) {
+  if (e === localError) return {}; // a local read error: the message already says what to fix
+  if (upError) return { fix: `upstream's fence can't be used — ${REFRESH}`, upstreamUnusable: true };
+  if (!upFence) return { fix: `your gearbox upstream predates v2 — ${REFRESH}`, upstreamUnusable: true };
+  if (e instanceof FenceError) return { fix: "fix the marker line by hand (it must match the gearbox marker grammar)" };
+  return {};
+}
 for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"]]) {
   // Each side is read on its own and a failure is captured, not thrown: a file this script can't
   // read (EACCES, a directory) becomes an error row instead of an uncaught stack trace — the
   // quick check exits 0 in every state — and neither side's trouble hides the other side's data
-  // (AGENTS.md's size, upstream's protocol version).
+  // (AGENTS.md's size, upstream's protocol version), or which side is the broken one.
   let upText = "";
-  let upError = null;
+  let upFence = null;
+  let upError = null; // upstream's file can't be read, or its marker is malformed
   try {
     upText = readText(join(gearboxDir, file));
+    upFence = findFence(upText, name);
   } catch (e) {
     upError = e;
   }
@@ -231,18 +249,12 @@ for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"
     if (upError || localError) throw upError || localError;
     st = fenceStatus(localText, upText, name);
   } catch (e) {
-    st = { state: "error", message: e.message };
+    st = { state: "error", message: e.message, ...errorFix(e, upError, upFence, localError) };
   }
-  if (name === "protocol") {
-    // Upstream's protocol version comes from upstream's own text: a malformed LOCAL marker makes
-    // fenceStatus throw before it hands upstream's fence back, and the fallback (the tag, or
-    // GEARBOX_UPSTREAM_VERSION — the PACKAGE version under npx) moves independently of the protocol.
-    try {
-      upstreamProtocolVersion = findFence(upText, "protocol")?.version || "";
-    } catch {
-      // a malformed upstream marker: the row reports it; the tag stays the fallback
-    }
-  }
+  // Upstream's protocol version comes from upstream's own fence: a malformed LOCAL marker makes
+  // fenceStatus throw before it hands upstream's fence back, and the fallback (the tag, or
+  // GEARBOX_UPSTREAM_VERSION — the PACKAGE version under npx) moves independently of the protocol.
+  if (name === "protocol" && upFence) upstreamProtocolVersion = upFence.version;
   // A local fence with the greater version is the usual sign of a stale upstream checkout, and
   // `update` refuses to downgrade it in EVERY state (--force overrides hand edits, never a
   // downgrade) — so "newer" is judged on the versions alone, for every row that has both fences.
@@ -265,7 +277,7 @@ const FENCE_TEXT = {
       ? `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited, and NEWER than upstream (${r.st.local.version} > ${r.st.upstream.version}) — refresh your upstream first; update refuses to downgrade${RESET}`
       : `${YELLOW}⚠️  ${r.file} gearbox:${r.name} hand-edited — move local ${FENCE_LOCAL[r.name]}, then npx gearbox-agents update --force${RESET}`,
   missing: (r) => `${YELLOW}⚠️  ${r.file} has no gearbox:${r.name} fence (v1 layout) — run npx gearbox-agents update to migrate (ADR-0050)${RESET}`,
-  error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${RESET}`,
+  error: (r) => `${YELLOW}⚠️  ${r.file} gearbox:${r.name}: ${r.st.message}${r.st.fix ? ` — ${r.st.fix}` : ""}${RESET}`,
 };
 
 console.log("");
@@ -406,7 +418,9 @@ if (missingCount === 0 && driftCount === 0 && fencesSynced && stampOk) {
   if (tui.isTTY) console.log("\n  " + tui.grad("⚙ downstream in sync"));
 } else {
   if (!fencesSynced) console.log(`${DIM}status:${RESET}    ${YELLOW}⚠️  protocol fences not synced (see fence: lines above)${RESET}`);
-  if (!stampOk) {
+  // With no usable upstream fence there is no protocol version to hold the stamp against — the
+  // fallback is the tag/env, under npx the PACKAGE version — so the fence: lines' "refresh" stands alone.
+  if (!stampOk && !fenceRows.some((r) => r.st.upstreamUnusable)) {
     // `update` rewrites a stale stamp — unless a NEWER fence (any state, hand-edited included)
     // makes it refuse to downgrade, which a stamp typo on its own would not
     const fix = fenceRows.some((r) => r.newer)

@@ -278,3 +278,76 @@ test("an unreadable file on one side doesn't hide the other side's data", () => 
   assert.doesNotMatch(b.out, /v2\.5\.0/);
   assert.doesNotMatch(b.out, /run npx gearbox-agents update/);
 });
+
+// An error row used to say only what failed. It now names the broken side and what to do about it —
+// and nothing else in the run may send the user to an `update` that dies on the same problem.
+test("error row, upstream without fences (pre-v2): refresh the package/checkout; update really can't help", () => {
+  const down = installed(makeUpstream());
+  const preV2 = makeUpstream();
+  write(preV2, "AGENTS.md", "# Gearbox\n\n## Working agreement (multi-agent)\n");
+  write(preV2, "CONTEXT.md", "# Domain context — Gearbox\n");
+  const r = version(down, preV2, { GEARBOX_UPSTREAM_VERSION: "v1.9.0" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol: upstream has no gearbox:protocol fence — your gearbox upstream predates v2 — refresh the package\/checkout \(npx -y gearbox-agents@2 \/ git pull\)/);
+  assert.match(r.out, /CONTEXT\.md gearbox:glossary: upstream has no gearbox:glossary fence — your gearbox upstream predates v2/);
+  assert.doesNotMatch(r.out, /fix the marker line/);
+  // no protocol version to hold the stamp against: no stamp line, and no "run update" anywhere
+  assert.doesNotMatch(r.out, /≠ protocol/);
+  assert.doesNotMatch(r.out, /run npx gearbox-agents update/);
+  assert.doesNotMatch(r.out, /fully synced/);
+  // the remedy is the right one: update dies on this upstream
+  const u = runTool("gearbox-update", ["--no-push"], { cwd: down, env: { GEARBOX_DIR: preV2 } });
+  assert.equal(u.code, 1, u.out);
+  assert.match(u.out, /Can't read the gearbox:protocol fence/);
+});
+
+test("error row, malformed local marker: fix the marker line by hand; update says the same", () => {
+  const up = makeUpstream();
+  const down = installed(up);
+  write(down, "AGENTS.md", read(down, "AGENTS.md").replace("<!-- /gearbox:protocol -->", ""));
+  commitAll(down, "broken marker"); // update refuses a dirty tree
+  const r = version(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol: .*has no end marker — fix the marker line by hand \(it must match the gearbox marker grammar\)/);
+  assert.doesNotMatch(r.out, /predates v2|refresh the package/);
+  assert.doesNotMatch(r.out, /fully synced/);
+  const u = runTool("gearbox-update", ["--no-push"], { cwd: down, env: { GEARBOX_DIR: up } });
+  assert.equal(u.code, 1, u.out);
+  assert.match(u.out, /must be fixed by hand/);
+});
+
+test("error row, unusable upstream fence (malformed or unreadable): refresh the upstream, don't hunt a local line", () => {
+  const down = installed(makeUpstream());
+  const malformed = makeUpstream();
+  write(malformed, "AGENTS.md", read(malformed, "AGENTS.md").replace("<!-- /gearbox:protocol -->", ""));
+  const m = version(down, malformed, { GEARBOX_UPSTREAM_VERSION: "v2.5.0" });
+  assert.equal(m.code, 0, m.out);
+  assert.match(m.out, /AGENTS\.md gearbox:protocol: .*has no end marker — upstream's fence can't be used — refresh the package\/checkout \(npx -y gearbox-agents@2 \/ git pull\)/);
+  assert.doesNotMatch(m.out, /fix the marker line/);
+  // upstream's protocol version is unknown, and the env is the PACKAGE version under npx: no stamp verdict
+  assert.doesNotMatch(m.out, /≠ protocol/);
+  assert.doesNotMatch(m.out, /run npx gearbox-agents update/);
+
+  const unreadable = makeUpstream();
+  rmSync(join(unreadable, "AGENTS.md"));
+  mkdirSync(join(unreadable, "AGENTS.md"));
+  const u = version(down, unreadable);
+  assert.equal(u.code, 0, u.out);
+  assert.match(u.out, /AGENTS\.md gearbox:protocol: EISDIR.* — upstream's fence can't be used — refresh the package\/checkout/);
+  assert.doesNotMatch(u.out, /fix the marker line/);
+});
+
+// Both sides broken at once: the row names one problem, and its remedy must be for that one.
+test("an error row's remedy is always for the problem its message names", () => {
+  const preV2 = makeUpstream();
+  write(preV2, "AGENTS.md", "# Gearbox\n\n## Working agreement (multi-agent)\n");
+  write(preV2, "CONTEXT.md", "# Domain context — Gearbox\n");
+  const down = installed(makeUpstream());
+  rmSync(join(down, "AGENTS.md"));
+  mkdirSync(join(down, "AGENTS.md"));
+  const r = version(down, preV2);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /AGENTS\.md gearbox:protocol: EISDIR[^\n]*/);
+  assert.doesNotMatch(r.out.match(/AGENTS\.md gearbox:protocol: EISDIR[^\n]*/)[0], /predates v2|refresh|fix the marker/);
+  assert.match(r.out, /CONTEXT\.md gearbox:glossary: upstream has no gearbox:glossary fence — your gearbox upstream predates v2/);
+});
