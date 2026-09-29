@@ -10,10 +10,9 @@
 // Exit non-zero on any violation. Keep assertions structural, not stylistic.
 
 import { readFileSync, existsSync, statSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { runProtocolChecks } from "./lib/protocol-check.js";
-import { findFence } from "./lib/fence.js";
+import { latestTag, releaseState } from "./lib/fence-release.js";
 
 const root = process.cwd();
 const failures = [];
@@ -48,13 +47,16 @@ check(
 
 // 3. package.json `files` must ship the ADR dir that actually exists (ADR-0028/0031): if it
 //    points at a moved dir, `npm pack` silently ships zero ADRs and every npx command crashes.
+//    Parsed once, guarded: the version rule (6) reads it too, and invalid JSON is a failure,
+//    never a crash.
+let pkg = null;
 if (existsSync(join(root, "package.json"))) {
-  let files = [];
   try {
-    files = JSON.parse(readFile("package.json")).files || [];
+    pkg = JSON.parse(readFile("package.json"));
   } catch {
     check("package.json must be valid JSON", false);
   }
+  const files = (pkg && pkg.files) || [];
   check(
     'package.json `files` must include "docs/gearbox-adr/" (else npm pack ships zero ADRs — ADR-0028/0031)',
     files.some((f) => f.replace(/\/$/, "") === "docs/gearbox-adr"),
@@ -102,40 +104,14 @@ if (existsSync(join(root, ".github/pull_request_template.md"))) {
   );
 }
 
-// 6. Version rule (ADR-0050): when either fence's content differs from the latest tag's, the
-//    marker version must equal package.json's — changing the protocol means shipping a new
-//    protocol version. Skipped outside git or without tags (the npm package); ci.yml checks
-//    out full history so CI enforces it.
-function git(cmd) {
-  try {
-    return execSync(`git ${cmd}`, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 1 << 24 });
-  } catch {
-    return null;
-  }
-}
-const latestTag = (git("tag -l 'v*' --sort=-v:refname") || "").trim().split("\n")[0];
-if (latestTag && protocol && glossary && existsSync(join(root, "package.json"))) {
-  const pkgVersion = "v" + JSON.parse(readFile("package.json")).version;
-  const fenceAt = (path, name) => {
-    const text = git(`show ${latestTag}:${path}`);
-    try {
-      return text ? findFence(text, name) : null;
-    } catch {
-      return null;
-    }
-  };
-  const prevProtocol = fenceAt("AGENTS.md", "protocol");
-  const prevGlossary = fenceAt("CONTEXT.md", "glossary");
-  const changed =
-    !prevProtocol ||
-    !prevGlossary ||
-    prevProtocol.actualHash !== protocol.actualHash ||
-    prevGlossary.actualHash !== glossary.actualHash;
-  check(
-    `fence content changed since ${latestTag}, so the marker version (${protocol.version}) must equal package.json's (${pkgVersion}) — set package.json's version, then run node scripts/dev/rehash-fences.js (ADR-0050)`,
-    !changed || protocol.version === pkgVersion,
-  );
-}
+// 6. Version rule (ADR-0050, scripts/lib/fence-release.js — shared with rehash-fences.js):
+//    fence content that changed since the latest tag ships under package.json's version, bumped
+//    past the tag; unchanged content keeps the tag's version. Skipped without tags (the npm
+//    package, a fresh clone) — except in CI, where a tagless checkout would silently switch the
+//    rule off (ci.yml checks out with fetch-depth: 0).
+if (!latestTag(root) && process.env.CI)
+  failures.push("CI checkout has no tags — use fetch-depth: 0 on actions/checkout, or the fence version rule has no tag to compare against (ADR-0050)");
+if (pkg) for (const e of releaseState(root, { protocol, glossary }, `v${pkg.version}`).errors) failures.push(e);
 
 // Report
 if (failures.length > 0) {

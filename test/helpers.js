@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { renderFence } from "../scripts/lib/fence.js";
+import { findFence, renderFence, replaceFence } from "../scripts/lib/fence.js";
 import { buildAgentsMd, buildContextMd } from "../scripts/lib/skeleton.js";
 import { ciYml } from "../scripts/lib/workflows.js";
 
@@ -77,4 +77,41 @@ export function makeUpstream({ version = "v2.0.0", protocol = PROTOCOL, glossary
   write(dir, "docs/gearbox-adr/0002-self-check-as-gate.md", "# ADR-0002: Self-check as gate\n\n- Date: 2026-07-17\n- Status: accepted\n");
   write(dir, "package.json", JSON.stringify({ name: "gearbox-agents", version: version.slice(1), repository: { url: "https://github.com/example/gearbox.git" } }));
   return dir;
+}
+
+// A git repo holding this Gearbox repo's gate-relevant files, both fences re-stamped at
+// `version` and package.json at `version`, committed and (unless tag: false) tagged v<version>
+// — a release the upstream self-check (scripts/check-gearbox.js) passes as-is.
+export const GEARBOX_FILES = [
+  "AGENTS.md", "CONTEXT.md", "CLAUDE.md", "README.md", "package.json",
+  ".github/workflows/ci.yml", ".github/pull_request_template.md", "docs/gearbox-adr/0001-adr-template.md",
+];
+export function gearboxRepo({ version = "2.0.0", tag = true } = {}) {
+  const dir = tmp("gearbox-self-");
+  for (const f of GEARBOX_FILES) write(dir, f, readFileSync(join(REPO, f), "utf8"));
+  restamp(dir, `v${version}`);
+  setPackageVersion(dir, version);
+  gitInit(dir);
+  git(dir, "config", "tag.gpgsign", "false");
+  git(dir, "config", "tag.forceSignAnnotated", "false");
+  commitAll(dir, `release v${version}`);
+  if (tag) git(dir, "tag", "-a", `v${version}`, "-m", `v${version}`);
+  return dir;
+}
+// Both markers stamped at `version` for the current content (what rehash writes for that version).
+export function restamp(dir, version) {
+  for (const [file, name] of [["AGENTS.md", "protocol"], ["CONTEXT.md", "glossary"]]) {
+    const text = read(dir, file);
+    write(dir, file, replaceFence(text, name, renderFence(name, version, findFence(text, name).content)));
+  }
+}
+export function setPackageVersion(dir, version) {
+  write(dir, "package.json", `${JSON.stringify({ ...JSON.parse(read(dir, "package.json")), version }, null, 2)}\n`);
+}
+// A hand edit between the markers: the content changes, the begin marker (hash + version) doesn't.
+export function editFence(dir, file = "AGENTS.md", name = "protocol", line = "An added protocol line.") {
+  const end = `\n<!-- /gearbox:${name} -->`;
+  const text = read(dir, file);
+  if (!text.includes(end)) throw new Error(`${file} has no gearbox:${name} end marker`);
+  write(dir, file, text.replace(end, `\n\n${line}${end}`));
 }
