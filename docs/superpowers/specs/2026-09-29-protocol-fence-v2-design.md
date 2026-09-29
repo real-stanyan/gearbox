@@ -138,7 +138,7 @@ Errors:
 4. `AGENTS.md` ≤ 32768 bytes (UTF-8, matching Codex's default `project_doc_max_bytes`). The message lists per-section sizes and suggests `docs/INDEX.md`.
 5. Required project headings exist as whole lines: `## Tech stack`, `## Hard rules`, `## Gate`, `## Maintainer`, `## Local protocol extensions`, `## Where to find things`. Required fence headings exist: `## Working agreement (multi-agent)`, `### On starting a shift`, `### While working`, `### Roles of issues & PRs`, `### PR disposition`, `### Changing the protocol itself`, `### Gate contract`, `### On ending a shift`. Heading matching is by line and level, never by substring.
 6. `CLAUDE.md` is exactly `@AGENTS.md`; `HANDOFF.md` does not exist; protocol files are not gitignored (ADR-0037, when inside git).
-7. `.github/workflows/ci.yml` contains every non-empty line of the `## Gate` command block. This is new for downstream; today only upstream checks it for itself.
+7. `.github/workflows/ci.yml` contains every non-empty line of the `## Gate` command block, with trailing `# comments` stripped (downstream gate blocks annotate their lines). This is new for downstream; today only upstream checks it for itself. A Gate block that still holds the `<…>` placeholder is an error of its own.
 
 Warnings:
 - A `### ` entry under `## Local protocol extensions` without an `Upstream:` line, or with `Upstream: undecided`.
@@ -228,7 +228,7 @@ Triggered by `update` when `AGENTS.md` has no protocol fence. It works on `docs/
 Lines are normalized: trimmed, and the maintainer name replaced with `<maintainer>`. A heading-alias table (including the Chinese-era headings) maps each v1 `###` heading to its section. The same is built for `CONTEXT.md` terms.
 
 Classification rules, fixed so every run classifies the same way:
-- **Recognized heading:** a `###` heading under `## Working agreement` is recognized when its text, with any trailing parenthetical removed (both `(...)` and `（...）`), case-insensitively starts with an alias-table key.
+- **Recognized heading:** a `###` heading under `## Working agreement` is recognized when its text, with any trailing parenthetical removed (both `(...)` and `（...）`), case-insensitively equals an alias-table key. The match is exact, so a project subsection such as "Gateway notes" is never mistaken for "Gate".
 - **Unknown line:** any line not in the known-lines set after normalization. A known line that a downstream edited in place (e.g. text appended to a step) is therefore unknown as a whole: it is carried over whole, and the fence restores the original.
 - **The > 50% rule** counts non-blank lines of the subsection, heading excluded.
 - **Protocol region:** from `## Working agreement (multi-agent)` (or its alias) up to the next `## ` heading.
