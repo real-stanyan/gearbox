@@ -58,10 +58,10 @@ export const PROTOCOL = [
 export const GLOSSARY = "## Protocol terms\n\n| Term | Definition | Notes |\n|---|---|---|\n| handoff | a baton passed at merge | — |";
 
 // A downstream-shaped v2 repo on disk (no git unless the caller adds it).
-export function v2Repo({ gate = "npm test", ci = null, version = "v2.0.0", stamp = version, maintainer = "octo", localExtensions, whereToFind } = {}) {
+export function v2Repo({ gate = "npm test", ci = null, version = "v2.0.0", glossaryVersion = version, stamp = version, maintainer = "octo", localExtensions, whereToFind } = {}) {
   const dir = tmp("gearbox-v2-");
   write(dir, "AGENTS.md", buildAgentsMd({ title: "demo", gate, maintainer, localExtensions, whereToFind, protocolBlock: renderFence("protocol", version, PROTOCOL) }));
-  write(dir, "CONTEXT.md", buildContextMd({ title: "demo", glossaryBlock: renderFence("glossary", version, GLOSSARY) }));
+  write(dir, "CONTEXT.md", buildContextMd({ title: "demo", glossaryBlock: renderFence("glossary", glossaryVersion, GLOSSARY) }));
   write(dir, "CLAUDE.md", "@AGENTS.md\n");
   write(dir, ".github/workflows/ci.yml", ci ?? ciYml(gate));
   if (stamp) write(dir, ".gearbox-version", `${stamp}\n`);

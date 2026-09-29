@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { findFence, FenceError } from "./fence.js";
-import { headings, sectionBody, sectionSizes } from "./sections.js";
+import { baseTitle, fenceRun, headings, sectionBody, sectionSizes, splitByLevel } from "./sections.js";
 
 export const AGENTS_MAX_BYTES = 32768;
 export const PROTOCOL_FENCE_MAX_BYTES = 20480;
@@ -22,13 +22,26 @@ export const FENCE_HEADINGS = [
 ];
 export const NEVER_IGNORED = ["AGENTS.md", "CLAUDE.md", "CONTEXT.md", "docs/gearbox-adr", ".gearbox-version", ".github/workflows/ci.yml"];
 
-// Non-empty lines of the first ``` block under "## Gate", trailing "# comments" stripped.
+// Non-empty lines of the FIRST fenced block under "## Gate", "# comments" stripped. The block is
+// read like CommonMark: ``` or ~~~, closed by the same character at least as long as the opener.
+// null when the section has no closed fenced block (an unterminated one would swallow the rest
+// of the file as "commands").
 export function gateCommand(agentsText) {
   const body = sectionBody(agentsText, 2, "Gate");
   if (body === null) return null;
-  const m = body.match(/```[^\n]*\n([\s\S]*?)\n```/);
-  if (!m) return null;
-  return m[1].split("\n").map((l) => l.replace(/\s+#.*$/, "").trim()).filter(Boolean);
+  let open = null;
+  const block = [];
+  for (const line of body.split("\n")) {
+    const run = fenceRun(line);
+    if (open === null) {
+      if (run) open = run;
+    } else if (run && run.char === open.char && run.len >= open.len) {
+      return block.map((l) => l.replace(/(^|\s)#.*$/, "").trim()).filter(Boolean);
+    } else {
+      block.push(line);
+    }
+  }
+  return null;
 }
 
 export function maintainerAccount(agentsText) {
@@ -86,8 +99,12 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
   const glossary = fenceOf(context, "CONTEXT.md", "glossary");
 
   for (const [file, f, home] of [["AGENTS.md", protocol, "## Local protocol extensions"], ["CONTEXT.md", glossary, "## Project terms"]]) {
-    if (f && f.actualHash !== f.hash)
-      errors.push(`${file}: the gearbox:${f.name} fence was edited by hand (marker sha256:${f.hash}, content sha256:${f.actualHash}) — move project text to "${home}", then re-apply upstream's fence with \`npx gearbox-agents update --force\` (ADR-0050)`);
+    if (!f || f.actualHash === f.hash) continue;
+    // Downstream the fence is upstream's text (re-apply it); in the Gearbox repo it is our own text (re-stamp it).
+    const fix = upstream
+      ? "set package.json's version to this change's target, then run `node scripts/dev/rehash-fences.js`"
+      : `move project text to "${home}", then re-apply upstream's fence with \`npx gearbox-agents update --force\``;
+    errors.push(`${file}: the gearbox:${f.name} fence was edited by hand (marker sha256:${f.hash}, content sha256:${f.actualHash}) — ${fix} (ADR-0050)`);
   }
   if (protocol && glossary && protocol.version !== glossary.version)
     errors.push(`fence versions differ: protocol ${protocol.version}, glossary ${glossary.version} — both markers always carry the protocol version (ADR-0050)`);
@@ -111,7 +128,7 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
     if (protocol) {
       const inside = headings(protocol.content);
       for (const [level, t] of FENCE_HEADINGS)
-        if (!inside.some((h) => h.level === level && (level === 2 ? h.title === t : h.title.startsWith(t))))
+        if (!inside.some((h) => h.level === level && (level === 2 ? h.title === t : baseTitle(h.title) === t)))
           errors.push(`the protocol fence is missing "${"#".repeat(level)} ${t}"`);
       const fenceBytes = Buffer.byteLength(protocol.content);
       if (upstream && fenceBytes > PROTOCOL_FENCE_MAX_BYTES)
@@ -132,11 +149,12 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
 
     const ext = sectionBody(outside, 2, "Local protocol extensions");
     if (ext !== null) {
-      for (const part of ext.split(/\n(?=### )/).filter((p) => p.startsWith("### "))) {
-        const title = part.split("\n")[0].slice(4).trim();
-        const up = part.match(/^- Upstream:\s*(.+)$/m);
-        if (!up) warnings.push(`local extension "${title}" has no "- Upstream:" line`);
-        else if (/^undecided/i.test(up[1].trim()))
+      // splitByLevel skips headings inside code blocks; the chunk before the first "###" has no title
+      for (const { title, lines } of splitByLevel(ext, 3).filter((c) => c.title !== null)) {
+        const up = lines.join("\n").match(/^- Upstream:[ \t]*(.*)$/m);
+        const value = up ? up[1].trim() : "";
+        if (!value) warnings.push(`local extension "${title}" has no "- Upstream:" line`);
+        else if (/^undecided/i.test(value))
           warnings.push(`local extension "${title}" is "Upstream: undecided" — decide: an upstream issue link, or project-specific`);
       }
     }

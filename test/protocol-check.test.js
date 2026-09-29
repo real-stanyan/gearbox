@@ -1,13 +1,35 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runProtocolChecks, gateCommand, maintainerAccount, AGENTS_MAX_BYTES } from "../scripts/lib/protocol-check.js";
-import { renderFence } from "../scripts/lib/fence.js";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
+import { runProtocolChecks, gateCommand, maintainerAccount, AGENTS_MAX_BYTES, PROTOCOL_FENCE_MAX_BYTES } from "../scripts/lib/protocol-check.js";
+import { renderFence, findFence, replaceFence } from "../scripts/lib/fence.js";
 import { v2Repo, write, read, gitInit, runTool, tmp, PROTOCOL } from "./helpers.js";
 
 const errorsOf = (dir, opts) => runProtocolChecks(dir, opts).errors;
 
+// Rewrite the protocol fence's content and re-render it, so the marker hash stays valid and
+// only the assertion under test can fail.
+function rewriteProtocol(dir, mutate) {
+  const text = read(dir, "AGENTS.md");
+  const fence = findFence(text, "protocol");
+  write(dir, "AGENTS.md", replaceFence(text, "protocol", renderFence("protocol", fence.version, mutate(fence.content))));
+}
+
+// A v2 repo whose AGENTS.md is exactly `bytes` long (ASCII filler in "Where to find things").
+function repoWithAgentsBytes(bytes) {
+  const base = Buffer.byteLength(read(v2Repo({ whereToFind: "- x" }), "AGENTS.md"));
+  const dir = v2Repo({ whereToFind: `- x${"x".repeat(bytes - base)}` });
+  assert.equal(Buffer.byteLength(read(dir, "AGENTS.md")), bytes);
+  return dir;
+}
+
 test("a clean v2 repo passes", () => {
   assert.deepEqual(errorsOf(v2Repo()), []);
+});
+
+test("a clean v2 repo has no warnings either", () => {
+  assert.deepEqual(runProtocolChecks(v2Repo()).warnings, []);
 });
 
 test("a hand-edited fence is an error that names the fix", () => {
@@ -19,15 +41,87 @@ test("a hand-edited fence is an error that names the fix", () => {
   assert.match(errs[0], /update --force/);
 });
 
+test("the hash-mismatch fix names the mode's own tool: update --force downstream, rehash-fences.js upstream", () => {
+  const dir = v2Repo();
+  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("Commit in small steps.", "Commit whenever."));
+  const [down] = errorsOf(dir);
+  assert.match(down, /"## Local protocol extensions"/);
+  assert.match(down, /update --force/);
+  assert.doesNotMatch(down, /rehash-fences/);
+  const up = errorsOf(dir, { upstream: true });
+  assert.equal(up.length, 1);
+  assert.match(up[0], /`node scripts\/dev\/rehash-fences\.js`/);
+  assert.doesNotMatch(up[0], /update --force/);
+});
+
+test("a hand-edited glossary fence is reported against CONTEXT.md and points at Project terms", () => {
+  const dir = v2Repo();
+  write(dir, "CONTEXT.md", read(dir, "CONTEXT.md").replace("a baton passed at merge", "whatever"));
+  const errs = errorsOf(dir);
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /^CONTEXT\.md: the gearbox:glossary fence was edited by hand/);
+  assert.match(errs[0], /"## Project terms"/);
+});
+
 test(".gearbox-version must equal the fence version downstream, not upstream", () => {
   const dir = v2Repo({ stamp: "v1.15.0" });
   assert.match(errorsOf(dir).join("\n"), /\.gearbox-version is "v1\.15\.0"/);
   assert.deepEqual(errorsOf(dir, { upstream: true }), []);
 });
 
+test("a missing .gearbox-version is reported as (missing)", () => {
+  assert.match(errorsOf(v2Repo({ stamp: null })).join("\n"), /\.gearbox-version is "\(missing\)"/);
+});
+
+test("the protocol and glossary fences must carry the same version", () => {
+  const errs = errorsOf(v2Repo({ glossaryVersion: "v2.1.0" }));
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /fence versions differ: protocol v2\.0\.0, glossary v2\.1\.0/);
+});
+
+test("a missing fence is an error that names the fence", () => {
+  const noProtocol = v2Repo();
+  const agents = read(noProtocol, "AGENTS.md");
+  write(noProtocol, "AGENTS.md", agents.replace(findFence(agents, "protocol").block, ""));
+  const a = errorsOf(noProtocol);
+  assert.equal(a.length, 1);
+  assert.match(a[0], /AGENTS\.md has no gearbox:protocol fence/);
+
+  const noGlossary = v2Repo();
+  const context = read(noGlossary, "CONTEXT.md");
+  write(noGlossary, "CONTEXT.md", context.replace(findFence(context, "glossary").block, ""));
+  const c = errorsOf(noGlossary);
+  assert.equal(c.length, 1);
+  assert.match(c[0], /CONTEXT\.md has no gearbox:glossary fence/);
+});
+
+test("duplicate and malformed markers are reported, not swallowed", () => {
+  const dup = v2Repo();
+  const agents = read(dup, "AGENTS.md");
+  const begin = findFence(agents, "protocol").block.split("\n")[0];
+  write(dup, "AGENTS.md", agents.replace(begin, `${begin}\n${begin}`));
+  assert.match(errorsOf(dup).join("\n"), /AGENTS\.md: duplicate gearbox:protocol begin marker/);
+
+  const bad = v2Repo();
+  write(bad, "CONTEXT.md", read(bad, "CONTEXT.md").replace("gearbox:glossary v2.0.0", "gearbox:glossary v2.0"));
+  assert.match(errorsOf(bad).join("\n"), /CONTEXT\.md: malformed gearbox marker/);
+});
+
 test("AGENTS.md over 32 KiB is an error listing the largest sections", () => {
   const dir = v2Repo({ whereToFind: `- ${"x".repeat(AGENTS_MAX_BYTES)}` });
   assert.match(errorsOf(dir).join("\n"), /over the 32768-byte budget.*Where to find things/);
+});
+
+test("the AGENTS.md budget counts UTF-8 bytes: the limit passes, one more fails, and the error points at docs/INDEX.md", () => {
+  assert.deepEqual(errorsOf(repoWithAgentsBytes(AGENTS_MAX_BYTES)), []);
+  const over = errorsOf(repoWithAgentsBytes(AGENTS_MAX_BYTES + 1));
+  assert.equal(over.length, 1);
+  assert.match(over[0], /AGENTS\.md is 32769 bytes, over the 32768-byte budget/);
+  assert.match(over[0], /Largest sections: Where to find things \d+ B/);
+  assert.match(over[0], /docs\/INDEX\.md/);
+  // 16384 two-byte characters: under the limit as a character count, over it as bytes
+  const multibyte = v2Repo({ whereToFind: `- ${"é".repeat(AGENTS_MAX_BYTES / 2)}` });
+  assert.match(errorsOf(multibyte).join("\n"), /over the 32768-byte budget/);
 });
 
 test("missing project sections and missing fence headings are errors", () => {
@@ -36,11 +130,87 @@ test("missing project sections and missing fence headings are errors", () => {
   assert.match(errorsOf(dir).join("\n"), /missing the project section "## Maintainer"/);
 });
 
+test("each required project section is enforced, as a level-2 heading", () => {
+  for (const title of ["Tech stack", "Hard rules", "Gate", "Maintainer", "Local protocol extensions", "Where to find things"]) {
+    for (const renamed of ["## Renamed\n", `### ${title}\n`]) {
+      const dir = v2Repo();
+      write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace(`## ${title}\n`, renamed));
+      assert.match(errorsOf(dir).join("\n"), new RegExp(`missing the project section "## ${title}"`), `${title} -> ${renamed.trim()}`);
+    }
+  }
+});
+
+test("project sections are looked up outside the protocol fence only", () => {
+  const dir = v2Repo();
+  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("## Maintainer\n", "## Owner\n"));
+  rewriteProtocol(dir, (c) => `${c}\n\n## Maintainer\n\nGitHub account: \`smuggled\``);
+  assert.match(errorsOf(dir).join("\n"), /missing the project section "## Maintainer"/);
+});
+
+// [heading line in helpers' PROTOCOL, the heading the error must name]
+const REQUIRED_FENCE_HEADINGS = [
+  ["## Working agreement (multi-agent)", "## Working agreement (multi-agent)"],
+  ["### On starting a shift (the start-of-shift steps)", "### On starting a shift"],
+  ["### While working", "### While working"],
+  ["### Roles of issues & PRs", "### Roles of issues & PRs"],
+  ["### PR disposition (merge rules)", "### PR disposition"],
+  ["### Changing the protocol itself (rules for changing this file)", "### Changing the protocol itself"],
+  ["### Gate contract (must be all-green before merge and shift-end)", "### Gate contract"],
+  ["### On ending a shift (shift-end rules)", "### On ending a shift"],
+];
+
+test("each required fence heading is enforced", () => {
+  for (const [line, missing] of REQUIRED_FENCE_HEADINGS) {
+    assert.ok(PROTOCOL.includes(line), line);
+    const dir = v2Repo();
+    rewriteProtocol(dir, (c) => c.replace(line, line.replace(/^(#+) .*/, "$1 Renamed")));
+    assert.deepEqual(errorsOf(dir), [`the protocol fence is missing "${missing}"`], line);
+  }
+});
+
+test("fence headings match by exact base title: not by prefix, substring or level", () => {
+  for (const renamed of ["### While working around bugs", "### Notes on While working", "## While working", "#### While working"]) {
+    const dir = v2Repo();
+    rewriteProtocol(dir, (c) => c.replace("### While working", renamed));
+    assert.deepEqual(errorsOf(dir), ['the protocol fence is missing "### While working"'], renamed);
+  }
+});
+
 test("CI must run every Gate line; trailing comments are ignored; placeholders fail", () => {
   assert.match(errorsOf(v2Repo({ ci: "jobs: {}\n" })).join("\n"), /doesn't run the Gate command line `npm test`/);
   const commented = v2Repo({ gate: "npm test   # offline suite\nnpm run lint", ci: "- run: npm test\n- run: npm run lint\n" });
   assert.deepEqual(errorsOf(commented), []);
   assert.match(errorsOf(v2Repo({ gate: "<gate command, e.g.: npm test>" })).join("\n"), /placeholder command/);
+});
+
+test("CI must run every line of a multi-line Gate, not just the first", () => {
+  const dir = v2Repo({ gate: "npm test\nnpm run lint", ci: "- run: npm test\n" });
+  assert.deepEqual(errorsOf(dir), [".github/workflows/ci.yml doesn't run the Gate command line `npm run lint` (CI == Gate contract)"]);
+});
+
+test("a Gate block's column-0 comments are not commands CI must run", () => {
+  const dir = v2Repo({ gate: "# run everything\nnpm test", ci: "- run: npm test\n" });
+  assert.deepEqual(errorsOf(dir), []);
+});
+
+test("a ~~~ Gate block is read, and an empty Gate block is an error", () => {
+  const tilde = v2Repo();
+  write(tilde, "AGENTS.md", read(tilde, "AGENTS.md").replace("```bash\nnpm test\n```", "~~~bash\nnpm test\n~~~"));
+  assert.deepEqual(errorsOf(tilde), []);
+
+  const empty = v2Repo();
+  write(empty, "AGENTS.md", read(empty, "AGENTS.md").replace("```bash\nnpm test\n```", "```bash\n```"));
+  assert.match(errorsOf(empty).join("\n"), /"## Gate" has no fenced command block/);
+});
+
+test("a missing CONTEXT.md or ci.yml is an error", () => {
+  const noContext = v2Repo();
+  rmSync(join(noContext, "CONTEXT.md"));
+  assert.match(errorsOf(noContext).join("\n"), /CONTEXT\.md is missing/);
+
+  const noCi = v2Repo();
+  rmSync(join(noCi, ".github/workflows/ci.yml"));
+  assert.match(errorsOf(noCi).join("\n"), /\.github\/workflows\/ci\.yml is missing/);
 });
 
 test("CLAUDE.md shell, HANDOFF.md and gitignored protocol files", () => {
@@ -55,6 +225,15 @@ test("CLAUDE.md shell, HANDOFF.md and gitignored protocol files", () => {
   assert.match(all, /must not be gitignored: CONTEXT\.md/);
 });
 
+test("every protocol file listed in ADR-0037 is checked against .gitignore", () => {
+  for (const path of ["AGENTS.md", "CLAUDE.md", "CONTEXT.md", "docs/gearbox-adr", ".gearbox-version", ".github/workflows/ci.yml"]) {
+    const dir = v2Repo();
+    gitInit(dir);
+    write(dir, ".gitignore", `${path}\n`);
+    assert.match(errorsOf(dir).join("\n"), new RegExp(`must not be gitignored: ${path.replace(/[.]/g, "\\.")}`), path);
+  }
+});
+
 test("warnings: placeholder maintainer, undecided / missing Upstream lines", () => {
   const dir = v2Repo({
     maintainer: null,
@@ -67,14 +246,37 @@ test("warnings: placeholder maintainer, undecided / missing Upstream lines", () 
   assert.match(warnings.join("\n"), /"No upstream line" has no "- Upstream:" line/);
 });
 
-test("upstream mode enforces the 20 KiB protocol-fence budget", () => {
+test("a Maintainer section without an account line warns too", () => {
   const dir = v2Repo();
-  const agents = read(dir, "AGENTS.md");
-  const big = renderFence("protocol", "v2.0.0", `${PROTOCOL}\n\n${"z".repeat(21000)}`);
-  const start = agents.indexOf("<!-- gearbox:protocol");
-  const end = agents.indexOf("<!-- /gearbox:protocol -->") + "<!-- /gearbox:protocol -->".length;
-  write(dir, "AGENTS.md", agents.slice(0, start) + big + agents.slice(end));
-  assert.match(errorsOf(dir, { upstream: true }).join("\n"), /20480-byte upstream budget/);
+  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("GitHub account: `octo`", "TBD"));
+  const { errors, warnings } = runProtocolChecks(dir);
+  assert.deepEqual(errors, []);
+  assert.match(warnings.join("\n"), /names no GitHub account/);
+});
+
+test("extension warnings ignore fenced text; an empty Upstream line counts as missing", () => {
+  const dir = v2Repo({
+    localExtensions: [
+      "### Real extension", "", "- Extends: While working", "- Upstream: project-specific", "",
+      "Template for the next one:", "", "```md", "### Example heading", "- Extends: x", "```", "",
+      "### Empty upstream", "", "- Extends: While working", "- Upstream:", "", "Prose after the empty line.",
+    ].join("\n"),
+  });
+  const { errors, warnings } = runProtocolChecks(dir);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(warnings, ['local extension "Empty upstream" has no "- Upstream:" line']);
+});
+
+test("the 20 KiB protocol-fence budget applies in upstream mode only, and exactly at the limit", () => {
+  const repoWithFenceBytes = (bytes) => {
+    const dir = v2Repo();
+    rewriteProtocol(dir, () => `${PROTOCOL}\n\n${"z".repeat(bytes - Buffer.byteLength(PROTOCOL) - 2)}`);
+    return dir;
+  };
+  assert.deepEqual(errorsOf(repoWithFenceBytes(PROTOCOL_FENCE_MAX_BYTES), { upstream: true }), []);
+  const over = repoWithFenceBytes(PROTOCOL_FENCE_MAX_BYTES + 1);
+  assert.match(errorsOf(over, { upstream: true }).join("\n"), /the protocol fence is 20481 bytes, over the 20480-byte upstream budget/);
+  assert.doesNotMatch(errorsOf(over).join("\n"), /upstream budget/);
 });
 
 test("gateCommand and maintainerAccount read the project sections", () => {
@@ -83,9 +285,36 @@ test("gateCommand and maintainerAccount read the project sections", () => {
   assert.equal(maintainerAccount(md), "octo");
 });
 
+test("gateCommand reads the first fenced block like CommonMark", () => {
+  const gate = (...lines) => ["## Gate", "", ...lines, "", "> note", ""].join("\n");
+  // a ~~~ block; comments (column 0 or trailing) go, along with the blank lines they leave
+  assert.deepEqual(gateCommand(gate("~~~sh", "# run everything", "npm test  # fast", "", "npm run lint", "~~~")), ["npm test", "npm run lint"]);
+  // only the first block counts
+  assert.deepEqual(gateCommand(gate("```sh", "npm test", "```", "", "```sh", "echo later", "```")), ["npm test"]);
+  // an empty first block is not glued to the next one
+  assert.deepEqual(gateCommand(gate("```sh", "```", "", "```sh", "echo later", "```")), []);
+  // another fence character, or a shorter run, is content — not a closer
+  assert.deepEqual(gateCommand(gate("~~~sh", "echo a", "```", "echo b", "~~~")), ["echo a", "```", "echo b"]);
+  assert.deepEqual(gateCommand(gate("````sh", "echo a", "```", "echo b", "````")), ["echo a", "```", "echo b"]);
+  // no block, an unterminated block, no Gate section: null
+  assert.equal(gateCommand("## Gate\n\nrun the tests\n"), null);
+  assert.equal(gateCommand(gate("```sh", "npm test")), null);
+  assert.equal(gateCommand("## Elsewhere\n\n```sh\nnpm test\n```\n"), null);
+});
+
 test("gearbox-check CLI exits 0 on a clean repo and 1 with errors", () => {
   assert.equal(runTool("gearbox-check", [], { cwd: v2Repo() }).code, 0);
   const bad = runTool("gearbox-check", [], { cwd: tmp() });
   assert.equal(bad.code, 1);
   assert.match(bad.out, /AGENTS\.md is missing/);
+});
+
+test("gearbox-check prints warnings without failing, counts its errors, and --help never runs the check", () => {
+  const warned = runTool("gearbox-check", [], { cwd: v2Repo({ maintainer: null }) });
+  assert.equal(warned.code, 0);
+  assert.match(warned.out, /⚠ "## Maintainer" names no GitHub account/);
+  assert.match(runTool("gearbox-check", [], { cwd: tmp() }).out, /gearbox check failed \(\d+\)/);
+  const help = runTool("gearbox-check", ["--help"], { cwd: tmp() });
+  assert.equal(help.code, 0);
+  assert.match(help.out, /^gearbox-check — /);
 });
