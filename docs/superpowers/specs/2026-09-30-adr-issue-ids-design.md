@@ -119,8 +119,8 @@ Add to `scripts/lib/protocol-check.js`, which runs in both `gearbox-agents check
     `docs/adr: older ADR numbers used by more than one file: ADR-45 (0045-a.md, 0045-b.md); ADR-46 (…) — references to them are ambiguous; new ADRs are named after their issue, so this can't recur (ADR-0052)`
   - Evidence that this split is needed: dryrun, one of the stamped downstreams, carries 10 such older pairs today (two `0045-…` files, two `0046-…`, and so on). As a hard error they would turn it red on arrival with no acceptable fix.
 - Error text, `docs/gearbox-adr/` (every duplicate is an error; the numbers there are upstream's and unique):
-  - Downstream: `… these copies are managed by gearbox-agents — delete the stray file and rerun \`npx gearbox-agents update\``.
-  - Upstream: `… protocol ADR numbers are claimed at merge — renumber yours (Upstream release process)`.
+  - Downstream: `… these copies are managed by gearbox-agents: delete the stray file and rerun \`npx gearbox-agents update\``.
+  - Upstream: `… protocol ADR numbers are claimed at merge: renumber yours (Upstream release process)`.
 - **When a duplicate is caught:**
   - With issue IDs, a duplicate needs two PRs settling the same issue.
   - A PR's check runs on the PR merged into main as it stood when the check ran. If the other PR landed first, the second PR goes red before merge. Otherwise the push-to-main run goes red at once.

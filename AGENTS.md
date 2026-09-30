@@ -28,7 +28,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 GitHub account: `real-stanyan`
 
-<!-- gearbox:protocol v2.0.0 sha256:41ce6e214f9f; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:40527e301942; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -48,7 +48,7 @@ GitHub account: `real-stanyan`
 - **Protocol files stay committed — never add them to `.gitignore`**: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/gearbox-adr/`, `.gearbox-version`, `.github/workflows/ci.yml`. The repo is the only shared memory between shifts; an ignored protocol file exists locally but never reaches the next agent's clone (ADR-0037)
 - One agent sees a task through from start to finish; handoffs only happen at task boundaries (issue closed / PR merged), never mid-task
 - Non-trivial changes go through a branch + PR; typo-level tweaks can go straight into main
-- **Project-owned** architectural decisions go in `docs/adr/` (one decision per file, starting at 0001); protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
+- **Project-owned** architectural decisions go in `docs/adr/`, one decision per file, named after the issue that settles it: `docs/adr/<issue>-<slug>.md`, cited `ADR-<issue>` — issue numbers are unique, so parallel lanes never collide; older numbered files keep their numbers, and no ADR is ever renumbered (ADR-0052). Protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
 - Look up domain-term definitions in `CONTEXT.md`; add new project terms under its `## Project terms` as they come up (protocol terms live in its fence)
 - **Never edit between the `gearbox:` markers** (in `AGENTS.md` or `CONTEXT.md`). Project rules go in the project sections; additions to the protocol go in `## Local protocol extensions`, each with `- Extends:` (the section it extends) and `- Upstream:` (an upstream issue link, `project-specific`, or `undecided`) (ADR-0050)
 - **Keep `AGENTS.md` within 32 KiB**: every agent loads it in full at session start, and Codex silently drops everything past its first 32 KiB. "Where to find things" gets one line per entry — a path plus what's there; longer maps go in `docs/INDEX.md`. `gearbox-agents check` enforces the budget (ADR-0051)
@@ -145,7 +145,6 @@ Serial single-human repos need none of this — with one live shift, the rules a
 - **A lane = one shift + its claimed tasks.** Parallel shifts are allowed iff each works only on frontier tasks it has claimed (ADR-0044/0047). Disjoint claims = disjoint lanes; no other lock exists or is needed — task-level overlap is prevented at claim time, file-level overlap resolves in the PR merge like any concurrent development.
 - **Handoff issues are per-lane**: shift-end rule 4 unchanged in shape, but a starting shift reads **all** open handoff issues, takes over **at most one** lane (claim its listed tasks, close its handoff), and leaves other lanes' handoffs open — closing another live lane's handoff is stealing its baton. A **"context only"** handoff (lane finished, nothing transfers) is closed by its first reader after reading.
 - **Terminal declarations (ADR-0009) are repo-level, not lane-level** — see On ending a shift.
-- **Protocol changes serialize at merge time**: two lanes may each open a protocol PR, but ADR numbers (and, in the Gearbox repo, the version bump) are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR (and, in the Gearbox repo, recompute the version: latest tag + segment, ADR-0028) inside your PR, then merge.
 - A stalled lane is released by the maintainer: unassign its tasks, close its handoff (the stale-claim rule in ADR-0047 already makes dangling assignments non-binding).
 
 ### Branch hygiene (optional)
@@ -178,6 +177,8 @@ Division of labor is a project property, declared in the project's `## Division 
 **Downstream impact declaration** (ADR-0013, pull model ADR-0026): every protocol-change PR declares `Affects downstream` in the PR body (`yes`/`no` + one reason). It's informational — it helps gauge blast radius, it opens no per-downstream issues and doesn't block merge. A maintainer running a private fleet may optionally open notification issues against known downstream projects (fleet notes live outside the template, ADR-0033).
 
 **Version numbers** (ADR-0023, split by ADR-0050): a semver variant, baseline `v0.0.0`. Segment criterion — **major** = a cross-tool/cross-repo contract change (hash stamp format, install-anchor structure, file layout, renames) that needs manual intervention for downstream backfill; **minor** = a new mechanism (new ADR / new tool / new protocol clause); **patch** = a revision to an existing file (wording, a status line, a typo). There are two numbers: the **package version** (`package.json` = the git tag) moves on every release; the **protocol version** (the fence markers) moves only when fence content changes, and then equals that release's package version. Process (ADR-0029): the PR body declares `Version bump: major|minor|patch|none` (`none` needs one reason, enforced via the PR template); in the same PR the author sets `package.json`'s `version` to the target (latest tag + segment, ADR-0028) and reruns `rehash-fences.js` if fences changed; after merge **the author agent** pushes an annotated tag based on the latest tag at merge time; **then the maintainer runs `npm publish`** (it hits an external registry and needs credentials, so agents don't run it). A `none` segment triggers no tag/publish and doesn't touch `package.json`'s version. No CHANGELOG — the tag message + the ADR are the change record.
+
+**Parallel protocol PRs** (ADR-0048/0052): protocol ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge.
 
 ## Division of labor
 
