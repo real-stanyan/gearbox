@@ -784,7 +784,7 @@ function generateReport({
   lines.push(
     "- [ ] review the diff; run the Gate and `npx gearbox-agents check`",
     `- [ ] open the PR (the scheduled gearbox-sync Action does this itself): \`gh pr create --base ${baseBranch} --head ${branchName} --body-file gearbox-update-report.md\``,
-    "- [ ] merging adopts the new protocol version — L1 in this repo: wait for the maintainer's agreement",
+    "- [ ] merging adopts the new protocol version — L1 in this repo: wait for the maintainer's approval; in a multi-human repo the maintainer merges it (ADR-0053)",
     "- [ ] delete this report file after the PR merges",
     "",
   );
@@ -1450,7 +1450,7 @@ async function main() {
   stdout.write(`  1. Review the branch and ${C.cyan("gearbox-update-report.md")} (the PR body)\n`);
   stdout.write(`  2. Run the Gate and ${C.cyan("npx gearbox-agents check")}\n`);
   stdout.write(`  3. Open a PR: ${C.cyan(`gh pr create --base ${baseBranch} --head ${branchName} --body-file gearbox-update-report.md`)}\n`);
-  stdout.write("  4. Merging adopts the new protocol version — L1: wait for the maintainer's agreement\n\n");
+  stdout.write("  4. Merging adopts the new protocol version — L1: wait for the maintainer's approval; in a multi-human repo the maintainer merges it (ADR-0053)\n\n");
 }
 
 await main();

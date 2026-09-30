@@ -223,6 +223,12 @@ test("the maintainer is read from the protocol region, not from a project rule q
   assert.match(sectionBody(agentsMd, 2, "Hard rules"), /security-lead/);
 });
 
+test("a maintainer slot that isn't a GitHub login shape is not detected; the roster keeps the placeholder", () => {
+  const { agentsMd, report } = migrate(TEMPLATE.replace("`<maintainer>`", "`Stan Yan`"));
+  assert.equal(report.maintainer, null);
+  assert.match(agentsMd, /- `<maintainer>` — shared: <maintainer> — maintainer/);
+});
+
 test("a v1 gate command in a ~~~ block moves to ## Gate", () => {
   const tilde = nearTemplate.replace("```bash\nnpx tsc --noEmit\n```", "~~~bash\nnpx tsc --noEmit\n~~~");
   const { agentsMd, report } = migrate(tilde);
