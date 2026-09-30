@@ -1,7 +1,7 @@
 # ADR-0050: The protocol body is a tool-managed fence in AGENTS.md / CONTEXT.md
 
 - Date: 2026-09-29
-- Status: accepted
+- Status: accepted; amended by ADR-0053 (`## Maintainer` → `## Roster`)
 - Related: ADR-0017 (update never touched AGENTS.md — amended), ADR-0022 (install transforms — replaced), ADR-0023 (version stamp — amended), ADR-0028 (`GEARBOX_UPSTREAM_VERSION` — no longer the stamp's source), ADR-0013/0026 (hand-edit report — retired; pull trigger kept), ADR-0032 (protocol language), ADR-0049 (scheduled sync — its accepted stamp lag is gone), ADR-0051 (the protocol check)
 
 ## Context

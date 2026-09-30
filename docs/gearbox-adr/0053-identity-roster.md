@@ -3,7 +3,7 @@
 - Date: 2026-09-30
 - Issue: #149
 - Status: accepted
-- Related: ADR-0006 (weak-b agreement — amended), ADR-0034 (maintainer anchors a GitHub account — amended: the roster replaces `## Maintainer`, team handles dropped), ADR-0042 (multi-human repos use the PR-comment path — amended: the human count comes from the roster, and the path becomes the maintainer's own merge), ADR-0012 (the "Why so strict" note moved out of the fence), ADR-0051 (fence budget)
+- Related: ADR-0006 (weak-b agreement — amended), ADR-0034 (maintainer anchors a GitHub account — amended: the roster replaces `## Maintainer`, team handles dropped), ADR-0042 (multi-human repos use the PR-comment path — amended: the human count comes from the roster, and the path becomes the maintainer's own merge), ADR-0012 (the "Why so strict" note moved out of the fence), ADR-0050 (project sections — amended: `## Roster` replaces `## Maintainer`), ADR-0051 (fence budget)
 
 ## Context
 

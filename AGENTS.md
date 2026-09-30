@@ -26,7 +26,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 ## Roster
 
-> One line per GitHub account: `human: <person>` (only that person), `shared: <person>` (the person and their agents) or `agent, run by <person>`; `— maintainer` marks the accounts whose actions approve L1 (ADR-0053).
+> One line per GitHub account: `human: Name` (only that person), `shared: Name` (the person and their agents) or `agent, run by Name`; `— maintainer` marks the accounts whose actions approve L1 (ADR-0053).
 
 - `real-stanyan` — shared: stanyan — maintainer
 - `RicksZhang` — shared: stanyan
@@ -180,7 +180,7 @@ Division of labor is a project property, declared in the project's `## Division 
 
 **Version numbers** (ADR-0023, split by ADR-0050): a semver variant, baseline `v0.0.0`. Segment criterion — **major** = a cross-tool/cross-repo contract change (hash stamp format, install-anchor structure, file layout, renames) that needs manual intervention for downstream backfill; **minor** = a new mechanism (new ADR / new tool / new protocol clause); **patch** = a revision to an existing file (wording, a status line, a typo). There are two numbers: the **package version** (`package.json` = the git tag) moves on every release; the **protocol version** (the fence markers) moves only when fence content changes, and then equals that release's package version. Process (ADR-0029): the PR body declares `Version bump: major|minor|patch|none` (`none` needs one reason, enforced via the PR template); in the same PR the author sets `package.json`'s `version` to the target (latest tag + segment, ADR-0028) and reruns `rehash-fences.js` if fences changed; after merge **the author agent** pushes an annotated tag based on the latest tag at merge time; **then the maintainer runs `npm publish`** (it hits an external registry and needs credentials, so agents don't run it). A `none` segment triggers no tag/publish and doesn't touch `package.json`'s version. No CHANGELOG — the tag message + the ADR are the change record.
 
-**Parallel protocol PRs** (ADR-0048/0052): protocol ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge.
+**Parallel protocol PRs** (ADR-0048/0052): protocol ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge an L2 PR yourself; an L1 PR goes back to the maintainer, whose approval the new push needs (ADR-0053).
 
 ## Division of labor
 

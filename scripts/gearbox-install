@@ -197,8 +197,8 @@ if (!protocolFence || !glossaryFence)
 // deliberately-red ci.yml), the placeholder here has no hard check, so the install prompt is
 // the best moment to catch it. Binding stays optional: Enter skips, same end state as before.
 //
-// Deliberately NOT an OAuth flow: install-time identity proof has no consumer — the
-// enforcement point is the PR-comment author check, which GitHub itself guarantees. All we
+// Deliberately NOT an OAuth flow: install-time identity proof has no consumer — agents act
+// under the humans' accounts, so no account check proves who approved (ADR-0053). All we
 // need is a username string; the existence check below only catches typos.
 
 // gh-detected default: the account gh CLI is logged in as (token-backed, so it's almost
