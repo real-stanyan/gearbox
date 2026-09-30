@@ -492,13 +492,21 @@ test("the migration records a v1 repo's docs/adr duplicates in docs/adr/older-du
   assert.ok(read(down, "gearbox-update-report.md").split("\n").includes(RECORDED));
 });
 
-test("a v1 repo without duplicate ADR IDs gets no older-duplicates list", () => {
+test("the migration writes no older-duplicates list without duplicate ADR IDs, and never over a list already there", () => {
   const up = makeUpstream();
   const down = v1Downstream(up, { files: { "docs/adr/0001-a.md": "# a\n", "docs/adr/0002-b.md": "# b\n" } });
   const r = update(down, up);
   assert.equal(r.code, 0, r.out);
   assert.ok(!existsSync(join(down, OLDER_DUPLICATES_PATH)));
   assert.doesNotMatch(read(down, "gearbox-update-report.md"), /older duplicate/);
+
+  const own = "Our own notes on ADR-45.\n";
+  const listed = v1Downstream(up, { files: { ...OLDER_ADRS, [OLDER_DUPLICATES_PATH]: own } });
+  const r2 = update(listed, up);
+  assert.equal(r2.code, 0, r2.out);
+  assert.equal(read(listed, OLDER_DUPLICATES_PATH), own);
+  assert.equal(git(listed, "log", "--format=%s", "main..HEAD", "--", OLDER_DUPLICATES_PATH), "");
+  assert.doesNotMatch(read(listed, "gearbox-update-report.md"), /Recorded \d+ older duplicate/);
 });
 
 // The recovery hint treats the list like the other migration files: `git add` names it, and the

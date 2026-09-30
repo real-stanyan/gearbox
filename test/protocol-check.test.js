@@ -442,10 +442,14 @@ test("docs/adr: an unlisted zero-padded pair is an error — two lanes numbering
   assert.deepEqual(errorsOf(adrRepo(["0074-x.md", "0074-y.md"])), [duplicateError(74, ["0074-x.md", "0074-y.md"])]);
 });
 
-test("docs/adr: a third file joining a listed group makes the group an error", () => {
+test("docs/adr: a third file joining a listed group makes the group an error; a file leaving it doesn't", () => {
   const r = runProtocolChecks(adrRepo(["0045-a.md", "0045-b.md", "0045-c.md"], olderList("- ADR-45: 0045-a.md, 0045-b.md")));
   assert.deepEqual(r.errors, [duplicateError(45, ["0045-a.md", "0045-b.md", "0045-c.md"])]);
   assert.deepEqual(r.warnings, []);
+  // every file of the group is on its line, so the rest of an arrival-time group stays listed
+  const left = runProtocolChecks(adrRepo(["0045-a.md", "0045-b.md"], olderList("- ADR-45: 0045-a.md, 0045-b.md, 0045-c.md")));
+  assert.deepEqual(left.errors, []);
+  assert.deepEqual(left.warnings, [olderWarning("ADR-45 (0045-a.md, 0045-b.md)")]);
 });
 
 test("docs/adr: a listed group warns whatever its padding; a list line whose group no longer exists is ignored", () => {
