@@ -1,7 +1,7 @@
 # ADR-0048: Parallel shifts in multi-human repos — lanes, per-lane handoffs, repo-level terminals
 
 - Date: 2026-07-23
-- Status: accepted
+- Status: accepted (amended by ADR-0052: project ADRs are named by issue, so only the Gearbox repo claims ADR numbers at merge)
 - Related: ADR-0005 (handoff lives in an open issue), ADR-0007 (merge rules), ADR-0009 (terminal shift), ADR-0028 (version held to latest tag), ADR-0042 (multi-human L1 path), ADR-0044 (frontier claiming), ADR-0046 (shift-start sync), ADR-0047 (claim = assignment)
 
 ## Context

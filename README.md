@@ -65,7 +65,7 @@ node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <your-github-u
 
 After installing:
 1. Fill in the remaining `<placeholder>`s in `AGENTS.md` (`grep -n '<' AGENTS.md`)
-2. Write your first project-specific architectural decision into `docs/adr/` (project ADRs get their own numbering, starting at 0001); protocol ADRs live in `docs/gearbox-adr/` (tool-managed; format shown in its `0001-adr-template.md`)
+2. Write your first project-specific architectural decision into `docs/adr/`, named after the issue that settles it — `docs/adr/<issue>-<slug>.md`, cited `ADR-<issue>` (issue numbers never collide between parallel lanes, ADR-0052); protocol ADRs live in `docs/gearbox-adr/` (tool-managed; format shown in its `0001-adr-template.md`)
 3. Step 4 of the start-of-shift steps runs `npx gearbox-agents version` to self-check the protocol version (pull-triggered)
 
 ## Architecture (why it's shaped this way)

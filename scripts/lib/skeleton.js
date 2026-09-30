@@ -16,10 +16,15 @@ export const GATE_NOTE =
 export const DEFAULT_DIVISION =
   "No fixed division of labor (ADR-0008 option 2): Task-issue claim-based ownership — whoever claims a task sees it through start to finish.";
 
+// The index line for docs/adr/ (ADR-0052): the directory is the ADRs' index, so they aren't listed one
+// by one. The v1 → v2 migration puts it in place of the v1 template's "starting at 0001" line.
+export const DOCS_ADR_LINE =
+  "- `docs/adr/` — this project's own architectural decisions, one file per decision named `<issue>-<slug>.md` after the issue that settles it (ADR-0052; not listed here one by one)";
+
 export const INDEX_POINTERS = [
   "- `CONTEXT.md` — domain glossary (protocol terms, fenced + this project's terms)",
   "- `docs/gearbox-adr/` — protocol ADRs (managed by tooling — don't hand-edit)",
-  "- `docs/adr/` — this project's own architectural decisions",
+  DOCS_ADR_LINE,
   "- `docs/INDEX.md` — the full map of where things live (kept out of this file so it stays within 32 KiB)",
 ].join("\n");
 
@@ -41,7 +46,7 @@ export const PLACEHOLDERS = {
   whereToFind: [
     "- `CONTEXT.md` — domain glossary (protocol terms, fenced + this project's terms)",
     "- `docs/gearbox-adr/` — protocol ADRs (managed by tooling — don't hand-edit)",
-    "- `docs/adr/` — this project's own architectural decisions",
+    DOCS_ADR_LINE,
     "- <one line per entry: `path` — what's there. Longer maps go in `docs/INDEX.md`>",
   ].join("\n"),
 };

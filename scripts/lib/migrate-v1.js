@@ -5,7 +5,7 @@
 // `## Gate`, in `## Local protocol extensions`, or named in the report (flagged subsections).
 import { splitByLevel, baseTitle, fenceRun } from "./sections.js";
 import {
-  buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS, DEFAULT_DIVISION, INDEX_POINTERS, CONTEXT_INTRO, PROJECT_TERMS,
+  buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS, DEFAULT_DIVISION, INDEX_POINTERS, CONTEXT_INTRO, PROJECT_TERMS, DOCS_ADR_LINE,
 } from "./skeleton.js";
 import { AGENTS_MAX_BYTES } from "./protocol-check.js";
 import { normalizeKnownLine, knownLineHash, termKey, SEPARATOR_ROW } from "./v1-known.js";
@@ -192,6 +192,13 @@ function withNote(note, lines) {
   return note ? [note, "", ...lines] : lines;
 }
 
+// The v1 template's index line for docs/adr/ says "starting at 0001", the numbering ADR-0052 retired.
+// As upstream text it gives way to the v2 line; a project's own docs/adr/ line stays as written.
+const DOCS_ADR_ENTRY = /^\s*- `docs\/adr\/`/;
+function withV2DocsAdrLine(lines, isKnown) {
+  return lines.map((l) => (DOCS_ADR_ENTRY.test(l) && isKnown(l) ? DOCS_ADR_LINE : l));
+}
+
 // One `## Working agreement` section. A v1 file can hold more than one (say, "(project additions)"),
 // so results accumulate in `wa` — a later section never overwrites an earlier one.
 function migrateWorkingAgreement(chunk, isKnown, wa, report) {
@@ -330,7 +337,8 @@ export function migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryB
     const kept = (lines) => withNote(headingNote(c, isKnown), trimBlank(lines)).join("\n");
     if (key === "tech stack") techStackParts.push(kept(c.lines));
     else if (key === "hard rules") hardRulesParts.push(kept(c.lines.filter((l) => !(l.trim().startsWith(">") && isKnown(l)))));
-    else if (key === "where to find things") whereToFindParts.push(kept(c.lines));
+    // Before the index is kept or moved: neither AGENTS.md nor docs/INDEX.md keeps the v1 line.
+    else if (key === "where to find things") whereToFindParts.push(kept(withV2DocsAdrLine(c.lines, isKnown)));
     else if (key === "working agreement") migrateWorkingAgreement(c, isKnown, wa, report);
     else {
       extraSections.push([c.heading, ...c.lines].join("\n"));

@@ -7,6 +7,7 @@ import { execSync } from "node:child_process";
 import { findFence, FenceError, oneFenceAdvice } from "./fence.js";
 import { baseTitle, fenceRun, headings, sectionBody, sectionSizes, splitByLevel } from "./sections.js";
 import { planWorkflowFixes, CHECK_PATH } from "./workflows.js";
+import { duplicateAdrIds, readOlderDuplicates, OLDER_DUPLICATES_PATH } from "./adr-ids.js";
 
 export const AGENTS_MAX_BYTES = 32768;
 export const PROTOCOL_FENCE_MAX_BYTES = 20480;
@@ -188,6 +189,34 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
   if (inGit(root))
     for (const f of NEVER_IGNORED)
       if (isIgnored(root, f)) errors.push(`protocol file must not be gitignored: ${f} (ADR-0037 — it would never reach the next shift's clone)`);
+
+  // Project ADRs are named after their issue (ADR-0052), so a duplicate ID in docs/adr/ is an error,
+  // whatever its padding — unless the repo already had it on arrival: the v1 → v2 migration or install
+  // recorded those groups in docs/adr/older-duplicates.md, and their only fix, renumbering, breaks
+  // cited references. They warn, once for all of them. A group stays listed only while every one of
+  // its files is on its line, so a file joining it later is an error again.
+  const listed = readOlderDuplicates(root);
+  const older = [];
+  for (const { id, files } of duplicateAdrIds(root, "docs/adr")) {
+    const line = listed.get(id);
+    if (line && files.every((f) => line.has(f))) older.push(`ADR-${id} (${files.join(", ")})`);
+    else
+      errors.push(
+        `docs/adr: ADR-${id} is used by ${files.length} files: ${files.join(", ")} — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)`,
+      );
+  }
+  if (older.length)
+    warnings.push(
+      `docs/adr: older duplicate ADR numbers, recorded in ${OLDER_DUPLICATES_PATH}: ${older.join("; ")} — references to them are ambiguous and they stay as they are (ADR-0052)`,
+    );
+  for (const { id, files } of duplicateAdrIds(root, "docs/gearbox-adr"))
+    errors.push(
+      `docs/gearbox-adr: ADR-${id} is used by ${files.length} files: ${files.join(", ")} — ${
+        upstream
+          ? "protocol ADR numbers are claimed at merge: renumber yours (Upstream release process)"
+          : "these copies are managed by gearbox-agents: delete the stray file and rerun `npx gearbox-agents update`"
+      }`,
+    );
 
   return { errors, warnings, protocol, glossary };
 }

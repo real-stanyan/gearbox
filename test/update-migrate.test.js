@@ -6,6 +6,8 @@ import { execSync } from "node:child_process";
 import { findFence, oneFenceAdvice } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
+import { renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "../scripts/lib/adr-ids.js";
+import { DOCS_ADR_LINE } from "../scripts/lib/skeleton.js";
 import { REPO, makeUpstream, runTool, runBin, gitInit, git, tmp, read, write, commitAll, guardedOrigin, childEnv } from "./helpers.js";
 
 // The real output of the v1.15.2 installer (--name example-project --maintainer octo-owner
@@ -88,6 +90,8 @@ test("end to end: the v1.15.2 install migrates against this repo's real fences, 
   assert.equal(r.code, 0, r.out);
   assert.equal(findFence(read(down, "AGENTS.md"), "protocol").block, findFence(read(REPO, "AGENTS.md"), "protocol").block);
   assert.equal(findFence(read(down, "CONTEXT.md"), "glossary").block, findFence(read(REPO, "CONTEXT.md"), "glossary").block);
+  assert.ok(read(down, "AGENTS.md").split("\n").includes(DOCS_ADR_LINE));
+  assert.doesNotMatch(read(down, "AGENTS.md"), /starting at 0001/); // the v1 index line and the v1 protocol bullet are both gone
   const log = git(down, "log", "--format=%s", "main..HEAD");
   assert.match(log, /backfill gearbox ADR-0050 \(protocol-fence\)/);
   assert.match(log, /^docs\(protocol\): migrate to the Gearbox v2 layout/m);
@@ -200,6 +204,8 @@ test("a moved index gets a new docs/INDEX.md; AGENTS.md still over budget is a T
   const index = read(down, "docs/INDEX.md");
   assert.match(index, /^# Index\n\n> Moved out of AGENTS\.md by the Gearbox v2 migration/);
   assert.ok(index.includes("- `src/module-1199.ts` — module 1199\n"));
+  assert.ok(index.split("\n").includes(DOCS_ADR_LINE));
+  assert.doesNotMatch(index, /starting at 0001/);
   const bytes = Buffer.byteLength(read(down, "AGENTS.md"));
   assert.ok(bytes > 32768, `AGENTS.md is ${bytes} bytes`);
   const report = read(down, "gearbox-update-report.md");
@@ -451,4 +457,79 @@ test("the start-over hint deletes only files this run created: a local ADR draft
   assert.equal(runTool("gearbox-check", [], { cwd: down }).code, 0);
   assert.equal(git(down, "ls-files", "--", draft), "");
   assert.equal(read(down, draft), "# ADR-0099: My local draft\n\n- Status: proposed\n");
+});
+
+// ADR-0052: the duplicate groups a v1 repo already has in docs/adr/ are recorded on arrival, in the
+// migration commit, so its check warns about them once instead of failing; any later duplicate fails.
+const OLDER_ADRS = {
+  "docs/adr/0045-a.md": "# ADR-0045: a\n", "docs/adr/0045-b.md": "# ADR-0045: b\n",
+  "docs/adr/0046-c.md": "# ADR-0046: c\n", "docs/adr/46-d.md": "# ADR-46: d\n", "docs/adr/0047-e.md": "# ADR-0047: e\n",
+};
+const RECORDED = "- Recorded 2 older duplicate ADR numbers in `docs/adr/older-duplicates.md` (ADR-0052)";
+
+test("the migration records a v1 repo's docs/adr duplicates in docs/adr/older-duplicates.md, commits the list with the new layout, and the check warns once", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { files: OLDER_ADRS });
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.equal(read(down, OLDER_DUPLICATES_PATH), renderOlderDuplicates([{ id: 45, files: ["0045-a.md", "0045-b.md"] }, { id: 46, files: ["0046-c.md", "46-d.md"] }]));
+  assert.equal(git(down, "log", "--format=%s", "main..HEAD", "--", OLDER_DUPLICATES_PATH), "docs(protocol): migrate to the Gearbox v2 layout (v2.0.0)");
+  assert.equal(git(down, "status", "--porcelain"), "?? gearbox-update-report.md");
+  assert.ok(git(down, "log", "-1", "--format=%B", "--grep=migrate to the Gearbox v2 layout").split("\n").includes(RECORDED));
+  assert.ok(read(down, "gearbox-update-report.md").split("\n").includes(RECORDED), read(down, "gearbox-update-report.md"));
+  const c = runTool("gearbox-check", [], { cwd: down });
+  assert.equal(c.code, 0, c.out);
+  assert.deepEqual(c.out.split("\n").filter((l) => l.startsWith("⚠")), [
+    "⚠ docs/adr: older duplicate ADR numbers, recorded in docs/adr/older-duplicates.md: ADR-45 (0045-a.md, 0045-b.md); ADR-46 (0046-c.md, 46-d.md) — references to them are ambiguous and they stay as they are (ADR-0052)",
+  ]);
+
+  // A same-day rerun resumes today's branch, already v2: nothing migrates, and the report's record still names the list.
+  write(up, "docs/gearbox-adr/0003-new-rule.md", "# ADR-0003: New rule\n\n- Date: 2026-09-30\n- Status: accepted\n");
+  git(down, "checkout", "-q", "main");
+  const again = update(down, up);
+  assert.equal(again.code, 0, again.out);
+  assert.match(again.out, /resuming on docs\/gearbox-backfill-/);
+  assert.ok(read(down, "gearbox-update-report.md").split("\n").includes(RECORDED));
+});
+
+test("the migration writes no older-duplicates list without duplicate ADR IDs, and never over a list already there", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { files: { "docs/adr/0001-a.md": "# a\n", "docs/adr/0002-b.md": "# b\n" } });
+  const r = update(down, up);
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!existsSync(join(down, OLDER_DUPLICATES_PATH)));
+  assert.doesNotMatch(read(down, "gearbox-update-report.md"), /older duplicate/);
+
+  const own = "Our own notes on ADR-45.\n";
+  const listed = v1Downstream(up, { files: { ...OLDER_ADRS, [OLDER_DUPLICATES_PATH]: own } });
+  const r2 = update(listed, up);
+  assert.equal(r2.code, 0, r2.out);
+  assert.equal(read(listed, OLDER_DUPLICATES_PATH), own);
+  assert.equal(git(listed, "log", "--format=%s", "main..HEAD", "--", OLDER_DUPLICATES_PATH), "");
+  assert.doesNotMatch(read(listed, "gearbox-update-report.md"), /Recorded \d+ older duplicate/);
+});
+
+// The recovery hint treats the list like the other migration files: `git add` names it, and the
+// start-over deletes it, since this run created it — then --force-redo records it again.
+test("a failed migration commit names the older-duplicates list among the files to finish by hand; the start-over deletes it", () => {
+  const up = makeUpstream();
+  const down = v1Downstream(up, { files: OLDER_ADRS });
+  write(down, ".git/hooks/pre-commit", "#!/bin/sh\nexit 1\n");
+  chmodSync(join(down, ".git/hooks/pre-commit"), 0o755);
+  git(down, "config", "core.hooksPath", join(down, ".git/hooks")); // beats any global hooksPath
+  const r = update(down, up);
+  assert.equal(r.code, 1, r.out);
+  const lines = r.out.split("\n").map((l) => l.trim());
+  assert.ok(lines.includes(`git add -- AGENTS.md CONTEXT.md ${OLDER_DUPLICATES_PATH} .github/workflows/gearbox-check.yml .github/workflows/gearbox-sync.yml .gearbox-version`), r.out);
+  const startOver = lines.slice(lines.findIndex((l) => l.startsWith("or start over")) + 1);
+  const cmds = startOver.slice(0, startOver.indexOf(""));
+  assert.ok(cmds.some((c) => c.startsWith("git clean -f -- ") && c.split(" ").includes(OLDER_DUPLICATES_PATH)), cmds.join("\n"));
+  for (const cmd of cmds.slice(0, -1)) execSync(cmd, { cwd: down, stdio: "pipe", env: childEnv() }); // verbatim
+  assert.ok(!existsSync(join(down, OLDER_DUPLICATES_PATH)));
+
+  rmSync(join(down, ".git/hooks/pre-commit"));
+  const redo = update(down, up, ["--force-redo"]);
+  assert.equal(redo.code, 0, redo.out);
+  assert.equal(git(down, "log", "--format=%s", "main..HEAD", "--", OLDER_DUPLICATES_PATH), "docs(protocol): migrate to the Gearbox v2 layout (v2.0.0)");
+  assert.equal(runTool("gearbox-check", [], { cwd: down }).code, 0);
 });

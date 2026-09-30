@@ -24,6 +24,8 @@
 //   7. .gearbox-upstream writes the upstream git URL (ADR-0027 remote addressing; lets downstream
 //                        gearbox-version/update clone-and-pull when there's no local GEARBOX_DIR)
 //   8. gearbox-check.yml  the protocol-check CI job (ADR-0051)
+//   9. docs/adr/older-duplicates.md  only when the target's docs/adr/ already uses an ADR number more
+//                  than once and has no such list: records those groups, so they warn once (ADR-0052)
 //
 // What it doesn't do:
 //   - Doesn't copy pull_request_template.md (the downstream-backfill vehicle, Gearbox-specific), scripts/, README.md
@@ -54,6 +56,7 @@ import * as tui from "./lib/tui.js";
 import { findFence, FenceError } from "./lib/fence.js";
 import { buildAgentsMd, buildContextMd } from "./lib/skeleton.js";
 import { ciYml, SYNC_YML, CHECK_YML } from "./lib/workflows.js";
+import { duplicateAdrIds, renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "./lib/adr-ids.js";
 
 // ============== Config ==============
 
@@ -340,6 +343,14 @@ const claudeMd = "@AGENTS.md\n";
 
 const ciYmlText = ciYml(gateCmd);
 
+// ============== 5. docs/adr/older-duplicates.md (ADR-0052) ==============
+
+// Install is this project's arrival: project ADR numbers it already uses more than once are recorded,
+// so the check warns about them once — renumbering would break their references — while any later
+// duplicate fails. Only when there are some, and never over a list already there.
+const olderDuplicates = duplicateAdrIds(targetDir, "docs/adr");
+const recordOlderDuplicates = olderDuplicates.length > 0 && !existsSync(join(targetDir, OLDER_DUPLICATES_PATH));
+
 // ============== Resolve upstream version + URL (pure reads, before the write phase) ==============
 
 // .gearbox-version (ADR-0023, ADR-0050): the protocol version = the upstream fence's version.
@@ -422,6 +433,14 @@ await tui.progress(
   (name, i) => writeFileSync(join(targetDir, "docs/gearbox-adr", name), adrOutputs[i].content),
   { doneNote: `(${adrFiles.length} upstream protocol ADRs, ${stamped} stamped with a hash, ADR-0021)` },
 );
+if (recordOlderDuplicates) {
+  const n = olderDuplicates.length;
+  await tui.step(
+    OLDER_DUPLICATES_PATH,
+    `(recorded ${n} older duplicate ADR number${n === 1 ? "" : "s"} — ${n === 1 ? "it warns" : "they warn"} once, any new duplicate fails the check, ADR-0052)`,
+    { minMs: 200, work: () => writeFileSync(join(targetDir, OLDER_DUPLICATES_PATH), renderOlderDuplicates(olderDuplicates)) },
+  );
+}
 await tui.step(
   "ci.yml",
   gateCmd
@@ -485,7 +504,7 @@ const placeholderHint =
   (maintainer ? "" : " / Maintainer") +
   (gateCmd ? ")" : " / Gate command, sync ci.yml)");
 await tui.typeLine(`  ${step++}. Fill in placeholders: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
-await tui.typeLine(`  ${step++}. Write your first own decision to ${C.cyan(`docs/adr/0001-*.md`)} ${C.dim("(project ADRs number independently; protocol ADRs live in docs/gearbox-adr/, format in 0001-adr-template.md)")}`);
+await tui.typeLine(`  ${step++}. Write your first own decision to ${C.cyan("docs/adr/<issue>-<slug>.md")} ${C.dim("(named after the issue that settles it, ADR-0052; protocol ADRs live in docs/gearbox-adr/, format in 0001-adr-template.md)")}`);
 await tui.typeLine(`  ${step++}. First commit + push, then run ${C.cyan("npx gearbox-agents check")}; step 4 of the start-of-shift steps runs ${C.cyan("gearbox-version")} to self-check the protocol version (pull-triggered, ADR-0026)`);
 console.log("");
 if (tui.isTTY) console.log("  " + tui.grad("⚙ gearbox ready") + "\n");

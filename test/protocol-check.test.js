@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { runProtocolChecks, gateCommand, maintainerAccount, AGENTS_MAX_BYTES, PROTOCOL_FENCE_MAX_BYTES } from "../scripts/lib/protocol-check.js";
 import { renderFence, findFence, replaceFence } from "../scripts/lib/fence.js";
 import { CHECK_YML } from "../scripts/lib/workflows.js";
+import { duplicateAdrIds, readOlderDuplicates, renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "../scripts/lib/adr-ids.js";
 import { v2Repo, write, read, gitInit, runTool, runBin, tmp, PROTOCOL } from "./helpers.js";
 
 const errorsOf = (dir, opts) => runProtocolChecks(dir, opts).errors;
@@ -380,4 +381,120 @@ test("gearbox-check prints warnings without failing, counts its errors, and --he
   const help = runTool("gearbox-check", ["--help"], { cwd: tmp() });
   assert.equal(help.code, 0);
   assert.match(help.out, /^gearbox-check — /);
+  assert.match(help.out, /no duplicate ADR IDs/);
+});
+
+test("docs/adr: a duplicate ADR ID fails — IDs compare as numbers, and issue IDs are never exempt (ADR-0052)", () => {
+  const mixed = v2Repo();
+  write(mixed, "docs/adr/0074-a.md", "# a\n");
+  write(mixed, "docs/adr/74-b.md", "# b\n");
+  assert.deepEqual(errorsOf(mixed), [
+    "docs/adr: ADR-74 is used by 2 files: 0074-a.md, 74-b.md — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)",
+  ]);
+  const issueIds = v2Repo();
+  write(issueIds, "docs/adr/1266-a.md", "# a\n");
+  write(issueIds, "docs/adr/1266-b.md", "# b\n");
+  const errs = errorsOf(issueIds);
+  assert.equal(errs.length, 1, errs.join("\n"));
+  assert.match(errs[0], /^docs\/adr: ADR-1266 is used by 2 files: 1266-a\.md, 1266-b\.md — /);
+});
+
+test("docs/adr: distinct IDs pass; README, notes and other non-numbered files aren't ADRs", () => {
+  const dir = v2Repo();
+  for (const f of ["0001-first.md", "0002-second.md", "1266-issue-id.md", "1267-next.md", "README.md", "notes.md", "draft-1268.md"])
+    write(dir, `docs/adr/${f}`, "# x\n");
+  const r = runProtocolChecks(dir);
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.warnings, []);
+});
+
+// ADR-0052's arrival list, docs/adr/older-duplicates.md: the duplicate groups a repo already had when
+// it adopted issue-numbered ADRs, one `- ADR-<id>: <file>, <file>` line each under a prose intro.
+const OLDER_LIST = "docs/adr/older-duplicates.md";
+const olderList = (...lines) => `These ADR numbers were used twice on arrival.\n\n${lines.join("\n")}\n`;
+function adrRepo(files, list) {
+  const dir = v2Repo();
+  for (const f of files) write(dir, `docs/adr/${f}`, "# x\n");
+  if (list !== undefined) write(dir, OLDER_LIST, list);
+  return dir;
+}
+const duplicateError = (id, files) =>
+  `docs/adr: ADR-${id} is used by ${files.length} files: ${files.join(", ")} — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)`;
+const olderWarning = (groups) =>
+  `docs/adr: older duplicate ADR numbers, recorded in docs/adr/older-duplicates.md: ${groups} — references to them are ambiguous and they stay as they are (ADR-0052)`;
+
+// Zero padding exempted a group once; two lanes that keep numbering by habit write zero-padded files
+// too, and passed green. Now only the groups recorded on arrival warn — renumbering them would break
+// their references — and every other duplicate is an error.
+test("docs/adr: older zero-padded duplicates fail without the arrival list, and warn once when it records them", () => {
+  const files = ["0045-a.md", "0045-b.md", "0046-c.md", "0046-d.md", "0047-e.md"];
+  const unlisted = runProtocolChecks(adrRepo(files));
+  assert.deepEqual(unlisted.errors, [duplicateError(45, ["0045-a.md", "0045-b.md"]), duplicateError(46, ["0046-c.md", "0046-d.md"])]);
+  assert.deepEqual(unlisted.warnings, []);
+  const listed = runProtocolChecks(adrRepo(files, olderList("- ADR-45: 0045-a.md, 0045-b.md", "- ADR-46: 0046-c.md, 0046-d.md")));
+  assert.deepEqual(listed.errors, []);
+  assert.deepEqual(listed.warnings, [olderWarning("ADR-45 (0045-a.md, 0045-b.md); ADR-46 (0046-c.md, 0046-d.md)")]);
+});
+
+test("docs/adr: an unlisted zero-padded pair is an error — two lanes numbering by habit, or a padded issue ID next to an older ADR", () => {
+  const legacy = Array.from({ length: 333 }, (_, i) => `${String(i + 1).padStart(4, "0")}-adr-${i + 1}.md`);
+  assert.deepEqual(errorsOf(adrRepo([...legacy, "0334-a.md", "0334-b.md"])), [duplicateError(334, ["0334-a.md", "0334-b.md"])]);
+  assert.deepEqual(errorsOf(adrRepo(["0074-x.md", "0074-y.md"])), [duplicateError(74, ["0074-x.md", "0074-y.md"])]);
+});
+
+test("docs/adr: a third file joining a listed group makes the group an error; a file leaving it doesn't", () => {
+  const r = runProtocolChecks(adrRepo(["0045-a.md", "0045-b.md", "0045-c.md"], olderList("- ADR-45: 0045-a.md, 0045-b.md")));
+  assert.deepEqual(r.errors, [duplicateError(45, ["0045-a.md", "0045-b.md", "0045-c.md"])]);
+  assert.deepEqual(r.warnings, []);
+  // every file of the group is on its line, so the rest of an arrival-time group stays listed
+  const left = runProtocolChecks(adrRepo(["0045-a.md", "0045-b.md"], olderList("- ADR-45: 0045-a.md, 0045-b.md, 0045-c.md")));
+  assert.deepEqual(left.errors, []);
+  assert.deepEqual(left.warnings, [olderWarning("ADR-45 (0045-a.md, 0045-b.md)")]);
+});
+
+test("docs/adr: a listed group warns whatever its padding; a list line whose group no longer exists is ignored", () => {
+  const r = runProtocolChecks(adrRepo(["12-c.md", "12-d.md", "13-e.md", "0045-a.md"], olderList("- ADR-12: 12-c.md, 12-d.md", "- ADR-45: 0045-a.md, 0045-b.md")));
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.warnings, [olderWarning("ADR-12 (12-c.md, 12-d.md)")]);
+});
+
+test("docs/adr: one run reports an unlisted group as an error and a listed group in the warning", () => {
+  const r = runProtocolChecks(adrRepo(["0045-a.md", "0045-b.md", "0334-a.md", "0334-b.md"], olderList("- ADR-45: 0045-a.md, 0045-b.md")));
+  assert.deepEqual(r.errors, [duplicateError(334, ["0334-a.md", "0334-b.md"])]);
+  assert.deepEqual(r.warnings, [olderWarning("ADR-45 (0045-a.md, 0045-b.md)")]);
+});
+
+// The writer (the v1 → v2 migration, install) and the reader (the check) share one format.
+test("the older-duplicates list: what the arrival writes is what the check reads; names are comma-separated and trimmed", () => {
+  const groups = [{ id: 45, files: ["0045-a.md", "0045-b.md"] }, { id: 46, files: ["0046-c.md", "46-d.md"] }];
+  const text = renderOlderDuplicates(groups);
+  assert.equal(OLDER_DUPLICATES_PATH, OLDER_LIST);
+  assert.ok(text.startsWith("These ADR numbers were already used by more than one file when this repo adopted issue-numbered ADRs (ADR-0052). "), text);
+  assert.ok(text.endsWith(" name a new ADR after its issue instead.\n\n- ADR-45: 0045-a.md, 0045-b.md\n- ADR-46: 0046-c.md, 46-d.md\n"), text);
+  const dir = adrRepo(groups.flatMap((g) => g.files), text);
+  assert.deepEqual(duplicateAdrIds(dir, "docs/adr"), groups);
+  assert.deepEqual(readOlderDuplicates(dir), new Map([[45, new Set(["0045-a.md", "0045-b.md"])], [46, new Set(["0046-c.md", "46-d.md"])]]));
+  assert.deepEqual(errorsOf(dir), []);
+  write(dir, OLDER_LIST, "intro\r\n\r\n- ADR-0045:  0045-a.md ,0045-b.md \r\n");
+  assert.deepEqual(readOlderDuplicates(dir), new Map([[45, new Set(["0045-a.md", "0045-b.md"])]]));
+  assert.deepEqual(readOlderDuplicates(v2Repo()), new Map());
+});
+
+test("docs/adr that isn't a directory holds no ADRs", () => {
+  const dir = v2Repo();
+  write(dir, "docs/adr", "not a directory\n");
+  const r = runProtocolChecks(dir);
+  assert.deepEqual([r.errors, r.warnings], [[], []]);
+});
+
+test("docs/gearbox-adr: any duplicate fails, with the fix for the mode — downstream copies vs upstream numbers", () => {
+  const dir = v2Repo();
+  write(dir, "docs/gearbox-adr/0050-a.md", "# a\n");
+  write(dir, "docs/gearbox-adr/0050-b.md", "# b\n");
+  assert.deepEqual(errorsOf(dir).filter((e) => e.startsWith("docs/gearbox-adr")), [
+    "docs/gearbox-adr: ADR-50 is used by 2 files: 0050-a.md, 0050-b.md — these copies are managed by gearbox-agents: delete the stray file and rerun `npx gearbox-agents update`",
+  ]);
+  assert.deepEqual(errorsOf(dir, { upstream: true }).filter((e) => e.startsWith("docs/gearbox-adr")), [
+    "docs/gearbox-adr: ADR-50 is used by 2 files: 0050-a.md, 0050-b.md — protocol ADR numbers are claimed at merge: renumber yours (Upstream release process)",
+  ]);
 });

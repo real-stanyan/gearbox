@@ -2,7 +2,7 @@
 
 > **Status**: optional template. Whether downstream projects copy it is up to them. Unlike `AGENTS.md`, which is a hard rule, this file is a reference for "if you want to run a subagent system in your project, here's how."
 >
-> See the decision record at `docs/adr/0011-subagent-system.md`.
+> See the decision record at `docs/gearbox-adr/0011-subagent-system.md`.
 
 ## §1 Why a subagent system is needed
 
@@ -152,13 +152,13 @@ You are a documentation agent. Your job is to capture architectural decisions an
 Given a code change or discussion that produced a decision:
 
 1. **Identify what decision was made** — read the change, the linked issue/PR, and any discussion. State the decision in one sentence.
-2. **Find the next ADR number** — `ls docs/adr/` and pick the next integer. Follow the existing numbering.
-3. **Write the ADR** following `docs/adr/0001-adr-template.md`:
+2. **Name the ADR after its issue** — `docs/adr/<issue>-<slug>.md`, cited `ADR-<issue>`, where `<issue>` is the issue that settles the decision (ADR-0052). Never renumber an existing ADR.
+3. **Write the ADR** following `docs/gearbox-adr/0001-adr-template.md`:
    - **Context**: why this decision was necessary. What constraint forced it? What alternatives were rejected?
    - **Decision**: one paragraph stating the decision definitively.
    - **Consequences**: what this costs, what it enables, and when a future agent should overturn it (the "this looks weird, why can't I change it back" section).
 4. **If new domain terms appeared**, append them to `CONTEXT.md` with a one-line definition each. Do not rewrite existing entries.
-5. **Cross-reference**: if AGENTS.md has a "Where to find things" section that should now mention the new ADR, propose the edit to the controller — do not edit AGENTS.md yourself.
+5. **Cross-reference**: don't add the ADR to AGENTS.md's "Where to find things" — `docs/adr/` is its index (ADR-0052). If another document should cite it, propose that edit to the controller — do not edit AGENTS.md yourself.
 
 ## ANTI-PATTERNS
 
