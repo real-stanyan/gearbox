@@ -6,7 +6,7 @@ import { cwd, exit, argv } from "node:process";
 import { runProtocolChecks } from "./lib/protocol-check.js";
 
 if (argv.includes("--help") || argv.includes("-h")) {
-  console.log("gearbox-check — verify the protocol fences, the AGENTS.md size budget, required sections and the CI == Gate contract (read-only, offline)");
+  console.log("gearbox-check — verify the protocol fences, the AGENTS.md size budget, required sections, the CI == Gate contract and no duplicate ADR IDs (read-only, offline)");
   exit(0);
 }
 

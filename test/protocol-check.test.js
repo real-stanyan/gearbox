@@ -381,6 +381,7 @@ test("gearbox-check prints warnings without failing, counts its errors, and --he
   const help = runTool("gearbox-check", ["--help"], { cwd: tmp() });
   assert.equal(help.code, 0);
   assert.match(help.out, /^gearbox-check — /);
+  assert.match(help.out, /no duplicate ADR IDs/);
 });
 
 test("docs/adr: a duplicate ADR ID fails — IDs compare as numbers, and issue IDs are never exempt (ADR-0052)", () => {
