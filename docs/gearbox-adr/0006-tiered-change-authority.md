@@ -1,7 +1,7 @@
 # ADR-0006: Tiered authority for protocol changes — L1 (Hard rules/Gate/Tech stack) needs human agreement, L2 is autonomous
 
 - Date: 2026-07-17
-- Status: partially superseded by ADR-0012 (the L1/L2 tiering itself still holds; but "how to classify new protocol-level content" is completed by ADR-0012's criterion — mechanism reference takes priority)
+- Status: partially superseded by ADR-0012 (the L1/L2 tiering itself still holds; but "how to classify new protocol-level content" is completed by ADR-0012's criterion — mechanism reference takes priority); amended by ADR-0053 (the roster)
 - Provenance: this decision originated in the date-cli Path A experiment (originally date-cli ADR-0009, decided by Stan), and backfilled into the scaffold after being validated in real multi-agent collaboration
 
 ## Context

@@ -8,10 +8,11 @@ import { findFence, FenceError, oneFenceAdvice } from "./fence.js";
 import { baseTitle, fenceRun, headings, sectionBody, sectionSizes, splitByLevel } from "./sections.js";
 import { planWorkflowFixes, CHECK_PATH } from "./workflows.js";
 import { duplicateAdrIds, readOlderDuplicates, OLDER_DUPLICATES_PATH } from "./adr-ids.js";
+import { parseRoster } from "./roster.js";
 
 export const AGENTS_MAX_BYTES = 32768;
 export const PROTOCOL_FENCE_MAX_BYTES = 20480;
-export const PROJECT_HEADINGS = ["Tech stack", "Hard rules", "Gate", "Maintainer", "Local protocol extensions", "Where to find things"];
+export const PROJECT_HEADINGS = ["Tech stack", "Hard rules", "Gate", "Roster", "Local protocol extensions", "Where to find things"];
 export const FENCE_HEADINGS = [
   [2, "Working agreement (multi-agent)"],
   [3, "On starting a shift"],
@@ -46,12 +47,6 @@ export function gateCommand(agentsText) {
   return null;
 }
 
-export function maintainerAccount(agentsText) {
-  const body = sectionBody(agentsText, 2, "Maintainer");
-  const m = body && body.match(/GitHub account:\s*`([^`]+)`/);
-  return m ? m[1] : null;
-}
-
 function withoutFence(text, fence) {
   if (!fence) return text;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -74,6 +69,20 @@ function isIgnored(root, path) {
   } catch {
     return false;
   }
+}
+
+// The identity roster (ADR-0053). A missing section is already a PROJECT_HEADINGS error. The kinds
+// are a record, not a gate: only readability and a maintainer line are required.
+function rosterFindings(outside, errors, warnings) {
+  const roster = parseRoster(outside);
+  if (!roster.found) return;
+  errors.push(...roster.errors);
+  if (roster.placeholder)
+    warnings.push('"## Roster" still holds a placeholder account — fill in the real GitHub logins (ADR-0053)');
+  if (!roster.entries.some((e) => e.maintainer))
+    errors.push('"## Roster" marks no account `— maintainer` — L1 approval has no one to come from (ADR-0053)');
+  for (const a of roster.entries.filter((e) => e.kind === "agent" && !roster.people.includes(e.person)))
+    warnings.push(`"## Roster": agent \`${a.login}\` is run by "${a.person}", who has no human or shared line (ADR-0053)`);
 }
 
 export function runProtocolChecks(root, { upstream = false } = {}) {
@@ -155,9 +164,7 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
     else if (ci === null) errors.push(".github/workflows/ci.yml is missing (CI == Gate contract)");
     else for (const l of gate) if (!ci.includes(l)) errors.push(`.github/workflows/ci.yml doesn't run the Gate command line \`${l}\` (CI == Gate contract)`);
 
-    const m = maintainerAccount(agents);
-    if (!m || m === "<maintainer>")
-      warnings.push('"## Maintainer" names no GitHub account yet — L1 approval has nothing to verify against (ADR-0034)');
+    rosterFindings(outside, errors, warnings);
 
     const ext = sectionBody(outside, 2, "Local protocol extensions");
     if (ext !== null) {

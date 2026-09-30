@@ -51,10 +51,13 @@ const MAINTAINER_PATTERNS = [
   /`([^`<>]+)` 事后否决权/,
 ];
 
+// A display name ("Stan Yan") in the slot is not an account: better the placeholder than a fake login.
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+
 function detectMaintainer(text) {
   for (const p of MAINTAINER_PATTERNS) {
     const m = text.match(p);
-    if (m) return m[1];
+    if (m && GITHUB_LOGIN.test(m[1])) return m[1];
   }
   return null;
 }

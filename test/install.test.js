@@ -18,7 +18,7 @@ test("install lays down a v2 tree that passes gearbox-check", () => {
   assert.ok(agents.startsWith("# demo\n"));
   assert.equal(findFence(agents, "protocol").block, findFence(read(up, "AGENTS.md"), "protocol").block);
   assert.equal(findFence(read(target, "CONTEXT.md"), "glossary").block, findFence(read(up, "CONTEXT.md"), "glossary").block);
-  assert.match(agents, /GitHub account: `octo`/);
+  assert.match(agents, /- `octo` — shared: octo — maintainer/);
   assert.equal(read(target, ".gearbox-version").trim(), "v2.0.0");
   assert.match(read(target, ".github/workflows/gearbox-check.yml"), /gearbox-agents@2 check/);
   assert.match(read(target, ".github/workflows/gearbox-sync.yml"), /gearbox-agents@2 update/);

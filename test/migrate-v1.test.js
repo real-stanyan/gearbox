@@ -37,7 +37,7 @@ const protocolBlock = renderFence("protocol", "v2.0.0", "## Working agreement (m
 const glossaryBlock = renderFence("glossary", "v2.0.0", "## Protocol terms\n\n| Term | Definition | Notes |\n|---|---|---|\n| handoff | x | y |");
 const migrate = (agentsMd, contextMd = CONTEXT_TEMPLATE) => migrateV1({ agentsMd, contextMd, known, protocolBlock, glossaryBlock });
 // The `##` sections of a migrated AGENTS.md (the one inside the test protocol fence included).
-const SKELETON_H2 = ["Tech stack", "Hard rules", "Gate", "Maintainer", "Working agreement (multi-agent)", "Local protocol extensions", "Division of labor", "Where to find things"];
+const SKELETON_H2 = ["Tech stack", "Hard rules", "Gate", "Roster", "Working agreement (multi-agent)", "Local protocol extensions", "Division of labor", "Where to find things"];
 const h2Titles = (text) => headings(text).filter((h) => h.level === 2).map((h) => h.title);
 
 const nearTemplate = TEMPLATE
@@ -54,7 +54,7 @@ test("near-template: project content kept, protocol replaced, nothing carried", 
   assert.ok(agentsMd.startsWith("# shop-app\n\nA coffee-shop ordering app."));
   assert.equal(findFence(agentsMd, "protocol").block, protocolBlock);
   assert.match(sectionBody(agentsMd, 2, "Gate"), /```bash\nnpx tsc --noEmit\n```/);
-  assert.match(agentsMd, /GitHub account: `real-owner`/);
+  assert.match(agentsMd, /- `real-owner` — shared: real-owner — maintainer/);
   assert.match(sectionBody(agentsMd, 2, "Hard rules"), /integer cents/);
   assert.doesNotMatch(sectionBody(agentsMd, 2, "Hard rules"), /counts as part of this section/);
   assert.match(sectionBody(agentsMd, 2, "Division of labor"), /Single agent at a time/);
@@ -218,9 +218,15 @@ test("the maintainer is read from the protocol region, not from a project rule q
   const text = nearTemplate.replace("- Money is always integer cents.", "- Money is always integer cents.\n- Payments code: L1 waits for `security-lead` agreement too.");
   const { agentsMd, report } = migrate(text);
   assert.equal(report.maintainer, "real-owner");
-  assert.match(agentsMd, /GitHub account: `real-owner`/);
+  assert.match(agentsMd, /- `real-owner` — shared: real-owner — maintainer/);
   assert.deepEqual([report.carried, report.flagged], [[], []]);
   assert.match(sectionBody(agentsMd, 2, "Hard rules"), /security-lead/);
+});
+
+test("a maintainer slot that isn't a GitHub login shape is not detected; the roster keeps the placeholder", () => {
+  const { agentsMd, report } = migrate(TEMPLATE.replace("`<maintainer>`", "`Stan Yan`"));
+  assert.equal(report.maintainer, null);
+  assert.match(agentsMd, /- `<maintainer>` — shared: <maintainer> — maintainer/);
 });
 
 test("a v1 gate command in a ~~~ block moves to ## Gate", () => {

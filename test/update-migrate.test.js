@@ -61,7 +61,7 @@ test("update migrates a real v1.15.2 install to the v2 layout on a backfill bran
   const agents = read(down, "AGENTS.md");
   assert.equal(findFence(agents, "protocol").block, findFence(read(up, "AGENTS.md"), "protocol").block);
   assert.match(sectionBody(agents, 2, "Gate"), /npm test/);
-  assert.match(agents, /GitHub account: `octo-owner`/);
+  assert.match(agents, /- `octo-owner` — shared: octo-owner — maintainer/);
   assert.match(sectionBody(agents, 2, "Local protocol extensions"), /Search closed issues before claiming a task/);
   assert.match(read(down, "CONTEXT.md"), /\| star \| loyalty point \| — \|/);
   assert.equal(read(down, ".gearbox-version").trim(), "v2.0.0");
@@ -157,7 +157,7 @@ test("the migration report lists what moved where and every item that needs a hu
   assert.equal(r.code, 0, r.out);
   const report = read(down, "gearbox-update-report.md");
   assert.match(report, /## ⚠️ v1 → v2 layout migration \(ADR-0050\)/);
-  assert.ok(report.includes("- [ ] confirm `octo-owner` is the GitHub account whose PR comment counts as L1 approval (## Maintainer)\n"), report);
+  assert.ok(report.includes("- [ ] confirm `octo-owner` is the maintainer account in ## Roster (`shared` while agents act under it); with a second person in the roster, only the maintainer's own merge approves L1 (ADR-0053)\n"), report);
   assert.match(report, /- Gate command: moved to `## Gate`/);
   assert.match(report, /### Subsections moved verbatim into `## Local protocol extensions`\n\n- \[ \] Worktree discipline \(project ADR-0149\) — /);
   assert.match(report, /- \[ \] From v1: While working — 1 line\(s\)/);
@@ -167,6 +167,7 @@ test("the migration report lists what moved where and every item that needs a hu
   assert.match(report, /- \[ \] `gate` — [^\n]*product term/);
   assert.match(report, /- \[ \] [^\n]*edited locally[^\n]*`handoff`/);
   assert.match(report, /## Protocol check on this branch\n\n✅/);
+  assert.ok(report.includes("- [ ] merging adopts the new protocol version — L1 in this repo: wait for the maintainer's approval; in a multi-human repo the maintainer merges it (ADR-0053)"), report);
   // ... and where "the check job stays red" doesn't hold: a PR the sync Action opened runs no checks
   assert.match(report, /^> A PR opened by the gearbox-sync Action runs no checks: events made with the Actions `GITHUB_TOKEN` don't trigger workflows\. To run them, close and reopen the PR, push a commit to it, or run `npx gearbox-agents@2 check` locally\.$/m);
   // The flagged subsection's lines aren't carried: the report is where they are named.
@@ -327,7 +328,7 @@ test("the migration report makes the maintainer a checklist item: confirm the de
   const r = update(down, up);
   assert.equal(r.code, 0, r.out);
   const report = read(down, "gearbox-update-report.md");
-  assert.match(report, /^- \[ \] set ## Maintainer$/m);
+  assert.match(report, /^- \[ \] set the maintainer line in ## Roster$/m);
   assert.doesNotMatch(report, /confirm `/);
   assert.match(git(down, "log", "-1", "--format=%B", "--grep=migrate to the Gearbox v2 layout"), /^- Maintainer: not detected$/m);
 });

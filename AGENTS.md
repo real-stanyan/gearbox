@@ -7,7 +7,7 @@ A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the si
 
 ## Tech stack
 
-- Node.js ≥ 18, no runtime dependencies: the structural self-check (`scripts/check-gearbox.js`), a `node:test` suite (`test/`), and the tool family — `scripts/gearbox-install` scaffold / `scripts/gearbox-version` sync quick-check / `scripts/gearbox-update` downstream sync + v1→v2 migration / `scripts/gearbox-check` protocol check / `scripts/gearbox-prune` branch hygiene — sharing `scripts/lib/` (fence, sections, protocol-check, adr-ids, skeleton, workflows, v1-known, migrate-v1, the TUI animation layer) (ADR-0016/0017/0022/0030/0035/0050/0051/0052)
+- Node.js ≥ 18, no runtime dependencies: the structural self-check (`scripts/check-gearbox.js`), a `node:test` suite (`test/`), and the tool family — `scripts/gearbox-install` scaffold / `scripts/gearbox-version` sync quick-check / `scripts/gearbox-update` downstream sync + v1→v2 migration / `scripts/gearbox-check` protocol check / `scripts/gearbox-prune` branch hygiene — sharing `scripts/lib/` (fence, sections, protocol-check, adr-ids, roster, skeleton, workflows, v1-known, migrate-v1, the TUI animation layer) (ADR-0016/0017/0022/0030/0035/0050/0051/0052/0053)
 - Plain Markdown documentation (AGENTS.md / CONTEXT.md / ADRs)
 
 ## Hard rules
@@ -24,11 +24,15 @@ node scripts/check-gearbox.js && node --test test/*.test.js
 
 This repo is the Gearbox core itself, so the gate is a **structural self-check** plus the tool test suite. `check-gearbox.js` verifies required files, the `CLAUDE.md` empty shell, both fences (hash, version, budgets), the section anchors, that `HANDOFF` never appears, and that this Gate matches CI. `node --test` runs the tool suite (`node:test`, zero dependencies). The glob is expanded by the shell, so the command works on Node 18–24 and never scans `.claude/worktrees/`.
 
-## Maintainer
+## Roster
 
-GitHub account: `real-stanyan`
+> One line per GitHub account: `human: Name` (only that person), `shared: Name` (the person and their agents) or `agent, run by Name`; `— maintainer` marks the accounts whose actions approve L1 (ADR-0053).
 
-<!-- gearbox:protocol v2.0.0 sha256:40527e301942; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+- `real-stanyan` — shared: stanyan — maintainer
+- `RicksZhang` — shared: stanyan
+- `DamianBuilds-ai` — shared: Damian
+
+<!-- gearbox:protocol v2.0.0 sha256:c59691361a53; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -81,7 +85,7 @@ Hard rules:
 Four rules (ADR-0007):
 
 - **Always merge via merge commit** — never squash, never rebase: the why behind small-step commits is a protocol asset (the repo is the only shared memory between sessions), and squashing is equivalent to deleting memory; locking in one style keeps history predictable.
-- **Who merges**: the PR's author agent merges it themself once CI is green. Protocol changes follow the tier system (see "Changing the protocol itself"): L1 waits for the maintainer's agreement, L2 is autonomous.
+- **Who merges**: the PR's author agent merges it themself once CI is green. Protocol changes follow the tier system (see "Changing the protocol itself"): L1 waits for the maintainer's approval — in a multi-human repo the maintainer merges it — L2 is autonomous.
 - **A second agent's review is not mandatory**: in serial repos only one shift is present at a time, and forcing mutual review would block at handoff boundaries; parallel lanes (ADR-0048) don't change this — review stays optional, because the quality backstop never depended on serialization: the CI gate + the maintainer's after-the-fact veto (revert + reopen the issue), plus branch protection where configured (ADR-0042).
 - **Don't take over someone else's open PR** — that's a mid-task handoff (see While working). Exception: the handoff issue explicitly transfers it, or the maintainer directs it.
 
@@ -89,13 +93,13 @@ If a PR is still hanging open at shift-end, the task isn't done: per item 3 of O
 
 ### Changing the protocol itself (rules for changing this file)
 
-Where the protocol text lives decides how it changes (ADR-0050). In the **Gearbox repo**, the fenced protocol is edited under the tiers below. In a **downstream repo**, the fence changes only through upstream releases (`gearbox-agents update`); a local deviation goes in `## Local protocol extensions` and is tiered as if it were written into the section it extends — the ADR-0012 criterion applies unchanged. "The maintainer" below is the GitHub account named in `## Maintainer` (a team = a GitHub team handle, ADR-0034).
+Where the protocol text lives decides how it changes (ADR-0050). In the **Gearbox repo**, the fenced protocol is edited under the tiers below. In a **downstream repo**, the fence changes only through upstream releases (`gearbox-agents update`); a local deviation goes in `## Local protocol extensions` and is tiered as if it were written into the section it extends — the ADR-0012 criterion applies unchanged. The maintainer's accounts are the `maintainer` lines of `## Roster`, which lists every account as `human`, `shared` (a human and their agents) or `agent` (ADR-0053).
 
 Agents can modify AGENTS.md, but **the change is tiered by its content** (ADR-0006):
 
 | Tier | Content | Process |
 |---|---|---|
-| **L1 strict tier** | Hard rules / Gate command / Tech stack / Maintainer / this section itself | issue + ADR + PR, **and the agent may only merge after the maintainer explicitly agrees, in the session or in a PR comment** |
+| **L1 strict tier** | Hard rules / Gate command / Tech stack / Roster / this section itself | issue + ADR + PR, **and the agent may only merge after the maintainer's approval (below)** |
 | **L2 autonomous tier** | Working agreement (except the Gate contract) / Division of labor / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
 
 The boundary of "Gate command" (ADR-0010): the command line itself, and **loosening/deleting/rewriting an existing gate-script assertion** = L1; **adding a new, stricter assertion** = L2, riding along with its own PR. Pure refactors (behavior unchanged) count as L2, with the burden of proof on the agent making the change.
@@ -115,15 +119,13 @@ General rules (apply to both tiers):
 |---|---|---|
 | New template/subsystem that **references** a protocol mechanism | **L1** | ADR-0012 |
 | New purely informational document (e.g. "how to contribute") that **references** no protocol mechanism | L2 | ADR-0012 |
-| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Maintainer / Working agreement content) | **L1** | ADR-0006 |
+| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Roster / Working agreement content) | **L1** | ADR-0006 |
 | Modifying the index (Where to find things) | L2 | ADR-0005 |
 | A CONTEXT.md entry **defines** an existing mechanism (changes only CONTEXT.md + cites its source ADR + adds no new obligation/changes no process boundary — all three conditions required) | L2 | ADR-0019 |
 
 **Definition exemption** (ADR-0019): the criterion targets **legislating** (adding/changing mechanism semantics), not **describing** (writing an already-legislated rule into the glossary). If any of the three conditions isn't met, or you're unsure → default to L1; don't grant yourself the exemption. Changing semantics under the guise of a definition is a violation — revert + reopen the issue.
 
-> Why so strict: agents easily use "optional + purely additive" as an L2 channel to expand the protocol's boundaries (see the PR #21 retrospective — subagent-system referenced L1/L2 but self-merged as L2). This criterion closes off that path.
-
-L1's "explicit agreement" is a weak-b form: it's enough for the maintainer to say "agreed" in the session or write "agreed" in a PR comment, and the agent presses the merge button itself. **For the PR-comment path, only a comment authored by the account `## Maintainer` names (for a team handle: one of its members) counts (ADR-0034)** — anyone else's "agreed" is not L1 approval. **In a repo with more than one human collaborator, only the PR-comment path is valid L1 approval (ADR-0042)** — in-session agreement stops counting (including in the maintainer's own session): in-session approval leaves no verifiable trace, so a merged L1 PR without the maintainer's comment would be indistinguishable from an impersonated approval. Single-human repos keep both paths. **GitHub's Approve button is not required** — the cost is that the maintainer becomes the L1 bottleneck, and that cost is accepted.
+L1's explicit agreement comes only from the maintainer: an `agreed` PR comment or an Approve review from a `maintainer` account, or agreement in the session. It covers the commits it saw; a later push needs a new one. **Multi-human repos** (more than one person on the `human`/`shared` lines of `## Roster`): only the maintainer's own merge approves, and agents never merge an L1 PR — agents act under the humans' accounts, so no comment or review proves who wrote it (ADR-0042/0053). In every repo, an agent never writes an approval — no `agreed`, no Approve, no approval record — for anyone. GitHub's Approve button stays optional; the maintainer as L1 bottleneck is an accepted cost.
 
 **Protocol updates** (ADR-0026/0050): pull-triggered. Start-of-shift step 4 (`gearbox-agents version`) and the optional weekly `gearbox-sync` Action run `gearbox-agents update`, which rewrites both fences, copies new protocol ADRs and bumps `.gearbox-version` on a `docs/gearbox-backfill-*` branch; merging that PR adopts the new protocol version and is L1 in the receiving repo. The fence markers and `.gearbox-version` carry the protocol version — tooling maintains them, humans don't. (The upstream-side release rules — the `Affects downstream` declaration, version bumps, tags, npm publish — are the Gearbox repo's own local extension.)
 
@@ -178,7 +180,7 @@ Division of labor is a project property, declared in the project's `## Division 
 
 **Version numbers** (ADR-0023, split by ADR-0050): a semver variant, baseline `v0.0.0`. Segment criterion — **major** = a cross-tool/cross-repo contract change (hash stamp format, install-anchor structure, file layout, renames) that needs manual intervention for downstream backfill; **minor** = a new mechanism (new ADR / new tool / new protocol clause); **patch** = a revision to an existing file (wording, a status line, a typo). There are two numbers: the **package version** (`package.json` = the git tag) moves on every release; the **protocol version** (the fence markers) moves only when fence content changes, and then equals that release's package version. Process (ADR-0029): the PR body declares `Version bump: major|minor|patch|none` (`none` needs one reason, enforced via the PR template); in the same PR the author sets `package.json`'s `version` to the target (latest tag + segment, ADR-0028) and reruns `rehash-fences.js` if fences changed; after merge **the author agent** pushes an annotated tag based on the latest tag at merge time; **then the maintainer runs `npm publish`** (it hits an external registry and needs credentials, so agents don't run it). A `none` segment triggers no tag/publish and doesn't touch `package.json`'s version. No CHANGELOG — the tag message + the ADR are the change record.
 
-**Parallel protocol PRs** (ADR-0048/0052): protocol ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge.
+**Parallel protocol PRs** (ADR-0048/0052): protocol ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge an L2 PR yourself; an L1 PR goes back to the maintainer, whose approval the new push needs (ADR-0053).
 
 ## Division of labor
 

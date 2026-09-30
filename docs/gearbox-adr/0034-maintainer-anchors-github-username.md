@@ -1,7 +1,7 @@
 # ADR-0034: `<maintainer>` anchors to a GitHub username
 
 - Date: 2026-07-22
-- Status: accepted
+- Status: accepted; amended by ADR-0053 (the roster)
 - Related: ADR-0006 (protocol change tiers / weak-b agreement), ADR-0012 (L1/L2 boundary criterion)
 
 ## Context

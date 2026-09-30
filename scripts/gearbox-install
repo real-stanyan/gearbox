@@ -4,14 +4,14 @@
 // Usage: run `gearbox-install` from the target project's root, or `gearbox-install <target-dir>`
 //   --name <project-name>   AGENTS.md title (default: the git remote's repo name, else the target
 //                           directory's name — #133)
-//   --maintainer <github-username>  fill the <maintainer> placeholder in "## Maintainer" (default: on an
+//   --maintainer <github-username>  fill the <maintainer> placeholder in "## Roster" (default: on an
 //                           interactive terminal, offer to bind one — gh-detected default + public-API
 //                           existence check, Enter skips (ADR-0036); non-TTY keeps the placeholder).
-//                           Use a GitHub username — async L1 approval is checked against it (ADR-0034)
+//                           Use a GitHub username — it becomes the maintainer line of ## Roster (ADR-0053)
 //   --gate "<command>"      the Gate command (default: leave a placeholder, generated in sync with CI)
 //
 // What it does (automates every manual-copy adjustment step from the README, ADR-0022):
-//   1. AGENTS.md   v2 skeleton (project sections: Tech stack / Hard rules / Gate / Maintainer /
+//   1. AGENTS.md   v2 skeleton (project sections: Tech stack / Hard rules / Gate / Roster /
 //                  Local protocol extensions / Division of labor / Where to find things) + the
 //                  upstream protocol fence copied verbatim (ADR-0050)
 //   2. CLAUDE.md   = the `@AGENTS.md` empty-shell contract
@@ -191,14 +191,14 @@ if (!protocolFence || !glossaryFence)
 
 // ============== Interactive maintainer binding (TTY only, ADR-0036) ==============
 //
-// Why bind at install time: async L1 approval is verified against the maintainer's GitHub
-// account (ADR-0034) — an unfilled <maintainer> placeholder matches no account, so L1 stays
+// Why bind at install time: L1 approval comes from the maintainer lines of ## Roster
+// (ADR-0034/0053) — an unfilled <maintainer> placeholder names no account, so L1 stays
 // silently dead until someone notices. Unlike the Gate placeholder (backstopped by a
 // deliberately-red ci.yml), the placeholder here has no hard check, so the install prompt is
 // the best moment to catch it. Binding stays optional: Enter skips, same end state as before.
 //
-// Deliberately NOT an OAuth flow: install-time identity proof has no consumer — the
-// enforcement point is the PR-comment author check, which GitHub itself guarantees. All we
+// Deliberately NOT an OAuth flow: install-time identity proof has no consumer — agents act
+// under the humans' accounts, so no account check proves who approved (ADR-0053). All we
 // need is a username string; the existence check below only catches typos.
 
 // gh-detected default: the account gh CLI is logged in as (token-backed, so it's almost
@@ -247,7 +247,7 @@ async function promptMaintainer() {
   const detected = detectGithubLogin();
   console.log("");
   console.log(
-    `${C.bold("Bind a maintainer?")} ${C.dim("L1 approvals are verified against this GitHub account (ADR-0034).")}`,
+    `${C.bold("Bind a maintainer?")} ${C.dim("It becomes the maintainer line of ## Roster (ADR-0053).")}`,
   );
   const hint = detected
     ? `${C.dim("(Enter =")} ${C.cyan(detected)}${C.dim(', "-" = skip)')}`
@@ -501,7 +501,7 @@ if (backupPlan.length > 0)
   );
 const placeholderHint =
   "(intro / Tech stack / Hard rules / Division of labor / Where to find things" +
-  (maintainer ? "" : " / Maintainer") +
+  (maintainer ? "" : " / Roster") +
   (gateCmd ? ")" : " / Gate command, sync ci.yml)");
 await tui.typeLine(`  ${step++}. Fill in placeholders: ${C.cyan("grep -n '<' AGENTS.md")} ${C.dim(placeholderHint)}`);
 await tui.typeLine(`  ${step++}. Write your first own decision to ${C.cyan("docs/adr/<issue>-<slug>.md")} ${C.dim("(named after the issue that settles it, ADR-0052; protocol ADRs live in docs/gearbox-adr/, format in 0001-adr-template.md)")}`);

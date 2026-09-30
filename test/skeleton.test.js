@@ -7,6 +7,7 @@ import { buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS, INDEX_POINTERS, 
 import { ciYml, SYNC_YML, CHECK_YML, pinSyncYml } from "../scripts/lib/workflows.js";
 import { headings } from "../scripts/lib/sections.js";
 import { renderFence, findFence } from "../scripts/lib/fence.js";
+import { ROSTER_NOTE } from "../scripts/lib/roster.js";
 import { tmp, write, gitInit, git, commitAll, childEnv } from "./helpers.js";
 
 const PROTOCOL = renderFence("protocol", "v2.0.0", "## Working agreement (multi-agent)\n\n- rule");
@@ -15,19 +16,20 @@ const GLOSSARY = renderFence("glossary", "v2.0.0", "## Protocol terms\n\n| Term 
 test("buildAgentsMd lays sections out in the v2 order with the fence verbatim", () => {
   const md = buildAgentsMd({ title: "demo", gate: "npm test", maintainer: "octo", protocolBlock: PROTOCOL });
   assert.deepEqual(headings(md).filter((h) => h.level <= 2).map((h) => h.title), [
-    "demo", "Tech stack", "Hard rules", "Gate", "Maintainer", "Working agreement (multi-agent)",
+    "demo", "Tech stack", "Hard rules", "Gate", "Roster", "Working agreement (multi-agent)",
     "Local protocol extensions", "Division of labor", "Where to find things",
   ]);
   assert.ok(md.includes(SOT_NOTE));
   assert.ok(md.includes("```bash\nnpm test\n```"));
-  assert.ok(md.includes("GitHub account: `octo`"));
+  assert.ok(md.includes("- `octo` — shared: octo — maintainer"));
+  assert.ok(md.includes(ROSTER_NOTE));
   assert.equal(findFence(md, "protocol").block, PROTOCOL);
 });
 
 test("buildAgentsMd defaults to placeholders and keeps gate notes and extra sections", () => {
   const md = buildAgentsMd({ protocolBlock: PROTOCOL, gateNotes: "note line", extraSections: ["## Extra\n\nx"] });
   assert.ok(md.includes(PLACEHOLDERS.gate));
-  assert.ok(md.includes("GitHub account: `<maintainer>`"));
+  assert.ok(md.includes("- `<maintainer>` — shared: <maintainer> — maintainer"));
   assert.ok(md.includes("note line"));
   assert.ok(md.indexOf("## Extra") < md.indexOf("## Where to find things"));
 });
@@ -123,4 +125,11 @@ test("the docs/adr index line names ADRs after their issue and doesn't list them
   assert.equal(DOCS_ADR_LINE, line);
   assert.ok(INDEX_POINTERS.split("\n").includes(line), INDEX_POINTERS);
   assert.ok(PLACEHOLDERS.whereToFind.split("\n").includes(line), PLACEHOLDERS.whereToFind);
+});
+
+test("buildAgentsMd takes a whole roster verbatim", () => {
+  const roster = "- `a` — human: Ann — maintainer\n- `bot` — agent, run by Ann";
+  const md = buildAgentsMd({ protocolBlock: PROTOCOL, maintainer: "ignored", roster });
+  assert.ok(md.includes(`## Roster\n\n${ROSTER_NOTE}\n\n${roster}\n`));
+  assert.ok(!md.includes("ignored"));
 });

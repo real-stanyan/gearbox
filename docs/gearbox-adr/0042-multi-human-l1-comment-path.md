@@ -1,7 +1,7 @@
 # ADR-0042: Multi-human repos narrow L1 approval to the PR-comment path
 
 - Date: 2026-07-23
-- Status: accepted
+- Status: accepted; amended by ADR-0053 (the roster)
 - Related: ADR-0006 (weak-b agreement forms), ADR-0034 (`<maintainer>` anchors a GitHub username), ADR-0036 (install maintainer binding)
 
 ## Context
