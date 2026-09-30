@@ -157,7 +157,7 @@ test("the migration report lists what moved where and every item that needs a hu
   assert.equal(r.code, 0, r.out);
   const report = read(down, "gearbox-update-report.md");
   assert.match(report, /## ⚠️ v1 → v2 layout migration \(ADR-0050\)/);
-  assert.ok(report.includes("- [ ] confirm `octo-owner` is the GitHub account whose PR comment counts as L1 approval (## Maintainer)\n"), report);
+  assert.ok(report.includes("- [ ] confirm `octo-owner` is the maintainer account in ## Roster (`shared` while agents act under it); with a second person in the roster, only the maintainer's own merge approves L1 (ADR-0053)\n"), report);
   assert.match(report, /- Gate command: moved to `## Gate`/);
   assert.match(report, /### Subsections moved verbatim into `## Local protocol extensions`\n\n- \[ \] Worktree discipline \(project ADR-0149\) — /);
   assert.match(report, /- \[ \] From v1: While working — 1 line\(s\)/);
@@ -327,7 +327,7 @@ test("the migration report makes the maintainer a checklist item: confirm the de
   const r = update(down, up);
   assert.equal(r.code, 0, r.out);
   const report = read(down, "gearbox-update-report.md");
-  assert.match(report, /^- \[ \] set ## Maintainer$/m);
+  assert.match(report, /^- \[ \] set the maintainer line in ## Roster$/m);
   assert.doesNotMatch(report, /confirm `/);
   assert.match(git(down, "log", "-1", "--format=%B", "--grep=migrate to the Gearbox v2 layout"), /^- Maintainer: not detected$/m);
 });

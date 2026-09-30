@@ -854,8 +854,8 @@ function migrationReportLines(m) {
     ...(m.sections.added.length ? [`- [ ] Not in the v1 file, so added with a placeholder: ${m.sections.added.join(", ")} — fill in`] : []),
     // A to-do even when detected: a real dry run detected a login that belongs to an unrelated person.
     r.maintainer
-      ? `- [ ] confirm \`${r.maintainer}\` is the GitHub account whose PR comment counts as L1 approval (## Maintainer)`
-      : "- [ ] set ## Maintainer",
+      ? `- [ ] confirm \`${r.maintainer}\` is the maintainer account in ## Roster (\`shared\` while agents act under it); with a second person in the roster, only the maintainer's own merge approves L1 (ADR-0053)`
+      : "- [ ] set the maintainer line in ## Roster",
     r.gateMoved
       ? `- Gate command: moved to \`## Gate\`${notes}`
       : "- [ ] Gate command: **not found** — fill in `## Gate`, byte-identical to `.github/workflows/ci.yml`",
