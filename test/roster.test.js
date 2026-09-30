@@ -39,6 +39,13 @@ test("an ASCII ' - ' separator parses like the em dash", () => {
   ]);
 });
 
+test("`+` and numbered list markers are list items too", () => {
+  const r = parseRoster(md("+ `a` — shared: Ann — maintainer", "1. `b` — human: Bob"));
+  assert.deepEqual(r.errors, []);
+  assert.deepEqual(r.people, ["Ann", "Bob"]);
+  assert.equal(r.multiHuman, true);
+});
+
 test("prose, notes, blank lines and fenced blocks in the section are ignored", () => {
   const r = parseRoster(md(ROSTER_NOTE, "", "Some prose.", "```", "- not an entry", "```", "- `a` — shared: Ann — maintainer"));
   assert.deepEqual(r.errors, []);
@@ -52,6 +59,10 @@ test("a list item that matches no form is an error naming the line; nothing is g
     "- `a` — human:",                            // no person
     "- `bot` — agent, run by Ann — maintainer", // an agent can't be a maintainer
     "- `a b` — human: Ann",                      // space in login
+    "- `a` — human: Ann – maintainer",          // en dash: a mistyped tail, not part of the name
+    "- `a` — human: Ann — Maintainer",          // wrong case
+    "- `a` — human: — maintainer",              // no person
+    "2. not a roster line",                      // numbered item: reported, not skipped
   ]) {
     const r = parseRoster(md(bad));
     assert.equal(r.errors.length, 1, bad);

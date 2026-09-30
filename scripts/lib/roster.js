@@ -1,14 +1,15 @@
 // The identity roster (ADR-0053): AGENTS.md's project section "## Roster", one list item per GitHub
-// account. Pure — no I/O. The protocol check and `gearbox-agents approval` both read it through
-// parseRoster, so the two can never disagree about who is who.
+// account. Pure — no I/O. The protocol check, install and the v1 → v2 migration all go through this
+// module, so they can never disagree about who is who.
 import { fenceRun, sectionBody } from "./sections.js";
 
 export const ROSTER_NOTE =
-  "> One line per GitHub account: `human: <person>` (only that person), `shared: <person>` (the person and their agents) or `agent, run by <person>`; `— maintainer` marks the accounts whose actions approve L1 (ADR-0053).";
+  "> One line per GitHub account: `human: Name` (only that person), `shared: Name` (the person and their agents) or `agent, run by Name`; `— maintainer` marks the accounts whose actions approve L1 (ADR-0053).";
 
 const FORMS =
   "expected `- `login` — human: <person>`, `- `login` — shared: <person>` (either may end `— maintainer`) or `- `login` — agent, run by <person>` (ADR-0053)";
-const ITEM = /^\s*[-*]\s+`([^`\s]+)`\s+(?:—|-)\s+(.+?)\s*$/;
+const LIST_ITEM = /^\s*(?:[-*+]|\d+[.)])\s/;
+const ITEM = /^\s*(?:[-*+]|\d+[.)])\s+`([^`\s]+)`\s+(?:—|-)\s+(.+?)\s*$/;
 const HUMANISH = /^(human|shared):\s*(.+?)(?:\s+(?:—|-)\s+maintainer)?$/;
 const MAINTAINER_TAIL = /\s+(?:—|-)\s+maintainer$/;
 const AGENT = /^agent,\s*run by\s+(.+)$/;
@@ -19,14 +20,18 @@ export function rosterLine(login, kind, person, { maintainer = false } = {}) {
   return `- \`${login}\` — ${kind}: ${person}${maintainer ? " — maintainer" : ""}`;
 }
 
+// A person that still holds a dash separator or ends in "maintainer" is a mistyped tail folded into
+// the name ("Ann – maintainer", "Ann — Maintainer"): unreadable, never a second person.
+const mistyped = (person) => /(^|\s)[—–-](\s|$)/.test(person) || /maintainer$/i.test(person);
+
 function parseItem(line) {
   const m = line.match(ITEM);
   if (!m) return null;
   const [, login, rest] = m;
   const h = rest.match(HUMANISH);
-  if (h) return { login, kind: h[1], person: h[2].trim(), maintainer: MAINTAINER_TAIL.test(rest) };
+  if (h) return mistyped(h[2]) ? null : { login, kind: h[1], person: h[2].trim(), maintainer: MAINTAINER_TAIL.test(rest) };
   const a = rest.match(AGENT);
-  if (a && !MAINTAINER_TAIL.test(rest)) return { login, kind: "agent", person: a[1].trim(), maintainer: false };
+  if (a && !MAINTAINER_TAIL.test(rest)) return mistyped(a[1]) ? null : { login, kind: "agent", person: a[1].trim(), maintainer: false };
   return null;
 }
 
@@ -43,7 +48,7 @@ export function parseRoster(agentsText) {
       else if (run.char === open.char && run.len >= open.len) open = null;
       continue;
     }
-    if (open || !/^\s*[-*]\s/.test(line)) continue;
+    if (open || !LIST_ITEM.test(line)) continue;
     const entry = parseItem(line);
     if (!entry) {
       out.errors.push(`"## Roster": can't read \`${line.trim()}\` — ${FORMS}`);
