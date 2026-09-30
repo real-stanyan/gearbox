@@ -23,6 +23,19 @@ function v2Downstream(up, { autocrlf = false } = {}) {
 }
 const update = (down, up, args = []) => runTool("gearbox-update", ["--no-push", ...args], { cwd: down, env: { GEARBOX_DIR: up } });
 
+// ADR-0052: the older-duplicates list is written on arrival only. A duplicate a v2 repo gains later is
+// never recorded by update: it stays an error, and the report says so.
+test("update never records a v2 repo's duplicate ADR IDs: they stay an error", () => {
+  const down = v2Downstream(makeUpstream());
+  write(down, "docs/adr/0334-a.md", "# a\n");
+  write(down, "docs/adr/0334-b.md", "# b\n");
+  commitAll(down, "two lanes numbered by habit");
+  const r = update(down, makeUpstream({ version: "v2.1.0", protocol: `${PROTOCOL}\n- a new rule` }));
+  assert.equal(r.code, 0, r.out);
+  assert.ok(!existsSync(join(down, "docs/adr/older-duplicates.md")));
+  assert.match(read(down, "gearbox-update-report.md"), /^- \[ \] docs\/adr: ADR-334 is used by 2 files: 0334-a\.md, 0334-b\.md — /m);
+});
+
 test("synced: nothing to do, no branch", () => {
   const up = makeUpstream();
   const down = v2Downstream(up);

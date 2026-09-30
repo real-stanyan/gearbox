@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { findFence, renderFence } from "../scripts/lib/fence.js";
+import { renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "../scripts/lib/adr-ids.js";
 import { makeUpstream, runTool, gitInit, git, tmp, read, write } from "./helpers.js";
 
 test("install lays down a v2 tree that passes gearbox-check", () => {
@@ -64,4 +67,34 @@ test("install refuses on the fence marker alone, whatever the fenced text says",
   const r = runTool("gearbox-install", [target], { env: { GEARBOX_DIR: up } });
   assert.equal(r.code, 1);
   assert.match(r.out, /already has a Gearbox AGENTS\.md/);
+});
+
+// ADR-0052: a project arriving with duplicate ADR numbers in docs/adr/ gets them recorded, so its check
+// warns about them once instead of failing on day one. Only then: no duplicates, or a list already
+// there, and install writes none.
+test("install records a target's existing docs/adr duplicates in docs/adr/older-duplicates.md, and the check passes with one warning", () => {
+  const up = makeUpstream();
+  const install = (target) => runTool("gearbox-install", [target, "--name", "demo", "--maintainer", "octo", "--gate", "npm test"], { env: { GEARBOX_DIR: up } });
+  const target = tmp();
+  gitInit(target);
+  for (const f of ["0045-a.md", "0045-b.md", "0046-c.md"]) write(target, `docs/adr/${f}`, "# x\n");
+  const r = install(target);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /✓ docs\/adr\/older-duplicates\.md {2}\(recorded 1 older duplicate ADR number /);
+  assert.equal(read(target, OLDER_DUPLICATES_PATH), renderOlderDuplicates([{ id: 45, files: ["0045-a.md", "0045-b.md"] }]));
+  const c = runTool("gearbox-check", [], { cwd: target });
+  assert.equal(c.code, 0, c.out);
+  assert.deepEqual(c.out.split("\n").filter((l) => l.startsWith("⚠")), [
+    "⚠ docs/adr: older duplicate ADR numbers, recorded in docs/adr/older-duplicates.md: ADR-45 (0045-a.md, 0045-b.md) — references to them are ambiguous and they stay as they are (ADR-0052)",
+  ]);
+
+  const distinct = tmp();
+  write(distinct, "docs/adr/0001-a.md", "# x\n");
+  assert.equal(install(distinct).code, 0);
+  assert.ok(!existsSync(join(distinct, OLDER_DUPLICATES_PATH)));
+  const listed = tmp();
+  for (const f of ["0045-a.md", "0045-b.md"]) write(listed, `docs/adr/${f}`, "# x\n");
+  write(listed, OLDER_DUPLICATES_PATH, "a list of our own\n");
+  assert.equal(install(listed).code, 0);
+  assert.equal(read(listed, OLDER_DUPLICATES_PATH), "a list of our own\n");
 });

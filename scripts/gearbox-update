@@ -46,8 +46,9 @@
 //      writes gearbox-update-report.md (the PR body)
 //   6. v1 layout (no fence): migrates AGENTS.md / CONTEXT.md to the v2 layout (ADR-0050,
 //      scripts/lib/migrate-v1.js) in one commit on the same branch; a "Where to find things"
-//      too big for the 32 KiB budget moves to docs/INDEX.md (appended to an existing one). The
-//      report says what moved where and what needs a human
+//      too big for the 32 KiB budget moves to docs/INDEX.md (appended to an existing one), and
+//      project ADR numbers already used by more than one file are recorded in
+//      docs/adr/older-duplicates.md (ADR-0052). The report says what moved where and what needs a human
 //
 // What it doesn't do:
 //   - Doesn't touch anything in AGENTS.md / CONTEXT.md outside the fences — except the one-time
@@ -78,6 +79,7 @@ import { runProtocolChecks } from "./lib/protocol-check.js";
 import { loadKnown } from "./lib/v1-known.js";
 import { migrateV1, MigrationError } from "./lib/migrate-v1.js";
 import { splitByLevel, baseTitle } from "./lib/sections.js";
+import { duplicateAdrIds, renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "./lib/adr-ids.js";
 
 // ============== Config ==============
 
@@ -654,8 +656,16 @@ function planMigration(downDir, files) {
       text: prior === null ? m.indexMd : `${prior.trimEnd()}\n\n${INDEX_MOVED_HEADING}\n\n${m.indexMd.replace(/^# Index\n\n/, "")}`,
     };
   }
+  // The migration is this repo's arrival (ADR-0052): the duplicate project ADR IDs it already has
+  // are recorded, so the check warns about them once — renumbering would break their references —
+  // while any later duplicate fails. Only when there are some, and never over a list already there.
+  const groups = duplicateAdrIds(downDir, "docs/adr");
+  const olderDuplicates =
+    groups.length > 0 && !existsSync(join(downDir, OLDER_DUPLICATES_PATH))
+      ? { path: OLDER_DUPLICATES_PATH, count: groups.length, text: renderOlderDuplicates(groups) }
+      : null;
   // The commit holding the v1 text, for the report's `git show <base>:AGENTS.md`.
-  return { ...m, index, base: run("git rev-parse --short=12 HEAD"), sections: projectSections(agentsFile.text, Boolean(index)) };
+  return { ...m, index, olderDuplicates, base: run("git rev-parse --short=12 HEAD"), sections: projectSections(agentsFile.text, Boolean(index)) };
 }
 
 // The v1 project sections the migration keeps in place (spec §4), read the way migrateV1 reads
@@ -672,7 +682,17 @@ function projectSections(agentsV1, indexMoved) {
 }
 
 function migrationPaths(migration) {
-  return ["AGENTS.md", "CONTEXT.md", ...(migration.index ? [migration.index.path] : [])];
+  return [
+    "AGENTS.md",
+    "CONTEXT.md",
+    ...(migration.index ? [migration.index.path] : []),
+    ...(migration.olderDuplicates ? [migration.olderDuplicates.path] : []),
+  ];
+}
+
+// The report's and the migration record's line for the older-duplicates list (ADR-0052).
+function olderDuplicatesLine({ path, count }) {
+  return `Recorded ${count} older duplicate ADR number${count === 1 ? "" : "s"} in \`${path}\` (ADR-0052)`;
 }
 
 // Lines present on one side only — enough to show what a hand edit changed.
@@ -793,6 +813,7 @@ function migrationRecordLines(m) {
     ...(m.index
       ? [`- Where to find things: ${r.indexMoved.bytes} bytes ${m.index.appended ? "appended to the existing" : "moved to a new"} \`${m.index.path}\``]
       : []),
+    ...(m.olderDuplicates ? [`- ${olderDuplicatesLine(m.olderDuplicates)}`] : []),
     ...(r.oversize ? [`- Oversize: AGENTS.md is still ${r.oversize} bytes (> 32768)`] : []),
     ...r.moved.map((t) => `- Moved verbatim into ${ext}: ${t}`),
     ...r.carried.map((x) => `- Carried into ${ext}: ${x.section} — ${x.lines} line(s)`),
@@ -844,6 +865,7 @@ function migrationReportLines(m) {
     L.push(
       `- Where to find things: ${r.indexMoved.bytes} bytes ${m.index.appended ? `appended to the existing \`${m.index.path}\` under \`${INDEX_MOVED_HEADING}\`` : `moved to a new \`${m.index.path}\``} to fit the 32 KiB budget; AGENTS.md keeps four pointer lines and is ${Buffer.byteLength(m.agentsMd)} bytes`,
     );
+  if (m.olderDuplicates) L.push(`- ${olderDuplicatesLine(m.olderDuplicates)}`);
   if (r.oversize)
     L.push(`- [ ] **AGENTS.md is still ${r.oversize} bytes (> 32768)** — trim Local protocol extensions or project sections (point to ADRs for detail); the protocol check fails until it fits`);
   L.push("");
@@ -1328,6 +1350,7 @@ async function main() {
     writeOwn("AGENTS.md", migration.agentsMd);
     writeOwn("CONTEXT.md", migration.contextMd);
     if (migration.index) writeOwn(migration.index.path, migration.index.text);
+    if (migration.olderDuplicates) writeOwn(migration.olderDuplicates.path, migration.olderDuplicates.text);
   }
   for (const w of workflowWrites) writeOwn(w.path, w.text);
   if (!stampCurrent) writeOwn(".gearbox-version", protocolVersion + "\n");
