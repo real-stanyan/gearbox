@@ -1,6 +1,7 @@
 # ADR-0052: Project ADRs are named after the issue that settles them
 
 - Date: 2026-09-30
+- Issue: #145
 - Status: accepted
 - Related: ADR-0048 (parallel shifts — amended: only the Gearbox repo claims ADR numbers at merge), ADR-0051 (protocol check), ADR-0010 (gate-assertion tiers), ADR-0044/0047 (frontier claiming)
 
