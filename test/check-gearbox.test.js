@@ -8,10 +8,10 @@ const NOTE = "counts as part of the `## Hard rules` section";
 
 test("warnings from the shared protocol check are printed before the verdict and don't fail the gate", () => {
   const dir = gearboxRepo();
-  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace(/GitHub account: `[^`]*`/, "GitHub account: `<maintainer>`"));
+  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("- `RicksZhang` — shared: stanyan", "- `<second-account>` — shared: stanyan"));
   const r = check(dir);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /⚠ "## Maintainer" names no GitHub account yet/);
+  assert.match(r.out, /⚠ "## Roster" still holds a placeholder account/);
   assert.ok(r.out.indexOf("⚠") < r.out.indexOf("✅"), "warnings come before the verdict");
 });
 

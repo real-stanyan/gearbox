@@ -24,9 +24,13 @@ node scripts/check-gearbox.js && node --test test/*.test.js
 
 This repo is the Gearbox core itself, so the gate is a **structural self-check** plus the tool test suite. `check-gearbox.js` verifies required files, the `CLAUDE.md` empty shell, both fences (hash, version, budgets), the section anchors, that `HANDOFF` never appears, and that this Gate matches CI. `node --test` runs the tool suite (`node:test`, zero dependencies). The glob is expanded by the shell, so the command works on Node 18–24 and never scans `.claude/worktrees/`.
 
-## Maintainer
+## Roster
 
-GitHub account: `real-stanyan`
+> One line per GitHub account: `human: <person>` (only that person), `shared: <person>` (the person and their agents) or `agent, run by <person>`; `— maintainer` marks the accounts whose actions approve L1 (ADR-0053).
+
+- `real-stanyan` — shared: stanyan — maintainer
+- `RicksZhang` — shared: stanyan
+- `DamianBuilds-ai` — shared: Damian
 
 <!-- gearbox:protocol v2.0.0 sha256:40527e301942; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)

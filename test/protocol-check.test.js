@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { runProtocolChecks, gateCommand, maintainerAccount, AGENTS_MAX_BYTES, PROTOCOL_FENCE_MAX_BYTES } from "../scripts/lib/protocol-check.js";
+import { runProtocolChecks, gateCommand, AGENTS_MAX_BYTES, PROTOCOL_FENCE_MAX_BYTES } from "../scripts/lib/protocol-check.js";
 import { renderFence, findFence, replaceFence } from "../scripts/lib/fence.js";
 import { CHECK_YML } from "../scripts/lib/workflows.js";
 import { duplicateAdrIds, readOlderDuplicates, renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "../scripts/lib/adr-ids.js";
@@ -149,12 +149,12 @@ test("the AGENTS.md budget measures LF content: a CRLF checkout at the limit pas
 
 test("missing project sections and missing fence headings are errors", () => {
   const dir = v2Repo();
-  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("## Maintainer\n", "## Owner\n"));
-  assert.match(errorsOf(dir).join("\n"), /missing the project section "## Maintainer"/);
+  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("## Roster\n", "## Owner\n"));
+  assert.match(errorsOf(dir).join("\n"), /missing the project section "## Roster"/);
 });
 
 test("each required project section is enforced, as a level-2 heading", () => {
-  for (const title of ["Tech stack", "Hard rules", "Gate", "Maintainer", "Local protocol extensions", "Where to find things"]) {
+  for (const title of ["Tech stack", "Hard rules", "Gate", "Roster", "Local protocol extensions", "Where to find things"]) {
     for (const renamed of ["## Renamed\n", `### ${title}\n`]) {
       const dir = v2Repo();
       write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace(`## ${title}\n`, renamed));
@@ -165,9 +165,9 @@ test("each required project section is enforced, as a level-2 heading", () => {
 
 test("project sections are looked up outside the protocol fence only", () => {
   const dir = v2Repo();
-  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("## Maintainer\n", "## Owner\n"));
-  rewriteProtocol(dir, (c) => `${c}\n\n## Maintainer\n\nGitHub account: \`smuggled\``);
-  assert.match(errorsOf(dir).join("\n"), /missing the project section "## Maintainer"/);
+  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("## Roster\n", "## Owner\n"));
+  rewriteProtocol(dir, (c) => `${c}\n\n## Roster\n\n- \`smuggled\` — shared: x — maintainer`);
+  assert.match(errorsOf(dir).join("\n"), /missing the project section "## Roster"/);
 });
 
 // [heading line in helpers' PROTOCOL, the heading the error must name]
@@ -264,17 +264,36 @@ test("warnings: placeholder maintainer, undecided / missing Upstream lines", () 
   });
   const { errors, warnings } = runProtocolChecks(dir);
   assert.deepEqual(errors, []);
-  assert.match(warnings.join("\n"), /names no GitHub account/);
+  assert.match(warnings.join("\n"), /"## Roster" still holds a placeholder account/);
   assert.match(warnings.join("\n"), /"Worktree discipline" is "Upstream: undecided"/);
   assert.match(warnings.join("\n"), /"No upstream line" has no "- Upstream:" line/);
 });
 
-test("a Maintainer section without an account line warns too", () => {
-  const dir = v2Repo();
-  write(dir, "AGENTS.md", read(dir, "AGENTS.md").replace("GitHub account: `octo`", "TBD"));
-  const { errors, warnings } = runProtocolChecks(dir);
+test("a roster with no maintainer mark is an error", () => {
+  const dir = v2Repo({ roster: "- `octo` — shared: octo" });
+  assert.match(errorsOf(dir).join("\n"), /"## Roster" marks no account `— maintainer`/);
+});
+
+test("roster parse errors are check errors", () => {
+  const dir = v2Repo({ roster: "- `octo` — shared: octo — maintainer\n- `x` — owner: X" });
+  assert.match(errorsOf(dir).join("\n"), /"## Roster": can't read `- `x` — owner: X`/);
+});
+
+test("single- and multi-human rosters of shared accounts are clean", () => {
+  for (const roster of [
+    "- `octo` — shared: Octo — maintainer\n- `octo2` — shared: Octo",
+    "- `a` — shared: Ann — maintainer\n- `b` — shared: Bob\n- `bot` — agent, run by Ann",
+  ]) {
+    const { errors, warnings } = runProtocolChecks(v2Repo({ roster }));
+    assert.deepEqual(errors, [], roster);
+    assert.deepEqual(warnings, [], roster);
+  }
+});
+
+test("an agent run by a person with no human or shared line warns", () => {
+  const { errors, warnings } = runProtocolChecks(v2Repo({ roster: "- `a` — shared: Ann — maintainer\n- `bot` — agent, run by Zed" }));
   assert.deepEqual(errors, []);
-  assert.match(warnings.join("\n"), /names no GitHub account/);
+  assert.deepEqual(warnings, ['"## Roster": agent `bot` is run by "Zed", who has no human or shared line (ADR-0053)']);
 });
 
 test("extension warnings ignore fenced text; an empty Upstream line counts as missing", () => {
@@ -302,10 +321,9 @@ test("the 20 KiB protocol-fence budget applies in upstream mode only, and exactl
   assert.doesNotMatch(errorsOf(over).join("\n"), /upstream budget/);
 });
 
-test("gateCommand and maintainerAccount read the project sections", () => {
+test("gateCommand reads the project Gate section", () => {
   const md = read(v2Repo({ gate: "npm test  # x\nnpx tsc --noEmit" }), "AGENTS.md");
   assert.deepEqual(gateCommand(md), ["npm test", "npx tsc --noEmit"]);
-  assert.equal(maintainerAccount(md), "octo");
 });
 
 test("gateCommand reads the first fenced block like CommonMark", () => {
@@ -370,13 +388,13 @@ test("the npx entry point's check route: exit 0 on a clean repo, 1 with errors, 
   assert.match(bad.out, /gearbox check failed \(\d+\)[\s\S]*AGENTS\.md is missing/);
   const warned = runBin(["check"], { cwd: v2Repo({ maintainer: null }) });
   assert.equal(warned.code, 0, warned.out);
-  assert.match(warned.out, /⚠ "## Maintainer" names no GitHub account/);
+  assert.match(warned.out, /⚠ "## Roster" still holds a placeholder account/);
 });
 
 test("gearbox-check prints warnings without failing, counts its errors, and --help never runs the check", () => {
   const warned = runTool("gearbox-check", [], { cwd: v2Repo({ maintainer: null }) });
   assert.equal(warned.code, 0);
-  assert.match(warned.out, /⚠ "## Maintainer" names no GitHub account/);
+  assert.match(warned.out, /⚠ "## Roster" still holds a placeholder account/);
   assert.match(runTool("gearbox-check", [], { cwd: tmp() }).out, /gearbox check failed \(\d+\)/);
   const help = runTool("gearbox-check", ["--help"], { cwd: tmp() });
   assert.equal(help.code, 0);

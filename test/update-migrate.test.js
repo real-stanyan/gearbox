@@ -61,7 +61,7 @@ test("update migrates a real v1.15.2 install to the v2 layout on a backfill bran
   const agents = read(down, "AGENTS.md");
   assert.equal(findFence(agents, "protocol").block, findFence(read(up, "AGENTS.md"), "protocol").block);
   assert.match(sectionBody(agents, 2, "Gate"), /npm test/);
-  assert.match(agents, /GitHub account: `octo-owner`/);
+  assert.match(agents, /- `octo-owner` — shared: octo-owner — maintainer/);
   assert.match(sectionBody(agents, 2, "Local protocol extensions"), /Search closed issues before claiming a task/);
   assert.match(read(down, "CONTEXT.md"), /\| star \| loyalty point \| — \|/);
   assert.equal(read(down, ".gearbox-version").trim(), "v2.0.0");

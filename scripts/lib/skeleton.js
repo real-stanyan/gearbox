@@ -2,6 +2,8 @@
 // placeholders; the v1 → v2 migration fills the same skeleton with the project's own
 // content. Fence blocks are passed in verbatim — nothing here edits protocol text.
 
+import { ROSTER_NOTE, rosterLine } from "./roster.js";
+
 export const SOT_NOTE = [
   "> This file is the single source of truth for ALL AI coding agents, whatever the tool (Claude Code, Z Code, Cursor, Codex, etc.). Rules live here and only here.",
   "> The block between the `gearbox:protocol` markers is the Gearbox protocol, managed by `gearbox-agents` — don't edit it. Project rules go in the sections outside it.",
@@ -65,6 +67,7 @@ export function buildAgentsMd({
   gate = null,
   gateNotes = "",
   maintainer = null,
+  roster = null,
   protocolBlock,
   localExtensions = PLACEHOLDERS.localExtensions,
   divisionOfLabor = PLACEHOLDERS.divisionOfLabor,
@@ -87,7 +90,7 @@ export function buildAgentsMd({
       `## Tech stack\n\n${techStack.trim()}`,
       `## Hard rules\n\n${hardRules.trim()}`,
       `## Gate\n\n${gateBody}`,
-      `## Maintainer\n\nGitHub account: \`${maintainer || PLACEHOLDERS.maintainer}\``,
+      `## Roster\n\n${ROSTER_NOTE}\n\n${(roster ?? rosterLine(maintainer || PLACEHOLDERS.maintainer, "shared", maintainer || PLACEHOLDERS.maintainer, { maintainer: true })).trim()}`,
       protocolBlock.trim(),
       `## Local protocol extensions\n\n${LOCAL_EXTENSIONS_NOTE}\n\n${localExtensions.trim()}`,
       `## Division of labor\n\n${divisionOfLabor.trim()}`,
