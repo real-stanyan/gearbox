@@ -95,7 +95,7 @@ L1's explicit agreement counts only from a `maintainer` account in `## Roster` (
 
 ### Fence, other mentions
 
-- The L1 row of the tier table and the "Modifying an existing protocol file" row of the criterion table: `Maintainer` → `Roster`.
+- The L1 row of the tier table and the "Modifying an existing protocol file" row of the criterion table: `Maintainer` → `Roster`. The L1 row's process cell also drops "in the session or in a PR comment", which the new clause contradicts: it becomes "after the maintainer's approval (below)".
 - **Delete** the `> Why so strict: …` blockquote. ADR-0012 already records the PR #21 precedent it cites, so this is a deletion, not a move.
 
 ### Glossary fence (`CONTEXT.md`)
