@@ -1,7 +1,7 @@
 # Collision-free project ADR IDs (Gearbox v2) — design
 
 Date: 2026-09-30
-Status: approved in session; implementation plan to follow (`docs/superpowers/plans/2026-09-30-adr-issue-ids.md`)
+Status: approved in session; implementation plan to follow (`docs/superpowers/plans/2026-09-30-adr-issue-ids.md`); amended by the final review (arrival list)
 Sub-project: C of four structural changes. Order: A fence (PR #144) → **C ADR IDs** → B identity/L1 → D handoff lifecycle. All four ship together as v2.0.0; the release is held until D lands.
 
 ## Problem
@@ -44,7 +44,7 @@ Another downstream, dryrun, still carries 10 colliding pairs in `docs/adr/`. Man
 ## 1. The ID rule
 
 - A new project ADR is `docs/adr/<issue>-<slug>.md`.
-  - `<issue>` is the number of the issue that settles the decision, written without zero padding. The missing leading zero is what tells an issue ID apart from an older sequential one (§4).
+  - `<issue>` is the number of the issue that settles the decision, written without zero padding. The check gives padding no meaning (§4).
   - It is cited as `ADR-<issue>`.
   - Its header carries `- Issue: #<issue>`.
 - **One decision per issue.** A second decision arising from the same issue gets its own issue.
@@ -101,6 +101,7 @@ No change. The glossary has no row about ADR numbering (checked: its "claim" row
   - Only the header changes.
 - **Skeleton placeholder** (`scripts/lib/skeleton.js`, both occurrences): `` - `docs/adr/` — this project's own architectural decisions, one file per decision named `<issue>-<slug>.md` (not listed here one by one) ``. The index no longer enumerates ADRs; `docs/adr/` is their index. Two parallel PRs that each append an index line conflict textually, so this removes a merge-conflict hotspot.
 - **install's closing hint** (`scripts/gearbox-install`, "Write your first own decision to …"): name `docs/adr/<issue>-<slug>.md` and say it is named after the issue that settles it.
+- **Subagent template** (`docs/subagent-system.md`, the Doc-Walker prompt): name the ADR after its issue and never renumber one, instead of taking the next integer; don't add it to AGENTS.md's "Where to find things", because `docs/adr/` is its index. Its decision-record and ADR-template paths point at `docs/gearbox-adr/`.
 - **README:** any sentence that describes `docs/adr/` numbering follows §1.
 
 ## 4. The check
@@ -112,26 +113,36 @@ Add to `scripts/lib/protocol-check.js`, which runs in both `gearbox-agents check
   - Parse the leading integer, so `0074` = `74`.
   - Group by it. A group with more than one file is a duplicate.
   - Files without a leading number (README, notes) are ignored.
-- **`docs/adr/`: new duplicates fail, old ones warn.** A leading zero marks an older sequential ID, and no leading zero marks an issue ID (§1).
-  - A duplicate group with at least one issue-ID file (no leading zero) is an error:
+- **`docs/adr/`: duplicates recorded on arrival warn; every other duplicate fails.** Zero padding can't tell an older collision from a new one: two lanes that keep numbering by habit both write `0334-….md`. So the check ignores padding and reads an arrival list instead.
+  - The list, `docs/adr/older-duplicates.md`, records the duplicate groups a repo already had when it adopted issue-numbered ADRs; only the arrival writes it (§5). Its name doesn't match the ID pattern, so it is never an ADR itself. It holds a short intro paragraph, then one line per group:
+    `- ADR-45: 0045-gearbox-v1.4.0-rebuild.md, 0045-meter-all-llm-ops.md`
+    The check reads the lines matching `^- ADR-(\d+): (.+)$`; the file names are comma-separated and trimmed.
+  - A group is **listed** only when the list has a line for its ID and every file of the group is on that line. A third file joining a listed group makes it unlisted. A line whose group no longer exists is ignored.
+  - An unlisted group is an error, whatever its padding:
     `docs/adr: ADR-74 is used by 2 files: 0074-foo.md, 74-bar.md — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)`
-  - Duplicate groups made only of zero-padded files are older collisions. The only fix for those is renumbering, which breaks cited references, and the new rule stops them from recurring. They produce **one** summary warning, not an error:
-    `docs/adr: older ADR numbers used by more than one file: ADR-45 (0045-a.md, 0045-b.md); ADR-46 (…) — references to them are ambiguous; new ADRs are named after their issue, so this can't recur (ADR-0052)`
-  - Evidence that this split is needed: dryrun, one of the stamped downstreams, carries 10 such older pairs today (two `0045-…` files, two `0046-…`, and so on). As a hard error they would turn it red on arrival with no acceptable fix.
+  - Listed groups are older collisions. The only fix for those is renumbering, which breaks cited references. They produce **one** summary warning, not an error:
+    `docs/adr: older duplicate ADR numbers, recorded in docs/adr/older-duplicates.md: ADR-45 (0045-a.md, 0045-b.md); ADR-46 (…) — references to them are ambiguous and they stay as they are (ADR-0052)`
+  - Evidence that older collisions need the list: dryrun, one of the stamped downstreams, carries 10 such older pairs today (two `0045-…` files, two `0046-…`, and so on). As a hard error they would turn it red on arrival with no acceptable fix.
+  - A legacy date-named layout (`2026-01-05-….md`) parses as its year, so ADRs from the same year share an ID. Its arrival-time collisions are recorded like any others, and new ADRs follow issue naming.
+  - The ID logic lives in one module, `scripts/lib/adr-ids.js`: `duplicateAdrIds`, the list's path, its reader and its writer. A `docs/adr` that isn't a directory holds no ADRs.
 - Error text, `docs/gearbox-adr/` (every duplicate is an error; the numbers there are upstream's and unique):
   - Downstream: `… these copies are managed by gearbox-agents: delete the stray file and rerun \`npx gearbox-agents update\``.
   - Upstream: `… protocol ADR numbers are claimed at merge: renumber yours (Upstream release process)`.
 - **When a duplicate is caught:**
-  - With issue IDs, a duplicate needs two PRs settling the same issue.
+  - With issue IDs, a duplicate needs two PRs settling the same issue, or two lanes numbering by habit.
   - A PR's check runs on the PR merged into main as it stood when the check ran. If the other PR landed first, the second PR goes red before merge. Otherwise the push-to-main run goes red at once.
   - Either way it is loud, never silent.
-- **Downstream impact:** checked across all seven stamped downstreams on 2026-09-30 (`docs/adr/` and `docs/gearbox-adr/`). Mr-Otto (334 IDs), Mandy web (18), App (2), delphione_admin (2), mandys-selfheal (0) and Blackbox (5) have no duplicates. dryrun has 10 older pairs, which produce one warning. The new assertion turns nobody red on arrival.
+- **Downstream impact:** checked across all seven stamped downstreams on 2026-09-30 (`docs/adr/` and `docs/gearbox-adr/`). Mr-Otto (334 IDs), Mandy web (18), App (2), delphione_admin (2), mandys-selfheal (0) and Blackbox (5) have no duplicates. dryrun has 10 older pairs; its migration records them, so they produce one warning. The new assertion turns nobody red on arrival.
 - **Tiering:** a new, stricter assertion is L2 (ADR-0010). The fence edits make the PR L1 regardless.
 
 ## 5. Migration and downstream impact
 
-- No migration: existing files keep their numbers, and new files follow §1.
-- The v1 fingerprint already knows the old "starting at 0001" line, so the v1→v2 migration replaces it with the fence as usual.
+- No renumbering: existing files keep their numbers, and new files follow §1.
+- **The arrival writes the list** (§4), only when the repo's `docs/adr/` has duplicate groups and no list file is there yet:
+  - The v1 → v2 migration (`scripts/gearbox-update`, `planMigration`) writes it as one more migration file. It is committed in the migration commit, and the recovery hint (`git add` / `git clean`) and a resumed same-day run treat it like the other migration files. The report's migration section and the migration record in the commit message say "Recorded N older duplicate ADR numbers in `docs/adr/older-duplicates.md` (ADR-0052)".
+  - install writes it when the target already has such groups, and names it in its output.
+  - A repo already on v2 never gets one from update: after arrival, every new duplicate is an error.
+- The v1 fingerprint knows both old "starting at 0001" lines. The protocol bullet goes with the fence as usual. The "Where to find things" line (``- `docs/adr/` — this project's own architectural decisions (starting at 0001, human-authored)``) sits in a project section, which the migration used to carry through unchanged. It now replaces every known `docs/adr/` index line with the v2 line (`DOCS_ADR_LINE`, exported once by `scripts/lib/skeleton.js`) before the index is kept or moved, so neither AGENTS.md nor `docs/INDEX.md` keeps "starting at 0001". A project's own `docs/adr/` line stays as written.
 - Mr-Otto carries a local "claim at merge" rule (its ADR-0074, carried by the migration as a `From v1` extension). With this change it is obsolete, and its manual migration pass deletes it.
 
 ## 6. Testing (`node:test`)
@@ -139,13 +150,26 @@ Add to `scripts/lib/protocol-check.js`, which runs in both `gearbox-agents check
 - **protocol-check**, one test each:
   - `0074-a.md` + `74-b.md` in `docs/adr/` → one error that names both files;
   - `1266-a.md` + `1266-b.md` → an error;
-  - `0045-a.md` + `0045-b.md` → no error, and one warning that names both files;
+  - `0045-a.md` + `0045-b.md` → an error without the list; listed, no error and one warning that names both files;
+  - an unlisted zero-padded pair (`0334-a.md` + `0334-b.md`, on top of 333 older ADRs) → an error, and `0074-x.md` + `0074-y.md` with no list → an error;
+  - a third file joining a listed group → an error;
+  - an unpadded listed pair → the warning; a list line whose group no longer exists → ignored;
+  - one run with an unlisted group and a listed one → the error and the warning;
+  - what `renderOlderDuplicates` writes is what `readOlderDuplicates` reads, with names comma-separated and trimmed (CRLF too);
+  - a `docs/adr` that isn't a directory → no ADRs, no throw;
   - distinct IDs → no error;
   - `README.md` and a non-numbered file → ignored;
   - a duplicate in `docs/gearbox-adr/` → an error carrying the downstream fix text;
-  - in upstream mode → the upstream fix text.
+  - in upstream mode → the upstream fix text;
+  - `gearbox-check --help` names the duplicate-ID check.
+- **update:**
+  - a v1 tree with `docs/adr/` duplicates → the list is written and committed in the migration commit, the report and the migration record name it, the check exits 0 with one warning, and a resumed same-day run's report keeps the line;
+  - a v1 tree without duplicates → no list;
+  - a failed migration commit → the recovery hint's `git add` and `git clean` name the list, and `--force-redo` records it again;
+  - a v2 repo that gains a duplicate → update writes no list, and its report shows the error.
+- **migration (index line):** migrating `test/fixtures/v1.15.2-install/` yields an AGENTS.md that holds `DOCS_ADR_LINE` and not "starting at 0001", against the test fences and against this repo's real ones; an oversize-index migration yields a `docs/INDEX.md` without "starting at 0001"; a project's own `docs/adr/` line is kept.
 - **check-gearbox:** the real repo still passes; the fence budget and hashes are covered by existing tests.
-- **install:** the closing hint and the placeholder name `<issue>-<slug>.md`. Assert the placeholder text in the skeleton test.
+- **install:** the closing hint and the placeholder name `<issue>-<slug>.md`. Assert the placeholder text in the skeleton test, as `DOCS_ADR_LINE`. A target with `docs/adr/` duplicates gets the list and passes the check with one warning; without duplicates, or with a list already there, install writes none.
 - The gate stays `node scripts/check-gearbox.js && node --test test/*.test.js`.
 
 ## 7. Process
@@ -159,5 +183,5 @@ Add to `scripts/lib/protocol-check.js`, which runs in both `gearbox-agents check
 ## Risks and trade-offs
 
 - **IDs are sparse and not contiguous.** Order by date comes from the `Date:` line, not from the ID.
-- **An agent might keep numbering sequentially out of habit.** The resulting IDs are still unique, so nothing collides. The fence line and the template steer agents to the rule; the check can't tell the difference and doesn't try.
+- **An agent might keep numbering sequentially out of habit.** One such ADR is still unique, but two lanes doing it collide again (both write `0334-….md`), and those habit-made duplicates fail the check like any other: padding exempts nothing, and only the groups recorded on arrival warn. The fence line, the template and the subagent prompt steer agents to the rule.
 - **GitHub dependency.** IDs come from the issue tracker. Gearbox is already built on GitHub issues and PRs, and GitLab numbers its issues the same way.
