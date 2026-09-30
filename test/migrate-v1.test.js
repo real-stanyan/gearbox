@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { migrateV1, MigrationError } from "../scripts/lib/migrate-v1.js";
-import { buildKnown, normalizeKnownLine, knownLineHash } from "../scripts/lib/v1-known.js";
+import { buildKnown, normalizeKnownLine, knownLineHash, loadKnown } from "../scripts/lib/v1-known.js";
 import { renderFence, findFence } from "../scripts/lib/fence.js";
 import { headings, sectionBody, splitByLevel } from "../scripts/lib/sections.js";
 import { gateCommand } from "../scripts/lib/protocol-check.js";
-import { PROJECT_TERMS } from "../scripts/lib/skeleton.js";
+import { PROJECT_TERMS, DOCS_ADR_LINE } from "../scripts/lib/skeleton.js";
+import { REPO } from "./helpers.js";
 
 const TEMPLATE = [
   "# example-project", "",
@@ -398,4 +401,30 @@ test("invariant, fuzzed: lines added anywhere in the protocol region land in Gat
     }
   }
   assert.ok(flaggedRounds > 0, "the fuzz never exercised the flagged path");
+});
+
+// --- The v1 docs/adr/ index line (ADR-0052) ---
+
+// The v1 line says "starting at 0001", the numbering ADR-0052 retired. It is upstream template text, so
+// the migration replaces it with the v2 line before the index is kept or moved.
+test("the v1.15.2 install's docs/adr index line becomes the v2 line, in AGENTS.md and in a moved docs/INDEX.md", () => {
+  const fixture = readFileSync(join(REPO, "test/fixtures/v1.15.2-install/AGENTS.md"), "utf8");
+  assert.match(fixture, /^- `docs\/adr\/` — [^\n]*starting at 0001/m, "fixture drifted: the v1 docs/adr index line not found");
+  const run = (agentsMd) => migrateV1({ agentsMd, contextMd: "", known: loadKnown(), protocolBlock, glossaryBlock });
+  const kept = run(fixture);
+  assert.equal(kept.indexMd, null);
+  assert.ok(sectionBody(kept.agentsMd, 2, "Where to find things").split("\n").includes(DOCS_ADR_LINE), kept.agentsMd);
+  assert.doesNotMatch(kept.agentsMd, /starting at 0001/);
+
+  const index = Array.from({ length: 1200 }, (_, i) => `- \`src/module-${i}.ts\` — module ${i}`).join("\n");
+  const moved = run(fixture.replace("- <other module documentation directories, e.g. docs/modules/>", index));
+  assert.ok(moved.indexMd.split("\n").includes(DOCS_ADR_LINE), moved.indexMd.slice(0, 600));
+  assert.doesNotMatch(moved.indexMd, /starting at 0001/);
+  assert.doesNotMatch(moved.agentsMd, /starting at 0001/);
+});
+
+test("a docs/adr index line of the project's own is kept as written", () => {
+  const own = "- `docs/adr/` — our decisions; the numbering is explained in docs/adr/README.md";
+  const { agentsMd } = migrate(nearTemplate.replace("- `CONTEXT.md` — domain glossary", `- \`CONTEXT.md\` — domain glossary\n${own}`));
+  assert.ok(sectionBody(agentsMd, 2, "Where to find things").split("\n").includes(own), agentsMd);
 });

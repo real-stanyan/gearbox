@@ -7,6 +7,7 @@ import { findFence, oneFenceAdvice } from "../scripts/lib/fence.js";
 import { sectionBody } from "../scripts/lib/sections.js";
 import { ciYml } from "../scripts/lib/workflows.js";
 import { renderOlderDuplicates, OLDER_DUPLICATES_PATH } from "../scripts/lib/adr-ids.js";
+import { DOCS_ADR_LINE } from "../scripts/lib/skeleton.js";
 import { REPO, makeUpstream, runTool, runBin, gitInit, git, tmp, read, write, commitAll, guardedOrigin, childEnv } from "./helpers.js";
 
 // The real output of the v1.15.2 installer (--name example-project --maintainer octo-owner
@@ -89,6 +90,8 @@ test("end to end: the v1.15.2 install migrates against this repo's real fences, 
   assert.equal(r.code, 0, r.out);
   assert.equal(findFence(read(down, "AGENTS.md"), "protocol").block, findFence(read(REPO, "AGENTS.md"), "protocol").block);
   assert.equal(findFence(read(down, "CONTEXT.md"), "glossary").block, findFence(read(REPO, "CONTEXT.md"), "glossary").block);
+  assert.ok(read(down, "AGENTS.md").split("\n").includes(DOCS_ADR_LINE));
+  assert.doesNotMatch(read(down, "AGENTS.md"), /starting at 0001/); // the v1 index line and the v1 protocol bullet are both gone
   const log = git(down, "log", "--format=%s", "main..HEAD");
   assert.match(log, /backfill gearbox ADR-0050 \(protocol-fence\)/);
   assert.match(log, /^docs\(protocol\): migrate to the Gearbox v2 layout/m);
@@ -201,6 +204,8 @@ test("a moved index gets a new docs/INDEX.md; AGENTS.md still over budget is a T
   const index = read(down, "docs/INDEX.md");
   assert.match(index, /^# Index\n\n> Moved out of AGENTS\.md by the Gearbox v2 migration/);
   assert.ok(index.includes("- `src/module-1199.ts` — module 1199\n"));
+  assert.ok(index.split("\n").includes(DOCS_ADR_LINE));
+  assert.doesNotMatch(index, /starting at 0001/);
   const bytes = Buffer.byteLength(read(down, "AGENTS.md"));
   assert.ok(bytes > 32768, `AGENTS.md is ${bytes} bytes`);
   const report = read(down, "gearbox-update-report.md");
