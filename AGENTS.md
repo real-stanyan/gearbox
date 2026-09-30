@@ -32,7 +32,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 - `RicksZhang` — shared: stanyan
 - `DamianBuilds-ai` — shared: Damian
 
-<!-- gearbox:protocol v2.0.0 sha256:c59691361a53; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:5cfee13d97b7; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -42,7 +42,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 ### On starting a shift (the start-of-shift steps)
 
 1. **Sync, then read**: `git fetch origin` + fast-forward the local default branch (`git pull --ff-only` while on it) — the repo is the only shared memory, and an unfetched clone is somebody's stale cache of it (a stale clone even means stale *rules*: this very file is version-controlled). Fast-forward impossible = the local default branch has diverged: stop, open an issue, don't build on a forked base (ADR-0046). Then `git log --oneline -10` — see what happened recently
-2. Check GitHub Issues — **first look for open handoff issues** (the previous shift's Memory is in there; reading one and closing it = taking over that lane, see ADR-0005. Several open = parallel lanes: take over at most one, leave the rest untouched — see "Parallel shifts" (ADR-0048). If none found → check whether the most recently closed issue has a "no next shift" terminal declaration: if yes = a compliant terminal shift (ADR-0009), start work normally; if no = the previous shift ended out of compliance, open a Protocol gap issue to record it — either way, rebuild context from git log + open issues), then check other open tasks and notes
+2. Check GitHub Issues, in order (ADR-0054): **open handoff issues** — each is one lane's unfinished Tasks plus its Memory (ADR-0005); take over at most one: claim its listed Tasks, then close it, and leave other lanes' handoffs alone (see "Parallel shifts"). Then **open `Waiting on:` lines**: clear each whose event GitHub already shows (a merged PR) — delete the line, comment the evidence. Then the **frontier** (see "Task ordering"). Rebuild context from git log, the Tasks and their PRs
 3. Run the gate command (`## Gate`) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline
 4. (Downstream repos) Run `npx gearbox-agents version`: `behind` → run `npx gearbox-agents update` and merge its `docs/gearbox-backfill-*` PR through this repo's L1 flow (ADR-0026/0050); `hand-edited` → move the local rules into `## Local protocol extensions`, then re-apply the fence with `npx gearbox-agents update --force` — never edit the fence itself; `v1 layout` → `npx gearbox-agents update` migrates it
 
@@ -50,10 +50,11 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 - Commit in small steps; the message should spell out the **why**, not just the what
 - **Protocol files stay committed — never add them to `.gitignore`**: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/gearbox-adr/`, `.gearbox-version`, `.github/workflows/ci.yml`. The repo is the only shared memory between shifts; an ignored protocol file exists locally but never reaches the next agent's clone (ADR-0037)
-- One agent sees a task through from start to finish; handoffs only happen at task boundaries (issue closed / PR merged), never mid-task
+- One agent sees a task through from start to finish; an unfinished Task changes hands only through a handoff issue (see On ending a shift)
 - Non-trivial changes go through a branch + PR; typo-level tweaks can go straight into main
 - **Project-owned** architectural decisions go in `docs/adr/`, one decision per file, named after the issue that settles it: `docs/adr/<issue>-<slug>.md`, cited `ADR-<issue>` — issue numbers are unique, so parallel lanes never collide; older numbered files keep their numbers, and no ADR is ever renumbered (ADR-0052). Protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
 - Look up domain-term definitions in `CONTEXT.md`; add new project terms under its `## Project terms` as they come up (protocol terms live in its fence)
+- **One fact, one repo**: work that spans sibling repos is tracked — its Task, handoff and `Waiting on:` lines — in the repo where it is done; the others link to it, never copy it (ADR-0054)
 - **Never edit between the `gearbox:` markers** (in `AGENTS.md` or `CONTEXT.md`). Project rules go in the project sections; additions to the protocol go in `## Local protocol extensions`, each with `- Extends:` (the section it extends) and `- Upstream:` (an upstream issue link, `project-specific`, or `undecided`) (ADR-0050)
 - **Keep `AGENTS.md` within 32 KiB**: every agent loads it in full at session start, and Codex silently drops everything past its first 32 KiB. "Where to find things" gets one line per entry — a path plus what's there; longer maps go in `docs/INDEX.md`. `gearbox-agents check` enforces the budget (ADR-0051)
 
@@ -64,17 +65,19 @@ Issues and PRs are the timestamped, append-only, non-decaying conversation carri
 | Role | When to use | When to close |
 |---|---|---|
 | **Task** | There's an actionable thing to do | The task is done and the gate is green |
-| **Memory** (handoff memory) | Leave a comment on the **handoff issue** (see On ending a shift) at shift-end, five-part format | The next shift reads it and closes the handoff issue = handoff complete |
+| **Memory** (handoff memory) | On the **handoff issue** a shift opens when it leaves Tasks unfinished (see On ending a shift): it lists them and carries the five-part Memory | The next shift claims those Tasks and closes the handoff = handoff complete |
 | **Protocol gap** | Hit a question the repo can't answer (rule not written, ambiguous, boundary unclear) | The gap gets folded into AGENTS.md / CONTEXT.md / an ADR |
 
 Hard rules:
 
 - **When you hit a question this repo can't answer, you must open an issue (Protocol gap type) — silent judgment calls are not allowed.** This is the only entry point for the protocol's self-repair — it turns gaps from "tacit understanding" into something explicit, discussable, and closeable.
 - **Memory five-part format** (the minimum valid format for a handoff comment, ADR-0004): ① what's done ② what's blocked ③ what's next ④ close the issue if the task is complete ⑤ **rationale / trade-offs** — required whenever this shift made a non-default decision (what was chosen, why, and what premise failing would overturn it); if no decision was made, write "none" — don't omit it. Missing any one item means the handoff doesn't count. Across all five parts: content already captured in a durable artifact (ADR / issue / PR / commit / diff) is referenced by number or path, not restated — copies decay, references don't (ADR-0045). Inline belongs only what no artifact carries.
-- **Handoff = the moment the issue closes / the PR merges**, not just feeling like things were "explained clearly." Switching agents without closing the issue is a mid-task handoff, which violates the previous section.
+- **Handoff = the moment the next shift claims the listed Tasks and closes the handoff issue**, not just feeling like things were "explained clearly." An unfinished Task changing agents any other way violates the previous section.
 - **A PR is the implementation vehicle for a Task, not a separate role**: a PR references the Task issue it implements, and closes that issue on merge. New issues found during PR review get their own issue — don't pile them up in PR comments.
 
-**Task ordering (blocking edges, ADR-0044)**: when one Task depends on another, the dependent issue's body declares each prerequisite with a literal `Blocked by: #N` line (one per blocker). A shift claims only **frontier** tasks — open tasks with no open blockers; when a blocker closes, its dependents join the frontier. Plain text, grep-able, no Projects/labels needed. This is a hygiene convention — a stale edge costs a judgment call at claim time, nothing more.
+**Task ordering (blocking edges, ADR-0044)**: when one Task depends on another, the dependent issue's body declares each prerequisite with a literal `Blocked by: #N` line (one per blocker). A shift claims only **frontier** tasks — open tasks with no open blockers and no `Waiting on:` line; when a blocker closes, its dependents join the frontier unless waiting. Plain text, grep-able, no Projects/labels needed. This is a hygiene convention — a stale edge costs a judgment call at claim time, nothing more.
+
+**Waiting on a person (ADR-0054)**: a Task whose next step only a person can take (a merge, a device test, a decision) carries one literal `Waiting on: <person> — <what>` line per wait, `<person>` as named in `## Roster`. It needs no handoff and stays off the frontier until the line is cleared — by that person, or by a shift that sees the event already happened on GitHub (delete the line, comment the evidence). Standing debt is one Task per item, never a list copied from shift to shift.
 
 **Claiming (ADR-0047)**: a claim = assigning yourself on the Task issue (`gh issue edit <N> --add-assignee @me` — the GitHub account the agent acts under); first assignment wins, visible and timestamped. No triage permission → a "claiming this" comment instead. An open frontier task with no assignee and no claim comment is free. A shift ending with the task unfinished states in its progress comment whether the claim is released (unassign) or carried; a dangling assignment from a shift that left no comment is stale, not binding. Single-human repos may skip claiming — with one queue reader it informs nobody; its value begins at the second human.
 
@@ -138,15 +141,14 @@ The Gate command lives in the project's `## Gate` section. CI's `gate` job (`.gi
 1. The gate and the protocol check are green (see Gate contract)
 2. commit + push
 3. Close finished Task issues as usual; for half-finished ones, write progress into that issue's comment
-4. **Open a handoff issue for the next shift** (Task type, kept open, ADR-0005): the body states the current state and suggestions for next steps, and this shift's Memory comment (five-part format, ADR-0004) goes here. In multi-human repos the body also lists the Task issues this lane still owns (takeover = claiming exactly those), or marks itself **"context only"** when nothing transfers (ADR-0048). **This is the only entry point the next shift is guaranteed to encounter** — Memory no longer gets buried in a casually closed Task issue. **The sole exception — a terminal shift** (ADR-0009): when archiving / confirming there's no next shift, you may skip opening one, but you must explicitly declare "no next shift" + the reason in a comment on the last closed issue. A silent terminal doesn't count as terminal. Terminal is repo-level: with another lane still live (someone else's open handoff or claimed task), a terminal declaration is invalid — that's just a lane end (ADR-0048)
+4. **Hand over unfinished Tasks** (ADR-0054): if this shift leaves Tasks it owns unfinished and not waiting on a person — claimed, or worked on where claiming is skipped; an open PR counts — open a **handoff issue** (Task type, kept open, ADR-0005) listing them, with this shift's five-part Memory (ADR-0004) as its comment; context that must outlive the shift goes in its body or a standing tracking Task. Otherwise open none: progress lives in the Tasks and PRs, waits on people in `Waiting on:` lines. No open handoff means nothing is in flight — there is no terminal declaration
 
 ### Parallel shifts (multi-human repos, ADR-0048)
 
 Serial single-human repos need none of this — with one live shift, the rules above already suffice and every rule below degenerates to them.
 
 - **A lane = one shift + its claimed tasks.** Parallel shifts are allowed iff each works only on frontier tasks it has claimed (ADR-0044/0047). Disjoint claims = disjoint lanes; no other lock exists or is needed — task-level overlap is prevented at claim time, file-level overlap resolves in the PR merge like any concurrent development.
-- **Handoff issues are per-lane**: shift-end rule 4 unchanged in shape, but a starting shift reads **all** open handoff issues, takes over **at most one** lane (claim its listed tasks, close its handoff), and leaves other lanes' handoffs open — closing another live lane's handoff is stealing its baton. A **"context only"** handoff (lane finished, nothing transfers) is closed by its first reader after reading.
-- **Terminal declarations (ADR-0009) are repo-level, not lane-level** — see On ending a shift.
+- **Handoff issues are per-lane**: a starting shift reads **all** open handoff issues, takes over **at most one** lane (claim its listed Tasks, close its handoff), and leaves other lanes' handoffs open — closing another live lane's handoff is stealing its baton.
 - A stalled lane is released by the maintainer: unassign its tasks, close its handoff (the stale-claim rule in ADR-0047 already makes dangling assignments non-binding).
 
 ### Branch hygiene (optional)

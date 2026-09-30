@@ -882,7 +882,7 @@
       <div class="step reveal" style="--d: 0ms">
         <div class="step-num">01</div>
         <h3 data-t="shift.s1t">Sync, then read</h3>
-        <p data-t="shift.s1p">Fetch and fast-forward, read recent commits, then find the open handoff issue — the previous shift's memory lives there.</p>
+        <p data-t="shift.s1p">Fetch and fast-forward, read recent commits, then take over an open handoff if there is one, clear the waits that have resolved, and pick from the frontier.</p>
       </div>
       <div class="step reveal" style="--d: 60ms">
         <div class="step-num">02</div>
@@ -897,7 +897,7 @@
       <div class="step reveal" style="--d: 180ms">
         <div class="step-num">04</div>
         <h3 data-t="shift.s4t">Hand off</h3>
-        <p data-t="shift.s4p">Open a handoff issue with a five-part memory: done, blocked, next, closures, and the rationale behind every non-default decision.</p>
+        <p data-t="shift.s4p">Left Tasks unfinished? Hand them over in a handoff issue with a five-part memory. Waiting on a person? Say so on the Task, in one line.</p>
       </div>
     </div>
   </div>
@@ -956,7 +956,7 @@
     </div>
     <div class="feature reveal" style="--d: 60ms">
       <h3 data-t="guard.g2t">Three roles for issues</h3>
-      <p data-t="guard.g2a"><strong>Task</strong> — an actionable thing to do. <strong>Memory</strong> — the shift-end handoff comment. <strong>Protocol gap</strong> — a question the repo can't answer.</p>
+      <p data-t="guard.g2a"><strong>Task</strong> — an actionable thing to do. <strong>Memory</strong> — the handoff comment for unfinished work. <strong>Protocol gap</strong> — a question the repo can't answer.</p>
       <p data-t="guard.g2b">Hit a gap? Opening an issue is mandatory — silent judgment calls are not allowed. That's the protocol's self-repair loop.</p>
     </div>
     <div class="feature reveal" style="--d: 120ms">
@@ -1161,13 +1161,13 @@
     'shift.title': '交接不留<br>任何靠猜的部分。',
     'shift.sub': '一次只有一个 agent 在干活。仓库 —— git 历史、issues、PR —— 是轮班之间唯一的共享记忆。每一班都走同一个循环：',
     'shift.s1t': '先同步，再读',
-    'shift.s1p': 'fetch 并快进，读最近的提交，然后找那个开着的交接 issue —— 上一班的记忆就在里面。',
+    'shift.s1p': 'fetch 并快进，读最近的提交；有开着的交接 issue 就接手，清掉已经等到的事，再从前沿任务里挑。',
     'shift.s2t': '认领并做完',
     'shift.s2p': '认领一个前沿任务，从头做到尾。小步提交，讲清楚<em>为什么</em>。非琐碎改动走分支 + PR。',
     'shift.s3t': '门禁绿灯',
     'shift.s3p': '硬门禁 —— 你自己的测试／类型检查／lint 命令 —— 必须在下班前通过。CI 跑同一行命令。红了就不许合。',
     'shift.s4t': '交班',
-    'shift.s4p': '开一个交接 issue，写五段式记忆：做完了什么、卡在哪、下一步、关掉了什么，以及每个非默认决定背后的理由。',
+    'shift.s4p': '有没做完的任务，就开交接 issue 转交，写五段式记忆；在等人，就在 Task 里写一行。',
 
     'arch.eyebrow': '架构',
     'arch.title': '五个文件。零依赖。',
@@ -1189,7 +1189,7 @@
     'guard.g1a': '<span class="tag tag-l1">L1</span>硬规则、门禁、分级机制本身 —— agent 必须等 maintainer 明确同意才能合，仓库里有第二个人时，只认 maintainer 亲手合并。',
     'guard.g1b': '<span class="tag tag-l2">L2</span>工作约定层面的细化 —— agent 自主合并。但任何协议改动依然要有 issue、ADR 和一个绿灯 PR。',
     'guard.g2t': 'issue 的三种角色',
-    'guard.g2a': '<strong>Task</strong> —— 一件可执行的事。<strong>Memory</strong> —— 下班时的交接留言。<strong>Protocol gap</strong> —— 仓库回答不了的问题。',
+    'guard.g2a': '<strong>Task</strong> —— 一件可执行的事。<strong>Memory</strong> —— 交接未完成工作时的留言。<strong>Protocol gap</strong> —— 仓库回答不了的问题。',
     'guard.g2b': '碰到 gap？必须开 issue —— 不允许私自判断。这就是协议的自我修补回路。',
     'guard.g3t': '不会衰减的记忆',
     'guard.g3p': '五段式交接格式：做完了什么、卡在哪、下一步、关掉了什么 —— 以及每个非默认决定背后的理由，包括什么前提被推翻就该重来。',

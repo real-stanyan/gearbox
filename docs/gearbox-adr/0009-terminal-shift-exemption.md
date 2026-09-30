@@ -1,7 +1,7 @@
 # ADR-0009: Terminal shift ending can be exempted from the handoff issue — but must explicitly declare "no next shift"
 
 - Date: 2026-07-17
-- Status: accepted
+- Status: superseded by ADR-0054 (no terminal declaration: no open handoff means nothing is in flight)
 - Revises: ADR-0005 (does not overturn its body, adds a boundary clause)
 
 ## Context
