@@ -1,12 +1,13 @@
 // Shared protocol assertions (ADR-0051). Downstream: `gearbox-agents check` (CI job
 // gearbox-check). Upstream: scripts/check-gearbox.js runs them in upstream mode, which skips
 // .gearbox-version and adds the protocol-fence budget.
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 import { findFence, FenceError, oneFenceAdvice } from "./fence.js";
 import { baseTitle, fenceRun, headings, sectionBody, sectionSizes, splitByLevel } from "./sections.js";
 import { planWorkflowFixes, CHECK_PATH } from "./workflows.js";
+import { duplicateAdrIds, readOlderDuplicates, OLDER_DUPLICATES_PATH } from "./adr-ids.js";
 
 export const AGENTS_MAX_BYTES = 32768;
 export const PROTOCOL_FENCE_MAX_BYTES = 20480;
@@ -73,26 +74,6 @@ function isIgnored(root, path) {
   } catch {
     return false;
   }
-}
-
-// ADR files in `dir` grouped by their numeric ID (ADR-0052): "0074-x.md" and "74-y.md" are both
-// ADR-74. Only groups of two or more come back, ordered by ID, file names sorted. A file without
-// a leading number (README, notes) isn't an ADR.
-export function duplicateAdrIds(root, dir) {
-  const abs = join(root, dir);
-  if (!existsSync(abs)) return [];
-  const byId = new Map();
-  for (const name of readdirSync(abs)) {
-    const m = name.match(/^(\d+)-.+\.md$/);
-    if (!m) continue;
-    const id = Number(m[1]);
-    if (!byId.has(id)) byId.set(id, []);
-    byId.get(id).push(name);
-  }
-  return [...byId]
-    .filter(([, files]) => files.length > 1)
-    .sort(([a], [b]) => a - b)
-    .map(([id, files]) => ({ id, files: files.sort() }));
 }
 
 export function runProtocolChecks(root, { upstream = false } = {}) {
@@ -209,12 +190,16 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
     for (const f of NEVER_IGNORED)
       if (isIgnored(root, f)) errors.push(`protocol file must not be gitignored: ${f} (ADR-0037 — it would never reach the next shift's clone)`);
 
-  // Project ADRs are named after their issue (ADR-0052). A duplicate involving an issue ID (no
-  // leading zero) is new and fails. Duplicates among older zero-padded sequential IDs can only be
-  // fixed by renumbering, which breaks cited references — they warn, once for all of them.
+  // Project ADRs are named after their issue (ADR-0052), so a duplicate ID in docs/adr/ is an error,
+  // whatever its padding — unless the repo already had it on arrival: the v1 → v2 migration or install
+  // recorded those groups in docs/adr/older-duplicates.md, and their only fix, renumbering, breaks
+  // cited references. They warn, once for all of them. A group stays listed only while every one of
+  // its files is on its line, so a file joining it later is an error again.
+  const listed = readOlderDuplicates(root);
   const older = [];
   for (const { id, files } of duplicateAdrIds(root, "docs/adr")) {
-    if (files.every((f) => f.startsWith("0"))) older.push(`ADR-${id} (${files.join(", ")})`);
+    const line = listed.get(id);
+    if (line && files.every((f) => line.has(f))) older.push(`ADR-${id} (${files.join(", ")})`);
     else
       errors.push(
         `docs/adr: ADR-${id} is used by ${files.length} files: ${files.join(", ")} — name a new ADR after the issue that settles it (a fresh issue if that number is taken); never renumber an ADR that is already cited (ADR-0052)`,
@@ -222,7 +207,7 @@ export function runProtocolChecks(root, { upstream = false } = {}) {
   }
   if (older.length)
     warnings.push(
-      `docs/adr: older ADR numbers used by more than one file: ${older.join("; ")} — references to them are ambiguous; new ADRs are named after their issue, so this can't recur (ADR-0052)`,
+      `docs/adr: older duplicate ADR numbers, recorded in ${OLDER_DUPLICATES_PATH}: ${older.join("; ")} — references to them are ambiguous and they stay as they are (ADR-0052)`,
     );
   for (const { id, files } of duplicateAdrIds(root, "docs/gearbox-adr"))
     errors.push(
