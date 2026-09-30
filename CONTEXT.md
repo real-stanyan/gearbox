@@ -2,7 +2,7 @@
 
 Domain glossary. All agents' understanding of domain terms is grounded here; code naming stays consistent with the terms defined here.
 
-<!-- gearbox:glossary v2.0.0 sha256:83cf4a9115cf; managed by gearbox-agents, do not edit by hand; project terms go in "## Project terms" -->
+<!-- gearbox:glossary v2.0.0 sha256:5cae83db0235; managed by gearbox-agents, do not edit by hand; project terms go in "## Project terms" -->
 ## Protocol terms
 
 | Term | Definition | Notes |
@@ -17,12 +17,11 @@ Domain glossary. All agents' understanding of domain terms is grounded here; cod
 | roster | AGENTS.md's `## Roster`: one line per GitHub account — `human` (only that person), `shared` (the person and their agents) or `agent` (only agents, run by a named person); `— maintainer` marks the maintainer's accounts. The human count is the number of distinct people on `human`/`shared` lines; more than one = a multi-human repo | ADR-0053; in a multi-human repo only the maintainer's own merge approves L1 |
 | Mechanism reference (criterion) | Any new content that references L1/L2, Hard rules, Working agreement, or other protocol mechanisms (by keyword or semantic dependency) is treated as L1 | ADR-0012, "mechanism reference takes priority"; guards against using "optional + pure addition" as an L2 loophole to expand the protocol |
 | Memory five-part format | The minimum valid format for a handoff comment: ① what's done ② what's blocked ③ what's next ④ close the issue if the task is complete ⑤ rationale/trade-offs (write "none" if no decision was made) | ADR-0004; missing any item makes the handoff invalid |
-| terminal shift | The form a shift ends in when archiving / confirming there's no next shift: a handoff issue may be skipped, but the last closed issue must explicitly declare "no next shift" + a reason. Repo-level, not lane-level — invalid while another lane is still live | ADR-0009; a silent ending doesn't count as terminal; repo-level scope per ADR-0048 |
 | blocking edge | A literal `Blocked by: #N` line in a dependent Task issue's body, declaring one prerequisite Task per line | ADR-0044; a hygiene convention — a stale edge costs a judgment call, not a violation |
-| frontier task | An open Task issue with no open blockers — the only kind of task a shift may claim; when a blocker closes, its dependents join the frontier | ADR-0044 |
+| frontier task | An open Task issue with no open blockers and no `Waiting on:` line — the only kind of task a shift may claim; when a blocker closes, its dependents join the frontier | ADR-0044/0054 |
+| waiting on | A literal `Waiting on: <person> — <what>` line in a Task body: a next step only that person can take (a merge, a device test, a decision). The Task is off the frontier until the line is cleared, by the person or by a shift that sees the event happened on GitHub | ADR-0054; one Task per standing debt |
 | claim | Self-assignment on a Task issue (`gh issue edit <N> --add-assignee @me`), first wins; a "claiming this" comment where assignment isn't possible. An open frontier task with no assignee and no claim comment is free | ADR-0047; single-human repos may skip — the value begins at the second human |
 | lane | One shift plus the tasks it has claimed; parallel shifts are allowed iff lanes are disjoint (each works only on frontier tasks it claimed) | ADR-0048; handoff issues are per-lane |
-| context-only handoff | A handoff issue whose lane finished with nothing to transfer — kept for its Memory comment, closed by its first reader after reading | ADR-0048 |
 | downstream | A project that runs the Gearbox protocol: its fences come from upstream releases (`gearbox-agents update`); its own rules live in project sections and `## Local protocol extensions`. Sync status is self-checked via `gearbox-version` (pull-primary, ADR-0026 — the upstream fleet dashboard was retired in ADR-0033) | See ADR-0026; fences per ADR-0050 |
 | backfill | Downstream pulls Gearbox protocol improvements; **pull-triggered** — downstream runs `gearbox-version` at the start of a shift and `gearbox-update` if it's behind (or the weekly `gearbox-sync` Action does), which rewrites both fences and copies new protocol ADRs on a backfill branch; it's alignment, not enforcement — merging the PR is the downstream's L1 decision | ADR-0013 → ADR-0026 → ADR-0050 |
 | protocol version number | A semver-variant version: **major** = cross-tool/cross-repo contract change; **minor** = a new mechanism added; **patch** = revision of an existing file. Two numbers: the package version (package.json = tag) moves every release; the protocol version (the fence markers, mirrored in downstream `.gearbox-version`) moves only when fence content changes | ADR-0023, split by ADR-0050; baseline v0.0.0 |

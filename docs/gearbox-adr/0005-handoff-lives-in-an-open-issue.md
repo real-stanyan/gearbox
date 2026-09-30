@@ -1,7 +1,7 @@
 # ADR-0005: Handoff Memory lives in an open handoff issue, not buried in a closed Task issue
 
 - Date: 2026-07-17
-- Status: accepted
+- Status: accepted; amended by ADR-0054 (opened only when Tasks are left unfinished)
 - Provenance: this decision originated in the date-cli Path A experiment (originally date-cli ADR-0007), and backfilled into the scaffold after being validated in real multi-agent collaboration
 
 ## Context
