@@ -92,7 +92,7 @@ This protocol isn't just theory — it ran **4 rounds of multi-agent collaborati
 | Tiered authorization for protocol changes (L1/L2) | 0006 | Hard rules/Gate can't be changed autonomously by an agent; Working agreement can | date-cli |
 | PR disposition details | 0007 | Merge strategy / merge authority / mutual review or not no longer rely on ad hoc authorization | date-cli practice, retroactively confirmed |
 | Explicit division-of-labor placeholder | 0008 | Division of labor is a project property; the fallback with no agreement = Task issue claim-based ownership | Round 5 |
-| Terminal-shift exemption | 0009 | Distinguishes "ended shift in violation" from "work is genuinely done"; a silent ending doesn't count as terminal | Round 5 |
+| Terminal-shift exemption (superseded by ADR-0054) | 0009 | Distinguishes "ended shift in violation" from "work is genuinely done"; a silent ending doesn't count as terminal | Round 5 |
 | Gate assertion tiering | 0010 | Tightening a gate assertion is frictionless L2; loosening/removing one needs human agreement | Round 5 |
 | Subagent template and routing | 0011 | The main agent lacked a unified template for dispatching work; downstream can backfill it as needed | Round 6 |
 | L1/L2 boundary criterion (mechanism-reference-first) | 0012 | Agents used "optional + pure addition" as an L2 channel to expand the protocol's boundary (retrospective on PR #21) | Round 6 |
@@ -112,7 +112,7 @@ This protocol isn't just theory — it ran **4 rounds of multi-agent collaborati
 - **Concurrency:** the whole protocol assumes a shift model (one agent at a time). Multiple agents present simultaneously would break the premise underlying ADR-0007 (which itself documents the conditions that would overturn it)
 - **Division of labor:** ADR-0008 admits n=0 — the placeholder is the answer
 - **L1 while offline:** so far the weak-b form has always been the maintainer responding in real time; when the maintainer is offline, an L1 change just sits there. This bottleneck is explicitly accepted but has never actually been felt
-- **Ceremony cost:** every shift's issue + five-field Memory + mandatory ADR for protocol changes — in the protocol experiment this was data; in a high-frequency, small-task setting it's a tax
+- **Ceremony cost:** every shift's issue + five-field Memory + mandatory ADR for protocol changes — in the protocol experiment this was data; in a high-frequency, small-task setting it's a tax (ADR-0054 cut the per-shift issue: handoffs now carry only unfinished work)
 
 If some agent doesn't recognize `AGENTS.md`, symlink it in the repo: `ln -s AGENTS.md <the filename that tool expects>`.
 
