@@ -32,7 +32,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 - `RicksZhang` — shared: stanyan
 - `DamianBuilds-ai` — shared: Damian
 
-<!-- gearbox:protocol v2.0.0 sha256:d55c774d7eba; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:a8be95349bd3; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -50,7 +50,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 
 - Commit in small steps; the message should spell out the **why**, not just the what
 - **Protocol files stay committed — never add them to `.gitignore`**: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/gearbox-adr/`, `.gearbox-version`, `.github/workflows/ci.yml`. The repo is the only shared memory between shifts; an ignored protocol file exists locally but never reaches the next agent's clone (ADR-0037)
-- One agent sees a task through from start to finish; handoffs only happen at task boundaries (issue closed / PR merged), never mid-task
+- One agent sees a task through from start to finish; an unfinished Task changes hands only through a handoff issue (see On ending a shift)
 - Non-trivial changes go through a branch + PR; typo-level tweaks can go straight into main
 - **Project-owned** architectural decisions go in `docs/adr/`, one decision per file, named after the issue that settles it: `docs/adr/<issue>-<slug>.md`, cited `ADR-<issue>` — issue numbers are unique, so parallel lanes never collide; older numbered files keep their numbers, and no ADR is ever renumbered (ADR-0052). Protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
 - Look up domain-term definitions in `CONTEXT.md`; add new project terms under its `## Project terms` as they come up (protocol terms live in its fence)
@@ -75,9 +75,9 @@ Hard rules:
 - **Handoff = the moment the issue closes / the PR merges**, not just feeling like things were "explained clearly." Switching agents without closing the issue is a mid-task handoff, which violates the previous section.
 - **A PR is the implementation vehicle for a Task, not a separate role**: a PR references the Task issue it implements, and closes that issue on merge. New issues found during PR review get their own issue — don't pile them up in PR comments.
 
-**Task ordering (blocking edges, ADR-0044)**: when one Task depends on another, the dependent issue's body declares each prerequisite with a literal `Blocked by: #N` line (one per blocker). A shift claims only **frontier** tasks — open tasks with no open blockers and no `Waiting on:` line; when a blocker closes, its dependents join the frontier. Plain text, grep-able, no Projects/labels needed. This is a hygiene convention — a stale edge costs a judgment call at claim time, nothing more.
+**Task ordering (blocking edges, ADR-0044)**: when one Task depends on another, the dependent issue's body declares each prerequisite with a literal `Blocked by: #N` line (one per blocker). A shift claims only **frontier** tasks — open tasks with no open blockers and no `Waiting on:` line; when a blocker closes, its dependents join the frontier unless waiting. Plain text, grep-able, no Projects/labels needed. This is a hygiene convention — a stale edge costs a judgment call at claim time, nothing more.
 
-**Waiting on a person (ADR-0054)**: a Task whose next step only a person can take (a merge, a real-device test, a decision, a credential) carries one literal `Waiting on: <person> — <what>` line per wait, `<person>` as named in `## Roster`. It stays off the frontier until the line is cleared — by that person, or by a shift that sees the event already happened on GitHub (delete the line, comment the evidence). Standing debt is one Task per item, never a list copied from shift to shift.
+**Waiting on a person (ADR-0054)**: a Task whose next step only a person can take (a merge, a device test, a decision) carries one literal `Waiting on: <person> — <what>` line per wait, `<person>` as named in `## Roster`. It needs no handoff and stays off the frontier until the line is cleared — by that person, or by a shift that sees the event already happened on GitHub (delete the line, comment the evidence). Standing debt is one Task per item, never a list copied from shift to shift.
 
 **Claiming (ADR-0047)**: a claim = assigning yourself on the Task issue (`gh issue edit <N> --add-assignee @me` — the GitHub account the agent acts under); first assignment wins, visible and timestamped. No triage permission → a "claiming this" comment instead. An open frontier task with no assignee and no claim comment is free. A shift ending with the task unfinished states in its progress comment whether the claim is released (unassign) or carried; a dangling assignment from a shift that left no comment is stale, not binding. Single-human repos may skip claiming — with one queue reader it informs nobody; its value begins at the second human.
 

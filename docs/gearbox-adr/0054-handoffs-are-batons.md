@@ -12,7 +12,7 @@ Every shift had to end with a handoff issue, unless it declared "no next shift" 
 An audit of the three downstreams and Gearbox (2026-09-30) found handoffs doing three jobs:
 
 - **A baton**: unfinished Tasks passing to the next shift. Gearbox uses them this way. Its queue never exceeds one, and each is taken over.
-- **A progress note.** One downstream opened 172 handoffs in 42 days, 71% of them context-only, with a median life of 1.5 hours. Closing comments were mostly formulaic, and ten handoffs were closed within seconds by one pasted comment. One account opens and closes them all, so whether anyone read them is unknowable.
+- **A progress note.** One downstream opened 172 handoffs in 42 days, 71% of them context-only, with a median life of 1.5 hours. A third of the closing comments were a formulaic "read and close", and ten handoffs were closed within seconds by one pasted comment. One account opens and closes them all, so whether anyone read them is unknowable.
 - **A ledger of waits on people**: merges, real-device tests, releases, decisions. In two downstreams, 55 of 61 open handoffs are such waits, and the queue never drains. Many had already resolved: 16 of 22 "waiting for merge" handoffs have a later comment saying it merged. One downstream carried device-test debt through 117 handoffs, each shift putting it back unchanged.
 
 Two sibling downstreams also opened a dozen pairs of near-identical handoffs within minutes of each other.
@@ -24,10 +24,10 @@ The mandatory handoff and the terminal-declaration check turned the last two job
 - **A handoff issue exists only when a shift leaves Tasks it owns unfinished.** "Owns" means claimed, or worked on where claiming is skipped; an open PR counts. The handoff lists those Tasks and carries the five-part Memory. Context that must outlive the shift goes in its body, or in a standing tracking Task referenced by number. A shift that finishes everything opens none.
 - **Taking over = claiming the listed Tasks**, then closing the handoff. The claim is the evidence it was read. There are no context-only handoffs.
 - **No terminal declaration.** No open handoff means nothing is in flight. This supersedes ADR-0009, together with the start-of-shift branch that opened a Protocol gap when a declaration was missing.
-- **`Waiting on: <person> — <what>`**, a literal line in a Task body, one per wait, with `<person>` as named in `## Roster`. The Task is off the frontier until the line is cleared, either by that person or by a shift that sees the event happen on GitHub (delete the line, comment the evidence). Standing debt is one Task per item.
+- **`Waiting on: <person> — <what>`**, a literal line in a Task body, one per wait, with `<person>` as named in `## Roster`. The Task needs no handoff and is off the frontier until the line is cleared, either by that person or by a shift that sees the event happen on GitHub (delete the line, comment the evidence). Standing debt is one Task per item.
 - **Start of shift** reads in order: open handoffs (take over at most one lane), open `Waiting on:` lines (clear the ones already resolved), then the frontier.
 - **One fact, one repo**: work spanning sibling repos is tracked in the repo where it is done; the others link to it.
-- Fence budget: the protocol fence went from 19402 B to 19344 B.
+- Fence budget: the protocol fence went from 19402 B to 19364 B.
 
 ## Alternatives rejected
 
