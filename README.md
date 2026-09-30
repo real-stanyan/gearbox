@@ -51,7 +51,7 @@ If a user pointed you at this repo and asked you to "install Gearbox" into their
    npx gearbox-agents install --maintainer <the-users-github-username> --gate "<the-projects-check-command>"
    ```
 
-   - `--maintainer` = the user's **GitHub username** (asynchronous L1 approval is verified against that account, ADR-0034). Ask the user if you don't know it.
+   - `--maintainer` = the user's **GitHub username**. It becomes the maintainer line of `## Roster` (`shared`, since agents act under it); a repo with a second person lists every account there, and its L1 PRs are then merged by the maintainer's own hand (ADR-0053). Ask the user if you don't know it.
    - `--gate` = a command that automatically asserts "nothing's broken" (e.g. `npx tsc --noEmit && npx vitest run`). Derive it from the project's tooling, or ask.
    - Both flags are optional — omitting them leaves `<placeholder>`s to fill in later (the generated `ci.yml` then ships a deliberately-failing placeholder so CI can't be green before the gate is real).
 3. **After install**: fill in the remaining placeholders (`grep -n '<' AGENTS.md` lists them: project intro, Tech stack, Hard rules, Division of labor, Where to find things), then make the first commit.

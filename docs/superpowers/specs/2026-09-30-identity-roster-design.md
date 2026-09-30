@@ -88,7 +88,7 @@ The maintainer's accounts are the `maintainer` lines of `## Roster`, which lists
 Replace the paragraph beginning `L1's "explicit agreement" is a weak-b form` with:
 
 ```
-L1's explicit agreement comes only from the maintainer: an `agreed` PR comment or an Approve review from a `maintainer` account, or agreement in the session. It covers the commits it saw; a later push needs a new one. **Multi-human repos** (more than one person in `## Roster`): only the maintainer's own merge approves, and agents never merge an L1 PR — agents act under the humans' accounts, so no comment or review proves who wrote it (ADR-0042/0053). In every repo, an agent never writes an approval — no `agreed`, no Approve, no approval record — for anyone. GitHub's Approve button stays optional; the maintainer as L1 bottleneck is an accepted cost.
+L1's explicit agreement comes only from the maintainer: an `agreed` PR comment or an Approve review from a `maintainer` account, or agreement in the session. It covers the commits it saw; a later push needs a new one. **Multi-human repos** (more than one person on the `human`/`shared` lines of `## Roster`): only the maintainer's own merge approves, and agents never merge an L1 PR — agents act under the humans' accounts, so no comment or review proves who wrote it (ADR-0042/0053). In every repo, an agent never writes an approval — no `agreed`, no Approve, no approval record — for anyone. GitHub's Approve button stays optional; the maintainer as L1 bottleneck is an accepted cost.
 ```
 
 ### Fence, other mentions

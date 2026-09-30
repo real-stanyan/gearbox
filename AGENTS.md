@@ -7,7 +7,7 @@ A starter scaffold for multi-agent collaboration projects: `AGENTS.md` as the si
 
 ## Tech stack
 
-- Node.js ≥ 18, no runtime dependencies: the structural self-check (`scripts/check-gearbox.js`), a `node:test` suite (`test/`), and the tool family — `scripts/gearbox-install` scaffold / `scripts/gearbox-version` sync quick-check / `scripts/gearbox-update` downstream sync + v1→v2 migration / `scripts/gearbox-check` protocol check / `scripts/gearbox-prune` branch hygiene — sharing `scripts/lib/` (fence, sections, protocol-check, adr-ids, skeleton, workflows, v1-known, migrate-v1, the TUI animation layer) (ADR-0016/0017/0022/0030/0035/0050/0051/0052)
+- Node.js ≥ 18, no runtime dependencies: the structural self-check (`scripts/check-gearbox.js`), a `node:test` suite (`test/`), and the tool family — `scripts/gearbox-install` scaffold / `scripts/gearbox-version` sync quick-check / `scripts/gearbox-update` downstream sync + v1→v2 migration / `scripts/gearbox-check` protocol check / `scripts/gearbox-prune` branch hygiene — sharing `scripts/lib/` (fence, sections, protocol-check, adr-ids, roster, skeleton, workflows, v1-known, migrate-v1, the TUI animation layer) (ADR-0016/0017/0022/0030/0035/0050/0051/0052/0053)
 - Plain Markdown documentation (AGENTS.md / CONTEXT.md / ADRs)
 
 ## Hard rules

@@ -6,7 +6,7 @@ Affects downstream field.
 
 ## What / Why / Changes
 
-<!-- Briefly: what was done / why / list of changed files. Once CI is green, merge it yourself (L2) or wait for maintainer agreement (L1). -->
+<!-- Briefly: what was done / why / list of changed files. Once CI is green, merge it yourself (L2), or for L1 wait for the maintainer's agreement — in a multi-human repo the maintainer merges it. -->
 
 ## Affects downstream
 

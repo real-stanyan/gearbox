@@ -191,8 +191,8 @@ if (!protocolFence || !glossaryFence)
 
 // ============== Interactive maintainer binding (TTY only, ADR-0036) ==============
 //
-// Why bind at install time: async L1 approval is verified against the maintainer's GitHub
-// account (ADR-0034) — an unfilled <maintainer> placeholder matches no account, so L1 stays
+// Why bind at install time: L1 approval comes from the maintainer lines of ## Roster
+// (ADR-0034/0053) — an unfilled <maintainer> placeholder names no account, so L1 stays
 // silently dead until someone notices. Unlike the Gate placeholder (backstopped by a
 // deliberately-red ci.yml), the placeholder here has no hard check, so the install prompt is
 // the best moment to catch it. Binding stays optional: Enter skips, same end state as before.
