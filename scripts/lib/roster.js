@@ -20,9 +20,9 @@ export function rosterLine(login, kind, person, { maintainer = false } = {}) {
   return `- \`${login}\` — ${kind}: ${person}${maintainer ? " — maintainer" : ""}`;
 }
 
-// A person that still holds a dash separator or ends in "maintainer" is a mistyped tail folded into
+// A person that still holds a dash separator is a mistyped tail folded into
 // the name ("Ann – maintainer", "Ann — Maintainer"): unreadable, never a second person.
-const mistyped = (person) => /(^|\s)[—–-](\s|$)/.test(person) || /maintainer$/i.test(person);
+const mistyped = (person) => /(^|\s)[—–-](\s|$)/.test(person);
 
 function parseItem(line) {
   const m = line.match(ITEM);

@@ -108,6 +108,15 @@ test("rosterLine renders each form so parseRoster reads it back", () => {
   assert.equal(r.entries.length, 3);
 });
 
+test("a login ending in 'maintainer' round-trips as its own person", () => {
+  for (const login of ["foo-maintainer", "maintainer"]) {
+    const r = parseRoster(md(rosterLine(login, "shared", login, { maintainer: true })));
+    assert.deepEqual(r.errors, [], login);
+    assert.equal(r.entries[0].person, login);
+    assert.equal(r.entries[0].maintainer, true);
+  }
+});
+
 test("findAccount matches logins case-insensitively", () => {
   const r = parseRoster(md("- `Real-Stanyan` — human: stanyan — maintainer"));
   assert.equal(findAccount(r, "real-stanyan").login, "Real-Stanyan");
