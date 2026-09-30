@@ -9,6 +9,8 @@ test("install lays down a v2 tree that passes gearbox-check", () => {
   gitInit(target);
   const r = runTool("gearbox-install", [target, "--name", "demo", "--maintainer", "octo", "--gate", "npm test"], { env: { GEARBOX_DIR: up } });
   assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /docs\/adr\/<issue>-<slug>\.md/, "the closing hint names project ADRs after their issue (ADR-0052)");
+  assert.doesNotMatch(r.out, /docs\/adr\/0001-/);
   const agents = read(target, "AGENTS.md");
   assert.ok(agents.startsWith("# demo\n"));
   assert.equal(findFence(agents, "protocol").block, findFence(read(up, "AGENTS.md"), "protocol").block);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS } from "../scripts/lib/skeleton.js";
+import { buildAgentsMd, buildContextMd, SOT_NOTE, PLACEHOLDERS, INDEX_POINTERS } from "../scripts/lib/skeleton.js";
 import { ciYml, SYNC_YML, CHECK_YML, pinSyncYml } from "../scripts/lib/workflows.js";
 import { headings } from "../scripts/lib/sections.js";
 import { renderFence, findFence } from "../scripts/lib/fence.js";
@@ -115,4 +115,11 @@ test("ciYml: plain single-line gate uses plain scalar (- run: cmd)", () => {
   const yml = ciYml("npm test");
   assert.match(yml, /- run: npm test\n/);
   assert.doesNotMatch(yml, /run: \|/);
+});
+
+test("the docs/adr index line names ADRs after their issue and doesn't list them one by one (ADR-0052)", () => {
+  const line =
+    "- `docs/adr/` — this project's own architectural decisions, one file per decision named `<issue>-<slug>.md` after the issue that settles it (ADR-0052; not listed here one by one)";
+  assert.ok(INDEX_POINTERS.split("\n").includes(line), INDEX_POINTERS);
+  assert.ok(PLACEHOLDERS.whereToFind.split("\n").includes(line), PLACEHOLDERS.whereToFind);
 });
