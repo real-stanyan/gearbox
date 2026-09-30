@@ -32,7 +32,7 @@ This repo is the Gearbox core itself, so the gate is a **structural self-check**
 - `RicksZhang` — shared: stanyan
 - `DamianBuilds-ai` — shared: Damian
 
-<!-- gearbox:protocol v2.0.0 sha256:40527e301942; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
+<!-- gearbox:protocol v2.0.0 sha256:d958006eeba6; managed by gearbox-agents, do not edit by hand; project additions go in "## Local protocol extensions" -->
 ## Working agreement (multi-agent)
 
 > This block is the Gearbox protocol — byte-identical in every repo that runs it (ADR-0050). In a downstream repo it changes only through `gearbox-agents update`; record project deviations in `## Local protocol extensions` instead of editing here. In the Gearbox repo itself it is edited under the tiers in "Changing the protocol itself".
@@ -93,13 +93,13 @@ If a PR is still hanging open at shift-end, the task isn't done: per item 3 of O
 
 ### Changing the protocol itself (rules for changing this file)
 
-Where the protocol text lives decides how it changes (ADR-0050). In the **Gearbox repo**, the fenced protocol is edited under the tiers below. In a **downstream repo**, the fence changes only through upstream releases (`gearbox-agents update`); a local deviation goes in `## Local protocol extensions` and is tiered as if it were written into the section it extends — the ADR-0012 criterion applies unchanged. "The maintainer" below is the GitHub account named in `## Maintainer` (a team = a GitHub team handle, ADR-0034).
+Where the protocol text lives decides how it changes (ADR-0050). In the **Gearbox repo**, the fenced protocol is edited under the tiers below. In a **downstream repo**, the fence changes only through upstream releases (`gearbox-agents update`); a local deviation goes in `## Local protocol extensions` and is tiered as if it were written into the section it extends — the ADR-0012 criterion applies unchanged. The maintainer's accounts are the `maintainer` lines of `## Roster`, which lists every account as `human`, `shared` (a human and their agents) or `agent` (ADR-0053).
 
 Agents can modify AGENTS.md, but **the change is tiered by its content** (ADR-0006):
 
 | Tier | Content | Process |
 |---|---|---|
-| **L1 strict tier** | Hard rules / Gate command / Tech stack / Maintainer / this section itself | issue + ADR + PR, **and the agent may only merge after the maintainer explicitly agrees, in the session or in a PR comment** |
+| **L1 strict tier** | Hard rules / Gate command / Tech stack / Roster / this section itself | issue + ADR + PR, **and the agent may only merge after the maintainer's approval (below)** |
 | **L2 autonomous tier** | Working agreement (except the Gate contract) / Division of labor / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
 
 The boundary of "Gate command" (ADR-0010): the command line itself, and **loosening/deleting/rewriting an existing gate-script assertion** = L1; **adding a new, stricter assertion** = L2, riding along with its own PR. Pure refactors (behavior unchanged) count as L2, with the burden of proof on the agent making the change.
@@ -119,15 +119,13 @@ General rules (apply to both tiers):
 |---|---|---|
 | New template/subsystem that **references** a protocol mechanism | **L1** | ADR-0012 |
 | New purely informational document (e.g. "how to contribute") that **references** no protocol mechanism | L2 | ADR-0012 |
-| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Maintainer / Working agreement content) | **L1** | ADR-0006 |
+| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Roster / Working agreement content) | **L1** | ADR-0006 |
 | Modifying the index (Where to find things) | L2 | ADR-0005 |
 | A CONTEXT.md entry **defines** an existing mechanism (changes only CONTEXT.md + cites its source ADR + adds no new obligation/changes no process boundary — all three conditions required) | L2 | ADR-0019 |
 
 **Definition exemption** (ADR-0019): the criterion targets **legislating** (adding/changing mechanism semantics), not **describing** (writing an already-legislated rule into the glossary). If any of the three conditions isn't met, or you're unsure → default to L1; don't grant yourself the exemption. Changing semantics under the guise of a definition is a violation — revert + reopen the issue.
 
-> Why so strict: agents easily use "optional + purely additive" as an L2 channel to expand the protocol's boundaries (see the PR #21 retrospective — subagent-system referenced L1/L2 but self-merged as L2). This criterion closes off that path.
-
-L1's "explicit agreement" is a weak-b form: it's enough for the maintainer to say "agreed" in the session or write "agreed" in a PR comment, and the agent presses the merge button itself. **For the PR-comment path, only a comment authored by the account `## Maintainer` names (for a team handle: one of its members) counts (ADR-0034)** — anyone else's "agreed" is not L1 approval. **In a repo with more than one human collaborator, only the PR-comment path is valid L1 approval (ADR-0042)** — in-session agreement stops counting (including in the maintainer's own session): in-session approval leaves no verifiable trace, so a merged L1 PR without the maintainer's comment would be indistinguishable from an impersonated approval. Single-human repos keep both paths. **GitHub's Approve button is not required** — the cost is that the maintainer becomes the L1 bottleneck, and that cost is accepted.
+L1's explicit agreement comes only from the maintainer: an `agreed` PR comment or an Approve review from a `maintainer` account, or agreement in the session. It covers the commits it saw; a later push needs a new one. **Multi-human repos** (more than one person in `## Roster`): only the maintainer's own merge approves, and agents never merge an L1 PR — agents act under the humans' accounts, so no comment or review proves who wrote it (ADR-0042/0053). In every repo, an agent never writes an approval — no `agreed`, no Approve, no approval record — for anyone. GitHub's Approve button stays optional; the maintainer as L1 bottleneck is an accepted cost.
 
 **Protocol updates** (ADR-0026/0050): pull-triggered. Start-of-shift step 4 (`gearbox-agents version`) and the optional weekly `gearbox-sync` Action run `gearbox-agents update`, which rewrites both fences, copies new protocol ADRs and bumps `.gearbox-version` on a `docs/gearbox-backfill-*` branch; merging that PR adopts the new protocol version and is L1 in the receiving repo. The fence markers and `.gearbox-version` carry the protocol version — tooling maintains them, humans don't. (The upstream-side release rules — the `Affects downstream` declaration, version bumps, tags, npm publish — are the Gearbox repo's own local extension.)
 
