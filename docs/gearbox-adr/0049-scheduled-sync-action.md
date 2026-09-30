@@ -1,7 +1,7 @@
 # ADR-0049: Downstream auto-update via a scheduled Action that opens backfill PRs
 
 - Date: 2026-07-23
-- Status: accepted
+- Status: accepted (amended by ADR-0050: update rewrites the fenced protocol text on the backfill branch and writes the stamp on every run, so the accepted stamp lag is gone; and by ADR-0051: in Actions, update skips the workflow files its token can't push; v2 installs pin `gearbox-agents@2` and fail the PR step loudly, while an existing copy gets only the pin, from a local run)
 - Related: ADR-0026 (pull-primary backfill), ADR-0025 (update's branch discipline), ADR-0024 (--refresh-drift), ADR-0028/0029 (npx distribution), ADR-0006 (L1 tiering)
 
 ## Context

@@ -1,7 +1,7 @@
 # ADR-0023: Protocol Version Number — a semver Variant Tag Plus a Downstream Stamp
 
 - Date: 2026-07-19
-- Status: accepted
+- Status: accepted (amended by ADR-0050: `.gearbox-version` carries the protocol version from the fence markers — which moves only when fence content does, while the tag moves every release — and update writes it on every run)
 - Related: ADR-0013 (B-3 backfill), ADR-0016/ADR-0017/ADR-0021/ADR-0022 (the tool family and the hash stamp)
 
 ## Context

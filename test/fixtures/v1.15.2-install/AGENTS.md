@@ -1,0 +1,162 @@
+# example-project
+
+<One sentence: what this project is, what counts as done, what the scope boundaries are.>
+
+> This file is the single source of truth for ALL AI coding agents, whatever the tool (Claude Code, Z Code, Cursor, etc.).
+> Rules live here and only here. Do not duplicate them elsewhere.
+
+## Tech stack
+
+<Project tech stack, one per line. Example: Next.js 15 / TypeScript / Postgres>
+
+## Hard rules
+
+<Project rules that must not be violated, one per line. Example: money is always cents + BigInt; never expose SECRET_* to the client.>
+
+> Any clause in the protocol body marked **Hard rule** (e.g., the hard rule in the "Roles of issues & PRs" section) **counts as part of this section and is protected under L1**: the criterion anchors to the marking itself, not to which section the clause physically lives in (ADR-0018).
+
+## Working agreement (multi-agent)
+
+### On starting a shift (the three start-of-shift steps)
+
+1. **Sync, then read**: `git fetch origin` + fast-forward the local default branch (`git pull --ff-only` while on it) — the repo is the only shared memory, and an unfetched clone is somebody's stale cache of it (a stale clone even means stale *rules*: this very file is version-controlled). Fast-forward impossible = the local default branch has diverged: stop, open an issue, don't build on a forked base (ADR-0046). Then `git log --oneline -10` — see what happened recently
+2. Check GitHub Issues — **first look for open handoff issues** (the previous shift's Memory is in there; reading one and closing it = taking over that lane, see ADR-0005. Several open = parallel lanes: take over at most one, leave the rest untouched — see "Parallel shifts" (ADR-0048). If none found → check whether the most recently closed issue has a "no next shift" terminal declaration: if yes = a compliant terminal shift (ADR-0009), start work normally; if no = the previous shift ended out of compliance, open a Protocol gap issue to record it — either way, rebuild context from git log + open issues), then check other open tasks and notes
+3. Run the gate command (see below) to confirm the baseline is green — if it's red, fix it first or open an issue; don't start work on a broken baseline
+4. Run `npx gearbox-agents version` to self-check the protocol version — if behind, run `npx gearbox-agents update` to backfill (pull-triggered, ADR-0026/0028; this step is the receiving end aligning with upstream, not upstream pushing. If a local Gearbox checkout is installed, you can also run `gearbox-version`/`gearbox-update` directly)
+
+### While working
+
+- Commit in small steps; the message should spell out the **why**, not just the what
+- **Protocol files stay committed — never add them to `.gitignore`**: `AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, `docs/gearbox-adr/`, `.gearbox-version`, `.github/workflows/ci.yml`. The repo is the only shared memory between shifts; an ignored protocol file exists locally but never reaches the next agent's clone (ADR-0037)
+- One agent sees a task through from start to finish; handoffs only happen at task boundaries (issue closed / PR merged), never mid-task
+- Non-trivial changes go through a branch + PR; typo-level tweaks can go straight into main
+- **Project-owned** architectural decisions go in `docs/adr/` (one decision per file, starting at 0001); protocol ADRs live in `docs/gearbox-adr/`, managed by the gearbox tooling — don't hand-edit them
+- Look up domain-term definitions in `CONTEXT.md`; add new terms as they come up
+
+### Roles of issues & PRs
+
+Issues and PRs are the timestamped, append-only, non-decaying conversation carriers between agents (and between agents and humans). In this protocol they have **three non-overlapping roles** — every issue/PR should fit into one of these:
+
+| Role | When to use | When to close |
+|---|---|---|
+| **Task** | There's an actionable thing to do | The task is done and the gate is green |
+| **Memory** (handoff memory) | Leave a comment on the **handoff issue** (see On ending a shift) at shift-end, five-part format | The next shift reads it and closes the handoff issue = handoff complete |
+| **Protocol gap** | Hit a question the repo can't answer (rule not written, ambiguous, boundary unclear) | The gap gets folded into AGENTS.md / CONTEXT.md / an ADR |
+
+Hard rules:
+
+- **When you hit a question this repo can't answer, you must open an issue (Protocol gap type) — silent judgment calls are not allowed.** This is the only entry point for the protocol's self-repair — it turns gaps from "tacit understanding" into something explicit, discussable, and closeable.
+- **Memory five-part format** (the minimum valid format for a handoff comment, ADR-0004): ① what's done ② what's blocked ③ what's next ④ close the issue if the task is complete ⑤ **rationale / trade-offs** — required whenever this shift made a non-default decision (what was chosen, why, and what premise failing would overturn it); if no decision was made, write "none" — don't omit it. Missing any one item means the handoff doesn't count. Across all five parts: content already captured in a durable artifact (ADR / issue / PR / commit / diff) is referenced by number or path, not restated — copies decay, references don't (ADR-0045). Inline belongs only what no artifact carries.
+- **Handoff = the moment the issue closes / the PR merges**, not just feeling like things were "explained clearly." Switching agents without closing the issue is a mid-task handoff, which violates the previous section.
+- **A PR is the implementation vehicle for a Task, not a separate role**: a PR references the Task issue it implements, and closes that issue on merge. New issues found during PR review get their own issue — don't pile them up in PR comments.
+
+**Task ordering (blocking edges, ADR-0044)**: when one Task depends on another, the dependent issue's body declares each prerequisite with a literal `Blocked by: #N` line (one per blocker). A shift claims only **frontier** tasks — open tasks with no open blockers; when a blocker closes, its dependents join the frontier. Plain text, grep-able, no Projects/labels needed. This is a hygiene convention — a stale edge costs a judgment call at claim time, nothing more.
+
+**Claiming (ADR-0047)**: a claim = assigning yourself on the Task issue (`gh issue edit <N> --add-assignee @me` — the GitHub account the agent acts under); first assignment wins, visible and timestamped. No triage permission → a "claiming this" comment instead. An open frontier task with no assignee and no claim comment is free. A shift ending with the task unfinished states in its progress comment whether the claim is released (unassign) or carried; a dangling assignment from a shift that left no comment is stale, not binding. Single-human repos may skip claiming — with one queue reader it informs nobody; its value begins at the second human.
+
+> Why use an issue comment instead of a standalone handoff file: see `docs/gearbox-adr/0003-issue-roles.md`. Why Memory lives in an open handoff issue rather than a closed Task issue: see `docs/gearbox-adr/0005-handoff-lives-in-an-open-issue.md`.
+
+### PR disposition (merge rules)
+
+Four rules (ADR-0007):
+
+- **Always merge via merge commit** — never squash, never rebase: the why behind small-step commits is a protocol asset (the repo is the only shared memory between sessions), and squashing is equivalent to deleting memory; locking in one style keeps history predictable.
+- **Who merges**: the PR's author agent merges it themself once CI is green. Protocol changes follow the tier system (see "Changing the protocol itself"): L1 waits for `octo-owner` agreement, L2 is autonomous.
+- **A second agent's review is not mandatory**: in serial repos only one shift is present at a time, and forcing mutual review would block at handoff boundaries; parallel lanes (ADR-0048) don't change this — review stays optional, because the quality backstop never depended on serialization: the CI gate + the `octo-owner`'s after-the-fact veto (revert + reopen the issue), plus branch protection where configured (ADR-0042).
+- **Don't take over someone else's open PR** — that's a mid-task handoff (see While working). Exception: the handoff issue explicitly transfers it, or the `octo-owner` directs it.
+
+If a PR is still hanging open at shift-end, the task isn't done: per item 3 of On ending a shift, write progress into the Task issue's comment and leave the PR open.
+
+### Changing the protocol itself (rules for changing this file)
+
+Agents can modify AGENTS.md, but **the change is tiered by its content** (ADR-0006):
+
+| Tier | Content | Process |
+|---|---|---|
+| **L1 strict tier** | Hard rules / Gate command / Tech stack / this section itself | issue + ADR + PR, **and the agent may only merge after the `octo-owner` explicitly agrees, in the session or in a PR comment** |
+| **L2 autonomous tier** | Working agreement (except Gate) / the index (Where to find things) | issue + ADR + PR, agent may merge autonomously |
+
+
+The boundary of "Gate command" (ADR-0010): the command line itself, and **loosening/deleting/rewriting an existing gate-script assertion** = L1; **adding a new, stricter assertion** = L2, riding along with its own PR. Pure refactors (behavior unchanged) count as L2, with the burden of proof on the agent making the change.
+
+**Test-type gates** (vitest / tsc / lint, ADR-0020): the config layer follows the rule above directly (tightening = L2 / loosening = L1 / the command line = L1); the test-content layer is tiered by **motive** — tests added/removed/changed in the same PR as the product code they follow = L2 routine development; **deleting to go green** (deleting / `.skip`-ing / weakening a test with no corresponding product-code change in the diff) = L1, and a silent skip is a violation. Deleting or skipping a test must state its motive in the commit message or PR body.
+
+General rules (apply to both tiers):
+
+- **All three pieces are required, none optional**: a matching issue (usually Protocol gap type) + an ADR (recording the decision and its rationale) + a branch PR (CI must be green to merge; closes the issue on merge).
+- **A protocol change without an issue + ADR is out of compliance** and should be reverted, regardless of which tier it belongs to.
+- **Protocol changes carry more weight than code changes**: code only needs an ADR for architectural decisions, but protocol changes always need one.
+- **Humans retain an after-the-fact veto**: reverting the corresponding PR + reopening the issue undoes the change — even if it wasn't caught at the time.
+
+**L1/L2 boundary criterion** (ADR-0012, **mechanism reference takes priority**): any new content that **references the L1/L2 tiering / Hard rules / Working agreement mechanism** (regardless of whether it's "optional" or touches an existing file) is treated as **L1**. Objective criterion — the text contains mechanism keywords like `L1` / `L2` / `Hard rule` / `Working agreement` / "tiered authorization", or semantically depends on these mechanisms to function (e.g., subagent routing that depends on L1/L2 to decide who gets assigned).
+
+| Scenario | Classification | Basis |
+|---|---|---|
+| New template/subsystem that **references** a protocol mechanism | **L1** | ADR-0012 |
+| New purely informational document (e.g. "how to contribute") that **references** no protocol mechanism | L2 | ADR-0012 |
+| Modifying an existing protocol file (Hard rules / Gate / Tech stack / Working agreement content) | **L1** | ADR-0006 |
+| Modifying the index (Where to find things) | L2 | ADR-0005 |
+| A CONTEXT.md entry **defines** an existing mechanism (changes only CONTEXT.md + cites its source ADR + adds no new obligation/changes no process boundary — all three conditions required) | L2 | ADR-0019 |
+
+**Definition exemption** (ADR-0019): the criterion targets **legislating** (adding/changing mechanism semantics), not **describing** (writing an already-legislated rule into the glossary). If any of the three conditions isn't met, or you're unsure → default to L1; don't grant yourself the exemption. Changing semantics under the guise of a definition is a violation — revert + reopen the issue.
+
+> Why so strict: agents easily use "optional + purely additive" as an L2 channel to expand the protocol's boundaries (see the PR #21 retrospective — subagent-system referenced L1/L2 but self-merged as L2). This criterion closes off that path.
+
+L1's "explicit agreement" is a weak-b form: it's enough for the `octo-owner` to say "agreed" in the session or write "agreed" in a PR comment, and the agent presses the merge button itself. **For the PR-comment path, only a comment authored by the GitHub account `octo-owner` names counts (ADR-0034)** — anyone else's "agreed" is not L1 approval. **In a repo with more than one human collaborator, only the PR-comment path is valid L1 approval (ADR-0042)** — in-session agreement stops counting (including in the maintainer's own session): in-session approval leaves no verifiable trace, so a merged L1 PR without the maintainer's comment would be indistinguishable from an impersonated approval. Single-human repos keep both paths. **GitHub's Approve button is not required** — the cost is that the `octo-owner` becomes the L1 bottleneck, and that cost is accepted.
+
+> This repo is downstream of Gearbox. Backfill follows the pull model (ADR-0026): step 4 of the three start-of-shift steps runs `gearbox-version` to self-check the protocol version, and `gearbox-update` to backfill if it's behind — it doesn't depend on upstream pushing, it proactively aligns with upstream.
+
+> This repo doesn't publish protocol versions; the root `.gearbox-version` records the upstream Gearbox version at onboarding time, maintained by gearbox-install / gearbox-update, and read/compared by `gearbox-version` (upstream ADR-0023).
+
+### Gate (the hard gate — must be all-green before shift-end)
+
+```bash
+npm test
+```
+
+> Fill in the gate to match your actual project — any command that can automatically assert "nothing's broken" works (rationale: ADR-0002). See ADR-0020 for how test-type gates (vitest/tsc/lint) map onto the L1/L2 tiers. The command must be byte-identical to `.github/workflows/ci.yml` (CI == Gate contract).
+
+CI (`.github/workflows/ci.yml`) runs the same set of commands; if it's red, merging is not allowed.
+
+### On ending a shift (shift-end rules)
+
+1. The gate is all-green
+2. commit + push
+3. Close finished Task issues as usual; for half-finished ones, write progress into that issue's comment
+4. **Open a handoff issue for the next shift** (Task type, kept open, ADR-0005): the body states the current state and suggestions for next steps, and this shift's Memory comment (five-part format, ADR-0004) goes here. In multi-human repos the body also lists the Task issues this lane still owns (takeover = claiming exactly those), or marks itself **"context only"** when nothing transfers (ADR-0048). **This is the only entry point the next shift is guaranteed to encounter** — Memory no longer gets buried in a casually closed Task issue. **The sole exception — a terminal shift** (ADR-0009): when archiving / confirming there's no next shift, you may skip opening one, but you must explicitly declare "no next shift" + the reason in a comment on the last closed issue. A silent terminal doesn't count as terminal. Terminal is repo-level: with another lane still live (someone else's open handoff or claimed task), a terminal declaration is invalid — that's just a lane end (ADR-0048)
+
+### Parallel shifts (multi-human repos, ADR-0048)
+
+Serial single-human repos need none of this — with one live shift, the rules above already suffice and every rule below degenerates to them.
+
+- **A lane = one shift + its claimed tasks.** Parallel shifts are allowed iff each works only on frontier tasks it has claimed (ADR-0044/0047). Disjoint claims = disjoint lanes; no other lock exists or is needed — task-level overlap is prevented at claim time, file-level overlap resolves in the PR merge like any concurrent development.
+- **Handoff issues are per-lane**: shift-end rule 4 unchanged in shape, but a starting shift reads **all** open handoff issues, takes over **at most one** lane (claim its listed tasks, close its handoff), and leaves other lanes' handoffs open — closing another live lane's handoff is stealing its baton. A **"context only"** handoff (lane finished, nothing transfers) is closed by its first reader after reading.
+- **Terminal declarations (ADR-0009) are repo-level, not lane-level** — see On ending a shift.
+- **Protocol changes serialize at merge time**: two lanes may each open a protocol PR, but ADR numbers and the version bump are claimed at merge, not at branch time. Before merging: re-fetch; if a competing protocol PR landed first, renumber your ADR and recompute the version (latest tag + segment, ADR-0028) inside your PR, then merge.
+- A stalled lane is released by the `octo-owner`: unassign its tasks, close its handoff (the stale-claim rule in ADR-0047 already makes dangling assignments non-binding).
+
+### Branch hygiene (optional)
+
+Before shift-end (or when you hit stale refs at shift-start), run `npx gearbox-agents prune` (in this repo you can run `node scripts/gearbox-prune` directly). It cleans up four things (ADR-0030/0043):
+
+- Leftover linked worktrees from agent sessions (`--apply-worktrees`, `git worktree remove` on merged + clean ones only — dirty or locked worktrees are reported, never removed; runs before the branch pass because a worktree checkout blocks `git branch -d`)
+- Locally merged branches (`git branch -d` safe-deletes, fails loudly)
+- stale remote-tracking refs (`git fetch --prune`)
+- Remote merged branches (`--apply-remote`, prints the list + asks for confirmation before deleting)
+
+Dry-run by default — deletes nothing; a whitelist protects the current branch / the default branch / `gearbox-backfill-*` / the main worktree and the worktree you run from; never force-deletes (`-D`, `worktree remove --force`). This doesn't replace GitHub's `delete_branch_on_merge` setting — turning that on is the recommended root fix for repo owners; the tool is a backstop (`--check-settings` checks it and prints the command to enable it, without changing it automatically).
+
+### Division of labor (optional, fill in as needed)
+
+Division of labor is a project-level property; the template doesn't presume one (ADR-0008). Pick one of three:
+
+1. **Fill it in**: which kind of task goes to which agent (split by capability, not tied to a specific tool). <Unvalidated candidate example: mechanical bulk edits, filling in tests → an agent good at bulk execution; architectural design, hard bugs → an agent good at deep reasoning>
+2. **Leave it blank**: the default rule = **Task-issue claim-based ownership** — whoever claims a task sees it through start to finish (see While working); tasks aren't routed by agent specialty.
+3. **Single-agent project**: delete this whole section (it's not a gate anchor, so deleting it won't break the gate).
+
+## Where to find things
+
+- `CONTEXT.md` — domain glossary
+- `docs/gearbox-adr/` — protocol ADRs (copied from Gearbox, managed by tooling — don't hand-edit)
+- `docs/adr/` — this project's own architectural decisions (starting at 0001, human-authored)
+- <other module documentation directories, e.g. docs/modules/>

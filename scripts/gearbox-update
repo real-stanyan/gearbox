@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// gearbox-update — aggressive downstream ADR sync tool
+// gearbox-update — downstream protocol sync (fences + ADRs)
 //
-// Usage: run `gearbox-update [--refresh-drift] [--force-redo] [--allow-branch]` from a
-//   downstream repo's root
+// Usage: run `gearbox-update [--refresh-drift] [--force-redo] [--allow-branch] [--force] [--no-push]`
+//   from a downstream repo's root
 //   --refresh-drift  re-copy backfilled ADRs whose "upstream has been revised" (ADR-0024):
 //                    for a slug-matched copy carrying a sha256 stamp, when the recorded hash
 //                    ≠ the upstream file's current hash, rerun the transform against the
@@ -10,12 +10,24 @@
 //                    stamp gets refreshed). This drops any local edits the downstream made to
 //                    the copy — a branch + PR review is the safety net, so it's opt-in.
 //   --force-redo     if today's backfill branch already exists, delete and rebuild it
-//                    (ADR-0025); push uses --force-with-lease to overwrite the remote. Manual
-//                    edits on that branch are lost — confirm there are none before using this.
-//                    Default (no flag): error out, don't delete.
+//                    (ADR-0025) — the delete waits until every refusal has passed; push uses
+//                    --force-with-lease to overwrite the remote. Manual edits on that branch
+//                    are lost — confirm there are none before using this.
+//                    Default (no flag): resume on it if unmerged, clean it up if merged (#96).
 //   --allow-branch   skip the "auto-switch back to main/master" step (ADR-0025) and run
 //                    against the current branch. Base-branch correctness is on you — if the
 //                    base is wrong, the output isn't trustworthy.
+//   --force          re-apply upstream's fence over a hand-edited one; the diff goes into the
+//                    report (ADR-0050)
+//   --no-push        commit locally, skip the push. Without it, a push that fails is exit 1
+//                    (ADR-0051): git's reason and the retry command are printed; the committed
+//                    branch and the report stay
+//
+// In GitHub Actions (GITHUB_ACTIONS=true, the gearbox-sync Action) it never writes, commits or
+// pushes anything under .github/workflows/ (ADR-0051): GitHub refuses a push made with the Actions
+// GITHUB_TOKEN that creates or updates a workflow file, whatever `permissions:` grants. Each skipped
+// workflow change is a TODO in the report plus a `::warning::` line — run update locally after the
+// merge; when workflow changes are all that's pending, no branch is made (exit 0).
 //
 // Startup safety checks (ADR-0025): the clean-worktree check exempts this tool's own
 // gearbox-update-report.md; auto `git checkout main` when not on main/master (unless
@@ -27,13 +39,19 @@
 //      protocol ADR numbers are 1:1 with upstream — no collisions, no renumbering, ADR-0031)
 //   2. Syncs supersede relationships (gearbox 0012 → downstream 0006 status becomes
 //      partially superseded)
-//   3. Updates the `.gearbox-version` stamp to upstream's latest tag (ADR-0023)
+//   3. Writes `.gearbox-version` = the upstream protocol version (the fence marker's, ADR-0023/
+//      0050) — on every run, even when nothing else moved
 //   4. git add + commit + push to a new branch docs/gearbox-backfill-{date}
-//   5. Writes gearbox-update-report.md prompting the user to hand-edit AGENTS.md (the script
-//      never touches AGENTS.md)
+//   5. Rewrites the protocol fences in AGENTS.md / CONTEXT.md when upstream moved (ADR-0050) and
+//      writes gearbox-update-report.md (the PR body)
+//   6. v1 layout (no fence): migrates AGENTS.md / CONTEXT.md to the v2 layout (ADR-0050,
+//      scripts/lib/migrate-v1.js) in one commit on the same branch; a "Where to find things"
+//      too big for the 32 KiB budget moves to docs/INDEX.md (appended to an existing one). The
+//      report says what moved where and what needs a human
 //
 // What it doesn't do:
-//   - Doesn't touch downstream AGENTS.md (an L1 file — report only)
+//   - Doesn't touch anything in AGENTS.md / CONTEXT.md outside the fences — except the one-time
+//     v1 → v2 migration (6.), which rewrites both on the backfill branch, never on main
 //   - Doesn't touch any file in the gearbox repo itself (this is a downstream-side tool)
 //   - Doesn't run `gh pr create` automatically (left for the user)
 //   - Doesn't auto-merge (L1 requires maintainer agreement)
@@ -49,10 +67,17 @@
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { execSync, execFileSync } from "node:child_process";
+import { join, dirname } from "node:path";
 import { env, argv, exit, cwd, stdout, stderr } from "node:process";
 import * as tui from "./lib/tui.js";
+import { fenceStatus, replaceFence, oneFenceAdvice } from "./lib/fence.js";
+import { semverGreater } from "./lib/fence-release.js";
+import { planWorkflowFixes } from "./lib/workflows.js";
+import { runProtocolChecks } from "./lib/protocol-check.js";
+import { loadKnown } from "./lib/v1-known.js";
+import { migrateV1, MigrationError } from "./lib/migrate-v1.js";
+import { splitByLevel, baseTitle } from "./lib/sections.js";
 
 // ============== Config ==============
 
@@ -64,18 +89,25 @@ let GEARBOX_ADR_DIR = join(GEARBOX_DIR, "docs/gearbox-adr");
 let UPSTREAM_URL = null; // = the .gearbox-upstream URL when remote; null when local
 const GEARBOX_GITHUB_BASE =
   "https://github.com/real-stanyan/gearbox/blob/master/docs/gearbox-adr";
+// Inside GitHub Actions the tool-owned workflow files are left alone (ADR-0051) — see the header.
+const IN_ACTIONS = env.GITHUB_ACTIONS === "true";
+const WORKFLOW_TODO = "after merging, run `npx gearbox-agents@2 update` locally (the Actions token can't push workflow files)";
 
 // CLI args
 let refreshDrift = false;
 let forceRedo = false;
 let allowBranch = false;
+let force = false;
+let noPush = false;
 for (const a of argv.slice(2)) {
   if (a === "--refresh-drift") refreshDrift = true;
   else if (a === "--force-redo") forceRedo = true;
   else if (a === "--allow-branch") allowBranch = true;
+  else if (a === "--force") force = true;
+  else if (a === "--no-push") noPush = true;
   else if (a === "--help" || a === "-h") {
     console.log(
-      "gearbox-update [--refresh-drift] [--force-redo] [--allow-branch]",
+      "gearbox-update [--refresh-drift] [--force-redo] [--allow-branch] [--force] [--no-push]",
     );
     exit(0);
   } else {
@@ -120,6 +152,15 @@ function tryRun(cmd) {
   } catch {
     return null;
   }
+}
+
+// What a failed git command said, from its stderr: the decisive lines — a server's `remote:` lines
+// (GitHub's workflow-file refusal, any pre-receive hook), `! [rejected]` / `! [remote rejected]`,
+// `error:`, `fatal:` — or, when none match, every non-blank line: never a failure without git's words.
+function gitErrorLines(e) {
+  const all = String(e.stderr || e.message || "").split("\n").map((l) => l.trimEnd()).filter((l) => l.trim());
+  const decisive = all.filter((l) => /^\s*(remote:|error:|fatal:|! \[)/.test(l));
+  return decisive.length > 0 ? decisive : all;
 }
 
 // Upstream addressing (ADR-0027): env > local default > .gearbox-upstream remote cache.
@@ -326,17 +367,22 @@ function validateContext() {
   // Pre-check: does today's branch name already exist? Auto-resolve instead of erroring (#96):
   // merged into base = stale leftover, its work is already in the base → safe-delete and run
   // fresh; unmerged = an earlier run today → switch back onto it and continue (backfills are
-  // idempotent, new commits stack on top, manual edits survive). --force-redo still deletes
-  // and rebuilds unconditionally (ADR-0025).
+  // idempotent, new commits stack on top, manual edits survive). --force-redo deletes and
+  // rebuilds (ADR-0025), but the delete waits in main() until every refusal (a stale upstream,
+  // a hand-edited fence) has passed — a refused run never costs the branch.
   const today = new Date().toISOString().slice(0, 10);
   const plannedBranch = `docs/gearbox-backfill-${today}`;
-  const branchExists = tryRun(`git rev-parse --verify ${plannedBranch} 2>/dev/null`);
+  // No stderr redirect: stdio is piped already, and a POSIX null-device path fails under cmd.exe.
+  const branchExists = tryRun(`git rev-parse --verify ${plannedBranch}`);
   let resume = false;
+  let redo = false;
   if (branchExists) {
     if (forceRedo) {
-      run(`git branch -D ${plannedBranch}`);
+      if (branch === plannedBranch)
+        die(`--force-redo can't rebuild ${plannedBranch} while it's checked out`, "switch to main first (or drop --allow-branch)");
+      redo = true;
       stdout.write(
-        C.yellow(`⚠️  --force-redo: deleted local branch ${plannedBranch}, rebuilding\n`) +
+        C.yellow(`⚠️  --force-redo: ${plannedBranch} will be deleted and rebuilt once the checks pass\n`) +
           C.dim("  push will use --force-with-lease to overwrite the remote (if it exists)\n"),
       );
     } else if (branch === plannedBranch) {
@@ -360,7 +406,7 @@ function validateContext() {
     }
   }
 
-  return { downDir, downAdrDir, branch, resume, plannedBranch };
+  return { downDir, downAdrDir, branch, resume, redo, plannedBranch };
 }
 
 // ============== matching algorithm ==============
@@ -461,6 +507,13 @@ function transformAdrContent(gearboxAdr) {
   return lines.join("\n");
 }
 
+// A backfilled ADR's path in the downstream, relative to its root: what gitOps commits and what the
+// failure hint names — one expression, so the two can't drift apart.
+function adrRelPath(g) {
+  return `docs/gearbox-adr/${pad4(g.num)}-${g.slug}.md`;
+}
+const SUPERSEDE_PATH = "docs/gearbox-adr/0006-tiered-change-authority.md";
+
 // Supersede link: if this backfill includes gearbox 0012, change downstream 0006's status
 // (the number is 1:1 with upstream, so the downstream landing number is always 12; the caller
 // only invokes this after confirming this run's toCopy includes 0012)
@@ -486,316 +539,508 @@ function applySupersedeLink(downAdrDir) {
   return { alreadyApplied: false, newNum: 12, file: downstream0006Path };
 }
 
-// ============== AGENTS.md report ==============
+// ============== fences (ADR-0050) ==============
 
-// Known: which gearbox ADR → which AGENTS.md section it affects
-// (per an earlier Explore report: 0011 doesn't touch AGENTS.md; 0012/0013 change
-// "### Changing the protocol itself")
-// Maintenance contract: every time upstream adds an ADR, add a line here (null = doesn't touch
-// AGENTS.md). Missing entries don't error, but the report simply won't flag the corresponding
-// AGENTS.md hand-edit — write null explicitly rather than omitting an entry.
-const AGENTS_MD_IMPACT = {
-  11: null, // subagent-system is an optional template — doesn't touch AGENTS.md
-  12: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: 'Add the "L1/L2 boundary criterion (mechanism reference takes priority)" subsection + its classification table. See the same-named subsection in gearbox AGENTS.md for reference.',
-  },
-  13: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: 'Add the "B-3 downstream backfill reminder" field note (if this project has downstream projects). If this project has no downstream (e.g. dryrun/mandys_app are terminal nodes), this can be skipped.',
-  },
-  14: null, // PR template's Affects downstream field — an upstream B-3 implementation detail, no downstream counterpart (the fleet list itself was retired in ADR-0033)
-  15: null, // rename-to-gearbox — pure naming, downstream can rename or not at its own discretion (has its own backfill-reminder issue)
-  16: null, // gearbox-version tool onboarding — upstream-side tooling, doesn't touch downstream AGENTS.md
-  17: null, // gearbox-update tool onboarding — same
-  18: {
-    section: "## Hard rules",
-    note: 'Add the note that "a clause marked Hard rule counts as part of this section and is protected under L1" (the criterion anchors to the marking, not to which section it lives in). See the same note in gearbox AGENTS.md for reference.',
-  },
-  19: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: 'Add the CONTEXT.md definition-exemption row to the classification table + the "Definition exemption" paragraph (the three criteria). See the same-named subsection in gearbox AGENTS.md for reference.',
-  },
-  20: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: 'Add the "test-type gate" paragraph (config layer follows the existing tier / content layer is graded by motive / "deleted just to go green" = L1). See the same-named subsection in gearbox AGENTS.md for reference.',
-  },
-  21: null, // hash-stamp drift detection — a tool-layer contract, doesn't touch downstream AGENTS.md
-  22: null, // gearbox-install tool onboarding — upstream-side tooling
-  23: null, // protocol version numbering — an upstream-side mechanism; downstream only holds the .gearbox-version stamp, maintained automatically by this tool
-  24: null, // --refresh-drift re-copy — this tool's own capability, doesn't touch downstream AGENTS.md
-  25: null, // update's startup safety checks — this tool's own behavior, doesn't touch downstream AGENTS.md
-  26: {
-    section: "### On starting a shift (the three start-of-shift steps)",
-    note: "Add a 4th step to the three start-of-shift steps: run gearbox-version to self-check the protocol version, and gearbox-update to backfill if it's behind (backfill trigger moved from push to pull, ADR-0026). New downstream installs get this from gearbox-install automatically; existing downstream projects add it by hand. See gearbox-install's \"start-of-shift self-check step\" transform for reference.",
-  },
-  27: null, // remote upstream addressing — a tool capability, doesn't touch downstream AGENTS.md
-  28: null, // npx distribution — upstream-side packaging/publishing, doesn't touch downstream AGENTS.md
-  29: null, // release now includes npm publish — an upstream release-process change; downstream doesn't publish the gearbox protocol package
-  30: {
-    section: "## Working agreement (multi-agent)",
-    note: "Optionally add a \"Branch hygiene\" subsection (run npx gearbox-agents prune before ending a shift; a soft rule, not a Hard rule). New downstream installs get this from AGENTS.md as-is (install passes it through verbatim); existing downstream projects decide for themselves whether to adopt it. See the same-named subsection in gearbox AGENTS.md for reference.",
-  },
-  31: {
-    section: "## Where to find things",
-    note: "Protocol ADRs move to their own docs/gearbox-adr/ directory (project ADRs keep docs/adr/, numbering independently from 0001). gearbox-update performs the file moves itself; the hand-edit is the index: list both directories in \"Where to find things\" and note that docs/gearbox-adr/ is tool-managed. See the same section in gearbox AGENTS.md for reference.",
-  },
-  32: null, // English as the protocol language — governs how upstream writes protocol files; downstream AGENTS.md text arrives already in English, no separate hand-edit
-  33: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: "In the \"Downstream backfill\" paragraph, drop any mention of the DOWNSTREAM.md fleet dashboard (retired — fleet notes live outside the template; maintainer notification issues become optional). See the same paragraph in gearbox AGENTS.md for reference.",
-  },
-  34: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: "The <maintainer> placeholder must anchor a GitHub username (a team = a GitHub team handle), and the PR-comment approval path only counts when the comment author is that account. Update the blockquote under the tier table + the weak-b paragraph. See the same text in gearbox AGENTS.md for reference.",
-  },
-  35: null, // shared TUI animation layer (scripts/lib/tui.js) — tool-internal, doesn't touch downstream AGENTS.md
-  36: null, // install's interactive maintainer prompt — install-time behavior, doesn't touch downstream AGENTS.md
-  37: {
-    section: "### While working",
-    note: "Add the \"Protocol files stay committed — never add them to .gitignore\" bullet (an ignored protocol file exists locally but never reaches the next shift's clone). See the same bullet in gearbox AGENTS.md for reference.",
-  },
-  38: null, // install's provenance-split guard — install-time behavior, doesn't touch downstream AGENTS.md
-  39: null, // install auto-backs-up handwritten AGENTS.md — install-time behavior
-  40: null, // install backs up every handwritten file — install-time behavior
-  41: null, // TTY output budget — tool output styling, doesn't touch downstream AGENTS.md
-  42: {
-    section: "### Changing the protocol itself (rules for changing this file)",
-    note: "In the weak-b paragraph: with more than one human collaborator, only the PR-comment path (authored by the <maintainer> GitHub account) is valid L1 approval — in-session agreement stops counting, including in the maintainer's own session. Single-human repos keep both paths. See the same paragraph in gearbox AGENTS.md for reference.",
-  },
-  43: {
-    section: "## Working agreement (multi-agent)",
-    note: "Branch hygiene grows from three cleanup targets to four: leftover agent worktrees (--apply-worktrees, merged + clean only, runs before the branch pass) join the list, and the allowlist now names the main worktree + the worktree you run from. Only applies if the project adopted the optional Branch hygiene subsection (ADR-0030). See the same subsection in gearbox AGENTS.md for reference.",
-  },
-  44: {
-    section: "### Roles of issues & PRs",
-    note: "Add the \"Task ordering (blocking edges)\" note: dependent Task issues declare literal `Blocked by: #N` lines; shifts claim only frontier tasks (no open blockers). A hygiene convention outside the hard-rule markings. See the same note in gearbox AGENTS.md for reference.",
-  },
-  45: {
-    section: "### Roles of issues & PRs",
-    note: "Append to the Memory five-part hard-rule bullet: content already captured in a durable artifact (ADR / issue / PR / commit / diff) is referenced by number or path, not restated; inline belongs only what no artifact carries. This edits a hard-rule bullet — an L1 hand-edit. See the same bullet in gearbox AGENTS.md for reference.",
-  },
-  46: {
-    section: "### On starting a shift (the three start-of-shift steps)",
-    note: "Step 1 gains a sync prefix: git fetch origin + fast-forward the local default branch before reading history; fast-forward impossible = diverged default branch — stop and open an issue. See step 1 in gearbox AGENTS.md for reference.",
-  },
-  47: {
-    section: "### Roles of issues & PRs",
-    note: "Add the \"Claiming\" note under Task ordering: claim = self-assignment on the Task issue (first wins, comment fallback without triage permission); release/carry declared in the shift-end progress comment; single-human repos may skip. See the same note in gearbox AGENTS.md for reference.",
-  },
-  48: {
-    section: "## Working agreement (multi-agent)",
-    note: "Add the \"Parallel shifts (multi-human repos)\" subsection (lanes, per-lane handoffs, repo-level terminals, merge-time serialization of protocol PRs) + its touch-points: start-of-shift step 2 reads all open handoff issues and takes over at most one lane; shift-end rule 4 lists the lane's owned Task issues or marks \"context only\"; the PR-disposition review bullet's premise mentions parallel lanes. Serial single-human repos may skip the subsection. See the same-named subsection in gearbox AGENTS.md for reference.",
-  },
-  49: null, // scheduled sync Action (gearbox-sync.yml) — a scaffold/tooling file, doesn't touch downstream AGENTS.md; existing downstreams can copy it from a fresh install if they want scheduled sync
-};
+function readOr(base, rel) {
+  return existsSync(join(base, rel)) ? readFileSync(join(base, rel), "utf8") : "";
+}
+
+// Upstream fences + this repo's fence states. Dies when upstream predates fences or a marker
+// is malformed — both need a human, not a guess — and when upstream is OLDER than this repo:
+// fenceStatus says "behind" whenever the versions differ, so a stale ~/Github/gearbox checkout
+// would otherwise downgrade the fences. --force overrides hand edits, never a downgrade.
+function planFences(downDir) {
+  const files = [
+    { file: "AGENTS.md", name: "protocol", text: readOr(downDir, "AGENTS.md"), upText: readOr(GEARBOX_DIR, "AGENTS.md") },
+    { file: "CONTEXT.md", name: "glossary", text: readOr(downDir, "CONTEXT.md"), upText: readOr(GEARBOX_DIR, "CONTEXT.md") },
+  ];
+  for (const f of files) {
+    try {
+      f.status = fenceStatus(f.text, f.upText, f.name);
+    } catch (e) {
+      die(
+        `Can't read the gearbox:${f.name} fence: ${e.message}`,
+        "an upstream without fences predates Gearbox v2 — refresh the gearbox package/checkout; a malformed local marker must be fixed by hand",
+      );
+    }
+    const { local, upstream } = f.status;
+    if (local && semverGreater(local.version, upstream.version)) {
+      // Under npx, GEARBOX_DIR is the npm package itself (bin/gearbox.js) — no .git to pull.
+      const refresh = UPSTREAM_URL
+        ? `the .gearbox-upstream remote (${UPSTREAM_URL}) is behind — point it at a current Gearbox, or run npx -y gearbox-agents@2 update`
+        : existsSync(join(GEARBOX_DIR, ".git"))
+          ? `refresh the upstream checkout: git -C "${GEARBOX_DIR}" pull — or run npx -y gearbox-agents@2 update`
+          : `this gearbox-agents package (${GEARBOX_DIR}) is older than this repo — run npx -y gearbox-agents@2 update again once ${local.version} or later is published`;
+      die(
+        `Upstream gearbox (${upstream.version}) is older than this repo's protocol (${local.version} in ${f.file}) — refusing to downgrade`,
+        `${refresh}\n(--force only re-applies over hand edits; it never downgrades a fence)`,
+      );
+    }
+  }
+  return { layout: files[0].status.state === "missing" ? "v1" : "v2", files, protocolVersion: files[0].status.upstream.version };
+}
+
+// .gearbox-version, parsed once (ADR-0023/0050). `version`: its first non-empty line, for
+// display. `current`: the file is byte-for-byte what update writes, CRLF aside (an autocrlf
+// checkout). Anything else is rewritten — e.g. a leading blank line, which the protocol check
+// reads as a missing stamp — and since the tree starts clean, a rewrite always changes the blob.
+function readStamp(path, protocolVersion) {
+  const raw = existsSync(path) ? readFileSync(path, "utf8") : null;
+  return {
+    version: (raw || "").split("\n").map((l) => l.trim()).find(Boolean) || null,
+    current: raw !== null && raw.replace(/\r\n/g, "\n") === `${protocolVersion}\n`,
+  };
+}
+
+// v1 → v2 migration plan (ADR-0050): a v1 AGENTS.md has no protocol fence. Read-only and run
+// before the branch step, like planFences, so every refusal leaves the repo as it was. Refused:
+// no (or an empty) AGENTS.md — never onboarded, so install's job, not a titleless skeleton;
+// a CONTEXT.md that already has its fence (only one fence present: markers lost from a v2 tree, or
+// an interrupted migration — migrating it again would add a second glossary fence, oneFenceAdvice
+// says what to do); an uncommitted file the migration rewrites (a v1 AGENTS.md / CONTEXT.md must
+// stay in git history — the report points there — and an untracked docs/INDEX.md would be swept
+// whole into the commit, which untracked files never are, #92); a file whose code fences don't
+// pair up (MigrationError, which names the line to fix).
+const INDEX_PATH = "docs/INDEX.md";
+const INDEX_MOVED_HEADING = "## Moved from AGENTS.md (Gearbox v2 migration)";
+
+function planMigration(downDir, files) {
+  const [agentsFile, contextFile] = files;
+  if (!agentsFile.text.trim())
+    die(
+      existsSync(join(downDir, "AGENTS.md"))
+        ? "AGENTS.md is empty — this isn't an onboarded Gearbox repo; run npx gearbox-agents install instead"
+        : "no AGENTS.md — this isn't an onboarded Gearbox repo; run npx gearbox-agents install instead",
+      "nothing was written",
+    );
+  if (contextFile.status.state !== "missing") {
+    const { what, fix } = oneFenceAdvice("AGENTS.md");
+    die(what, `${fix} — nothing was written`);
+  }
+  // `HEAD:./path` resolves from the cwd: the downstream may be a package in a subdirectory of its repo.
+  const uncommitted = (rel) => existsSync(join(downDir, rel)) && tryRun(`git cat-file -e "HEAD:./${rel}"`) === null;
+  for (const f of files)
+    if (uncommitted(f.file))
+      die(
+        `${f.file} isn't committed — the v1 → v2 migration rewrites it, and its v1 text must stay in git history (ADR-0050)`,
+        "commit it first, then rerun gearbox-update — nothing was written",
+      );
+  let m;
+  try {
+    m = migrateV1({
+      agentsMd: agentsFile.text,
+      contextMd: contextFile.text,
+      known: loadKnown(),
+      protocolBlock: agentsFile.status.upstream.block,
+      glossaryBlock: contextFile.status.upstream.block,
+    });
+  } catch (e) {
+    if (!(e instanceof MigrationError)) throw e;
+    die(e.message, "the v1 → v2 migration (ADR-0050) stopped before writing or committing anything");
+  }
+  // A project may already keep a map in docs/INDEX.md: the moved index is appended, never
+  // overwrites it.
+  let index = null;
+  if (m.indexMd) {
+    if (uncommitted(INDEX_PATH))
+      die(
+        `${INDEX_PATH} isn't committed — the v1 → v2 migration appends the moved index to it and commits the file (ADR-0050)`,
+        "commit it (or move it aside) first, then rerun gearbox-update — nothing was written",
+      );
+    const prior = existsSync(join(downDir, INDEX_PATH)) ? readFileSync(join(downDir, INDEX_PATH), "utf8") : null;
+    index = {
+      path: INDEX_PATH,
+      appended: prior !== null,
+      text: prior === null ? m.indexMd : `${prior.trimEnd()}\n\n${INDEX_MOVED_HEADING}\n\n${m.indexMd.replace(/^# Index\n\n/, "")}`,
+    };
+  }
+  // The commit holding the v1 text, for the report's `git show <base>:AGENTS.md`.
+  return { ...m, index, base: run("git rev-parse --short=12 HEAD"), sections: projectSections(agentsFile.text, Boolean(index)) };
+}
+
+// The v1 project sections the migration keeps in place (spec §4), read the way migrateV1 reads
+// them, and those the v2 skeleton fills with a placeholder because the v1 file had none. A moved
+// index is reported on its own line.
+function projectSections(agentsV1, indexMoved) {
+  const chunks = splitByLevel(agentsV1, 2);
+  const has = (key) => chunks.slice(1).some((c) => baseTitle(c.title).toLowerCase() === key);
+  const kept = chunks[0].lines.some((l) => l.trim() && !l.trim().startsWith(">")) ? ["the title and intro"] : [];
+  const added = [];
+  for (const title of ["Tech stack", "Hard rules", ...(indexMoved ? [] : ["Where to find things"])])
+    (has(title.toLowerCase()) ? kept : added).push(`\`## ${title}\``);
+  return { kept, added };
+}
+
+function migrationPaths(migration) {
+  return ["AGENTS.md", "CONTEXT.md", ...(migration.index ? [migration.index.path] : [])];
+}
+
+// Lines present on one side only — enough to show what a hand edit changed.
+function lineDiff(localContent, upstreamContent, max = 20) {
+  const a = localContent.split("\n");
+  const b = upstreamContent.split("\n");
+  const sa = new Set(a);
+  const sb = new Set(b);
+  const fmt = (arr, sign) =>
+    arr.slice(0, max).map((l) => `${sign} ${l}`).concat(arr.length > max ? [`${sign} … ${arr.length - max} more`] : []);
+  return [...fmt(a.filter((l) => l.trim() && !sb.has(l)), "-"), ...fmt(b.filter((l) => l.trim() && !sa.has(l)), "+")].join("\n");
+}
 
 function generateReport({
-  downstreamRepo,
-  assignments,
-  refreshes,
-  supersedeResult,
-  branchName,
-  reportDate,
-  baseBranch,
+  downstreamRepo, assignments, refreshes, supersedeResult, branchName, reportDate, baseBranch,
+  fenceWrites, migration, earlier, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
 }) {
-  const lines = [];
-  lines.push(`# gearbox-update report`);
-  lines.push("");
-  lines.push(`- Date: ${reportDate}`);
-  lines.push(`- Downstream: ${downstreamRepo}`);
-  lines.push(`- Branch: \`${branchName}\``);
-  lines.push("");
-
-  if (assignments.length === 0 && refreshes.length === 0) {
-    lines.push("## No ADRs to backfill ✅");
-    lines.push("");
-    lines.push("Downstream is already synced to the latest gearbox.");
-    return lines.join("\n");
-  }
-
-  // Drift re-copy table (ADR-0024)
-  if (refreshes.length > 0) {
-    lines.push("## ADRs re-copied due to drift (--refresh-drift)");
-    lines.push("");
-    lines.push(
-      "Files where upstream was revised and the downstream copy was **overwritten**. ⚠️ If downstream had made local edits to these copies, they're gone — pay special attention to these when reviewing the diff:",
-    );
-    lines.push("");
-    lines.push("| gearbox | slug |");
-    lines.push("|---|---|");
-    for (const a of refreshes) {
-      lines.push(`| ADR-${pad4(a.gearbox.num)} | ${a.gearbox.slug} |`);
-    }
-    lines.push("");
-  }
-
-  // Backfilled table (number is 1:1 with upstream, no renumbering)
-  if (assignments.length > 0) {
-    lines.push("## Backfilled ADRs");
-    lines.push("");
-    lines.push("| gearbox | slug |");
-    lines.push("|---|---|");
-    for (const action of assignments) {
-      lines.push(`| ADR-${pad4(action.gearbox.num)} | ${action.gearbox.slug} |`);
-    }
-    lines.push("");
-  }
-
-  // supersede link
-  if (supersedeResult) {
-    lines.push("## Supersede link (gearbox 0012 → downstream 0006)");
-    lines.push("");
-    if (supersedeResult.alreadyApplied) {
-      lines.push(
-        `- Downstream 0006's status is already partially superseded (idempotent, not re-applied)`,
-      );
-    } else {
-      lines.push(
-        `- Downstream \`docs/gearbox-adr/0006-tiered-change-authority.md\`'s status changed to \`partially superseded by ADR-${pad4(supersedeResult.newNum)}\``,
-      );
-    }
-    lines.push("");
-  }
-
-  // AGENTS.md hand-edits needed
-  const agentsMdTasks = assignments
-    .map((action) => ({
-      adr: action.gearbox,
-      impact: AGENTS_MD_IMPACT[action.gearbox.num],
-    }))
-    .filter((t) => t.impact);
-
-  if (agentsMdTasks.length > 0) {
-    lines.push("## ⚠️ AGENTS.md needs a hand-edit (the script doesn't touch AGENTS.md, an L1 file)");
-    lines.push("");
-    lines.push(
-      "The script is a tool, not a protocol enforcer — AGENTS.md's L1 changes need your review before you add them by hand. Suggestion: grep-check whether the corresponding subsection already exists for each change (an idempotent backfill run may have already added it).",
-    );
-    lines.push("");
-    for (const t of agentsMdTasks) {
-      lines.push(
-        `### ADR-${pad4(t.adr.num)} (${t.adr.slug}) → edit \`${t.impact.section}\``,
-      );
-      lines.push("");
-      lines.push(`${t.impact.note}`);
-      lines.push("");
-      lines.push(
-        `Reference: [gearbox AGENTS.md](https://github.com/real-stanyan/gearbox/blob/master/AGENTS.md)`,
-      );
-      lines.push("");
-    }
-  }
-
-  // commit + push status
-  lines.push("## Committed + pushed");
-  lines.push("");
-  lines.push(`- Branch pushed to remote: \`origin/${branchName}\``);
-  lines.push("- The script did **not** open a PR (L1 changes need maintainer agreement)");
-  lines.push("");
-  lines.push("### Next steps (manual)");
-  lines.push("");
-  lines.push("```bash");
-  lines.push(
-    `gh pr create --base ${baseBranch} --head ${branchName} \\`,
-  );
-  const titleParts = [
-    ...assignments.map((action) => pad4(action.gearbox.num)),
-    ...refreshes.map((a) => `${pad4(a.gearbox.num)}(refresh)`),
+  const lines = [
+    "# gearbox-update report",
+    "",
+    `- Date: ${reportDate}`,
+    `- Downstream: ${downstreamRepo}`,
+    `- Branch: \`${branchName}\``,
+    `- Protocol version: ${localStamp || "(no stamp)"} → ${protocolVersion}`,
+    "",
   ];
-  lines.push(`  --title "docs(adr): backfill gearbox ADR ${titleParts.join(" + ")}" \\`);
-  lines.push(`  --body "..."`);
-  lines.push("```");
-  lines.push("");
-  lines.push("- [ ] review the diff");
-  lines.push("- [ ] hand-edit AGENTS.md per the sections above (L1)");
-  lines.push("- [ ] run the downstream gate");
-  lines.push("- [ ] open the PR, wait for the maintainer to write \"agree\" in a PR comment before merging (L1 b-weak form)");
-  lines.push("");
-  lines.push("## Cleanup once done");
-  lines.push("");
-  lines.push("- [ ] delete this report file `gearbox-update-report.md` after the PR merges");
-  lines.push("");
-
+  if (migration) lines.push(...migrationReportLines(migration));
+  else if (earlier) lines.push(...earlierMigrationLines(earlier));
+  if (fenceWrites.length > 0) {
+    lines.push("## Protocol fences rewritten", "", "| File | Fence | From | To | Note |", "|---|---|---|---|---|");
+    for (const w of fenceWrites)
+      lines.push(`| ${w.file} | gearbox:${w.name} | ${w.from} | ${w.to} | ${w.state === "hand-edited" ? "⚠️ overwrote a hand edit (--force)" : "upstream moved"} |`);
+    lines.push("");
+    for (const w of fenceWrites.filter((x) => x.diff))
+      lines.push(
+        `### Hand edit overwritten in ${w.file}`,
+        "",
+        "Lines that differed (- local, + upstream). Re-home anything that mattered in `## Local protocol extensions` / `## Project terms`:",
+        "",
+        "```diff",
+        w.diff,
+        "```",
+        "",
+      );
+  }
+  if (refreshes.length > 0) {
+    lines.push("## ADRs re-copied due to drift (--refresh-drift)", "", "⚠️ Local edits to these copies are gone — check the diff:", "", "| gearbox | slug |", "|---|---|");
+    for (const a of refreshes) lines.push(`| ADR-${pad4(a.gearbox.num)} | ${a.gearbox.slug} |`);
+    lines.push("");
+  }
+  if (assignments.length > 0) {
+    lines.push("## Backfilled ADRs", "", "| gearbox | slug |", "|---|---|");
+    for (const a of assignments) lines.push(`| ADR-${pad4(a.gearbox.num)} | ${a.gearbox.slug} |`);
+    lines.push("");
+  }
+  if (supersedeResult)
+    lines.push(
+      "## Supersede link (gearbox 0012 → downstream 0006)",
+      "",
+      supersedeResult.alreadyApplied
+        ? "- Downstream 0006's status is already partially superseded (idempotent, not re-applied)"
+        : `- Downstream \`docs/gearbox-adr/0006-tiered-change-authority.md\`'s status changed to \`partially superseded by ADR-${pad4(supersedeResult.newNum)}\``,
+      "",
+    );
+  if (workflowWrites.length > 0) {
+    lines.push("## Workflow files", "");
+    for (const w of workflowWrites) lines.push(`- \`${w.path}\` — ${w.why}`);
+    lines.push("");
+  }
+  if (workflowSkipped.length > 0) {
+    lines.push("## Workflow files skipped in GitHub Actions", "");
+    for (const w of workflowSkipped) lines.push(`- [ ] \`${w.path}\` — ${w.why}: ${WORKFLOW_TODO}`);
+    lines.push("");
+  }
+  lines.push("## Protocol check on this branch", "");
+  if (checkResult.errors.length === 0) lines.push("✅ `gearbox-agents check` passes.");
+  else {
+    lines.push(`❌ ${checkResult.errors.length} problem(s) — this PR's gearbox-check job stays red until they're fixed:`, "");
+    for (const e of checkResult.errors) lines.push(`- [ ] ${e}`);
+  }
+  for (const w of checkResult.warnings) lines.push(`- ⚠️ ${w}`);
+  // The case "stays red" misses: on a PR the sync Action opened, no check runs at all.
+  lines.push(
+    "",
+    "> A PR opened by the gearbox-sync Action runs no checks: events made with the Actions `GITHUB_TOKEN` don't trigger workflows. To run them, close and reopen the PR, push a commit to it, or run `npx gearbox-agents@2 check` locally.",
+  );
+  lines.push("", "## Next steps", "");
+  if (!pushed) lines.push(`- [ ] push the branch: \`${pushCmd}\``);
+  lines.push(
+    "- [ ] review the diff; run the Gate and `npx gearbox-agents check`",
+    `- [ ] open the PR (the scheduled gearbox-sync Action does this itself): \`gh pr create --base ${baseBranch} --head ${branchName} --body-file gearbox-update-report.md\``,
+    "- [ ] merging adopts the new protocol version — L1 in this repo: wait for the maintainer's agreement",
+    "- [ ] delete this report file after the PR merges",
+    "",
+  );
   return lines.join("\n");
+}
+
+// The migration commit's subject (a basic regex matching itself: no BRE metacharacter in it) and the
+// line that opens the migration record in its message.
+const MIGRATION_SUBJECT = "docs(protocol): migrate to the Gearbox v2 layout";
+const MIGRATION_RECORD = "Migration record:";
+
+// The migration record (spec §4): everything the report's migration section names, one line per
+// item. The migration commit's message carries it, so it outlives the report.
+function migrationRecordLines(m) {
+  const r = m.report;
+  const c = r.context;
+  const ext = "`## Local protocol extensions`";
+  return [
+    ...(m.sections.kept.length ? [`- Kept in place: ${m.sections.kept.join(", ")}`] : []),
+    ...(m.sections.added.length ? [`- Added with a placeholder (not in the v1 file): ${m.sections.added.join(", ")}`] : []),
+    r.maintainer ? `- Maintainer: \`${r.maintainer}\` (detected in the v1 protocol text — to be confirmed)` : "- Maintainer: not detected",
+    r.gateMoved
+      ? `- Gate command: moved to \`## Gate\`${r.gateNotes ? ` (+${r.gateNotes} project note line(s) below it)` : ""}`
+      : "- Gate command: not found",
+    `- Division of labor: ${r.divisionOfLabor === "kept" ? "the v1 choice, kept" : "none chosen in v1 — the default"}`,
+    ...(m.index
+      ? [`- Where to find things: ${r.indexMoved.bytes} bytes ${m.index.appended ? "appended to the existing" : "moved to a new"} \`${m.index.path}\``]
+      : []),
+    ...(r.oversize ? [`- Oversize: AGENTS.md is still ${r.oversize} bytes (> 32768)`] : []),
+    ...r.moved.map((t) => `- Moved verbatim into ${ext}: ${t}`),
+    ...r.carried.map((x) => `- Carried into ${ext}: ${x.section} — ${x.lines} line(s)`),
+    ...r.flagged.map((f) => `- Flagged for manual review (not carried): ${f.section} — ${f.unknown}/${f.total} unknown lines`),
+    ...r.extraSections.map((t) => `- Other top-level section kept as it was: ${t}`),
+    `- CONTEXT.md: ${c.removedTerms} protocol term row(s) replaced by the glossary fence; ${c.keptRows} project row(s) kept`,
+    ...c.editedTerms.map((t) => `- CONTEXT.md: protocol term \`${t}\` had been edited locally (the fence now carries upstream's)`),
+    ...[...new Set(c.collisions)].map((t) => `- CONTEXT.md collision: \`${t}\` is a project row and a protocol term`),
+  ];
+}
+
+// A resumed branch's report: the migration section from the record an earlier run committed. The v1
+// text is in the commit's parent, named `~1` — cmd.exe would eat a `^`.
+function earlierMigrationLines({ sha, record }) {
+  return [
+    "## ⚠️ v1 → v2 layout migration (ADR-0050)",
+    "",
+    `From an earlier run on this branch: commit \`${sha}\` migrated AGENTS.md / CONTEXT.md to the v2 layout, and below is the record from its message — every flagged, carried or moved item in it still needs the human pass. The pre-migration text: \`git show ${sha}~1:./AGENTS.md\`.`,
+    "",
+    ...(record.length > 0 ? record : [`- (no record in that commit's message — see \`git show ${sha}\`)`]),
+    "",
+  ];
+}
+
+// The v1 → v2 migration's part of the PR body (spec §4): what moved where, and a checklist of
+// what needs a human. Every unknown v1 line is in `## Gate`, in `## Local protocol extensions`,
+// or named here (a flagged subsection) — this is where "nothing dropped silently" is kept.
+function migrationReportLines(m) {
+  const r = m.report;
+  const oldText = `\`git show ${m.base}:./AGENTS.md\``; // ./ = from the downstream dir, where this report is
+  const notes = r.gateNotes ? ` (+${r.gateNotes} project note line(s) below the command)` : "";
+  const L = [
+    "## ⚠️ v1 → v2 layout migration (ADR-0050)",
+    "",
+    `This repo's AGENTS.md held the v1 protocol text, merged by hand. It is now a tool-managed fence — as are CONTEXT.md's protocol terms — and project content lives in the sections around it. Every line that wasn't known upstream text is accounted for below — nothing was dropped silently. The pre-migration text: ${oldText}.`,
+    "",
+    ...(m.sections.kept.length ? [`- Kept in place: ${m.sections.kept.join(", ")} (v1 template notes dropped)`] : []),
+    ...(m.sections.added.length ? [`- [ ] Not in the v1 file, so added with a placeholder: ${m.sections.added.join(", ")} — fill in`] : []),
+    // A to-do even when detected: a real dry run detected a login that belongs to an unrelated person.
+    r.maintainer
+      ? `- [ ] confirm \`${r.maintainer}\` is the GitHub account whose PR comment counts as L1 approval (## Maintainer)`
+      : "- [ ] set ## Maintainer",
+    r.gateMoved
+      ? `- Gate command: moved to \`## Gate\`${notes}`
+      : "- [ ] Gate command: **not found** — fill in `## Gate`, byte-identical to `.github/workflows/ci.yml`",
+    `- Division of labor: ${r.divisionOfLabor === "kept" ? "your v1 choice, kept in `## Division of labor`" : "none chosen in v1 — `## Division of labor` states the default (claim-based ownership)"}`,
+  ];
+  if (m.index)
+    L.push(
+      `- Where to find things: ${r.indexMoved.bytes} bytes ${m.index.appended ? `appended to the existing \`${m.index.path}\` under \`${INDEX_MOVED_HEADING}\`` : `moved to a new \`${m.index.path}\``} to fit the 32 KiB budget; AGENTS.md keeps four pointer lines and is ${Buffer.byteLength(m.agentsMd)} bytes`,
+    );
+  if (r.oversize)
+    L.push(`- [ ] **AGENTS.md is still ${r.oversize} bytes (> 32768)** — trim Local protocol extensions or project sections (point to ADRs for detail); the protocol check fails until it fits`);
+  L.push("");
+  if (r.moved.length) {
+    L.push("### Subsections moved verbatim into `## Local protocol extensions`", "");
+    for (const t of r.moved)
+      L.push(`- [ ] ${t} — set its \`Upstream:\` (an upstream issue link, or \`project-specific\`); if it's a project procedure rather than a protocol extension, move it to a project section`);
+    L.push("");
+  }
+  if (r.carried.length) {
+    L.push("### Local lines carried into `## Local protocol extensions`", "");
+    for (const c of r.carried)
+      L.push(`- [ ] From v1: ${c.section} — ${c.lines} line(s). A line edited in place is carried whole: trim what the fence now says anyway, then set \`Upstream:\``);
+    L.push("");
+  }
+  if (r.flagged.length) {
+    L.push(
+      "### ⚠️ Subsections flagged for manual review (not carried)",
+      "",
+      `More than half of each one's lines weren't known upstream text (translated or rewritten), so carrying them would duplicate the protocol. Compare them with the pre-migration text (${oldText}) and move any genuine project rule into \`## Local protocol extensions\`:`,
+      "",
+    );
+    for (const f of r.flagged) L.push(`- [ ] ${f.section} — ${f.unknown}/${f.total} unknown lines`);
+    L.push("");
+  }
+  if (r.extraSections.length) {
+    L.push("### Other top-level sections kept as they were", "");
+    for (const t of r.extraSections) L.push(`- ${t}`);
+    L.push("");
+  }
+  const c = r.context;
+  L.push("### CONTEXT.md", "", `- ${c.removedTerms} protocol term row(s) replaced by the glossary fence; ${c.keptRows} project row(s) kept`);
+  if (c.editedTerms.length)
+    L.push(`- [ ] Protocol terms whose definition had been edited locally (the fence now carries upstream's — re-home anything project-specific under \`## Project terms\`): ${c.editedTerms.map((t) => `\`${t}\``).join(", ")}`);
+  for (const t of [...new Set(c.collisions)])
+    L.push(`- [ ] \`${t}\` — kept as a project row, but it's also a protocol term (the glossary fence defines it): confirm it's a product term; if the row restates the protocol meaning, delete it`);
+  L.push("");
+  return L;
 }
 
 // ============== git operations ==============
 
-function gitOps(downDir, assignments, refreshes, supersedeResult, branchName, upstreamVersion, resume) {
-  // Create the branch (resume mode is already on it, #96)
-  if (!resume) run(`git checkout -b ${branchName}`);
+// Stage `paths` and commit them; false (no commit) when staging changed nothing. A planned write
+// can already match the index once git normalizes it (a core.autocrlf / eol=crlf checkout keeps
+// LF blobs), and `git commit` would then fail halfway through the sequence.
+function commitPaths(paths, message) {
+  const spec = paths.join(" ");
+  run(`git add -- ${spec}`);
+  if (tryRun(`git diff --cached --quiet -- ${spec}`) !== null) return false; // exit 0: nothing staged
+  runWithStdin("git commit -F -", message);
+  return true;
+}
 
-  // One commit per drift re-copy (ADR-0024)
-  for (const a of refreshes) {
-    const dstPath = `docs/gearbox-adr/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`;
-    run(`git add ${dstPath}`);
-    const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`;
-    const commitMsg = `docs(adr): drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})
+// Returns `made`: one display line per commit that landed, in commit order (a commit skipped by
+// commitPaths lands in `unchanged` instead), so the printed list never claims a commit that isn't there.
+function gitOps({ assignments, refreshes, supersedeResult, protocolVersion, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd }) {
+  const made = [];
+  const unchanged = [];
+  const commit = (paths, message, label) => {
+    const ok = commitPaths(paths, message);
+    (ok ? made : unchanged).push(...[].concat(label));
+    return ok;
+  };
+
+  for (const a of refreshes)
+    commit(
+      [adrRelPath(a.gearbox)],
+      `docs(adr): drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})
 
 Upstream gearbox ADR-${pad4(a.gearbox.num)} has been revised (hash drift); rerunning the
 transform against upstream's latest content and overwriting, provenance stamp refreshed →
 sha256:${sha12(a.gearbox.content)}.
 by gearbox-update --refresh-drift (gearbox ADR-0024).
-Provenance: ${gearboxUrl}`;
-    runWithStdin(`git commit -F -`, commitMsg);
-  }
+Provenance: ${GEARBOX_GITHUB_BASE}/${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`,
+      `drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})`,
+    );
 
-  // One commit per backfilled ADR (number is 1:1 with upstream, no renumbering)
   for (const action of assignments) {
-    const gearboxAdr = action.gearbox;
-    const dstPath = `docs/gearbox-adr/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
-    run(`git add ${dstPath}`);
-
-    const gearboxUrl = `${GEARBOX_GITHUB_BASE}/${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`;
-    const commitMsg = `docs(adr): backfill gearbox ADR-${pad4(gearboxAdr.num)} (${gearboxAdr.slug})
+    const g = action.gearbox;
+    commit(
+      [adrRelPath(g)],
+      `docs(adr): backfill gearbox ADR-${pad4(g.num)} (${g.slug})
 
 by gearbox-update tool.
-Provenance: ${gearboxUrl}
-
-Note: the corresponding AGENTS.md section needs a manual edit (an L1 file, the script doesn't
-    touch it). See gearbox-update-report.md.`;
-
-    runWithStdin(`git commit -F -`, commitMsg);
+Provenance: ${GEARBOX_GITHUB_BASE}/${pad4(g.num)}-${g.slug}.md`,
+      `ADR-${pad4(g.num)}`,
+    );
   }
 
-  // supersede-link commit (if it changed)
-  if (supersedeResult && !supersedeResult.alreadyApplied) {
-    run(`git add docs/gearbox-adr/0006-tiered-change-authority.md`);
-    const commitMsg = `docs(adr): sync 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
+  if (supersedeResult && !supersedeResult.alreadyApplied)
+    commit(
+      [SUPERSEDE_PATH],
+      `docs(adr): sync 0006 status → partially superseded by ADR-${pad4(supersedeResult.newNum)}
 
 gearbox 0012 supersedes 0006; this commit syncs downstream 0006's status line to
-partially superseded. by gearbox-update tool.`;
-    runWithStdin(`git commit -F -`, commitMsg);
-  }
+partially superseded. by gearbox-update tool.`,
+      "0006 status sync",
+    );
 
-  // .gearbox-version stamp (ADR-0023): a completed backfill counts as synced to upstream's
-  // current version. Skip if unchanged — an empty commit would fail.
-  let stampUpdated = false;
-  if (upstreamVersion) {
-    const stampPath = join(downDir, ".gearbox-version");
-    const prev = existsSync(stampPath)
-      ? readFileSync(stampPath, "utf8").trim()
-      : null;
-    if (prev !== upstreamVersion) {
-      writeFileSync(stampPath, upstreamVersion + "\n");
-      run("git add .gearbox-version");
-      const commitMsg = `chore: .gearbox-version → ${upstreamVersion}
+  if (migration) commitMigration(commit, migration, protocolVersion);
 
-Backfill complete, version stamp updated to upstream's latest tag (gearbox ADR-0023).
-by gearbox-update tool.`;
-      runWithStdin(`git commit -F -`, commitMsg);
-      stampUpdated = true;
+  if (fenceWrites.length > 0)
+    commit(
+      fenceWrites.map((w) => w.file),
+      `docs(protocol): sync the gearbox fences → ${protocolVersion}
+
+${fenceWrites.map((w) => `- ${w.file} gearbox:${w.name} ${w.from} → ${w.to}${w.state === "hand-edited" ? " (overwrote a hand edit, --force)" : ""}`).join("\n")}
+
+The fenced protocol is rewritten by tooling, never merged by hand (gearbox ADR-0050).
+by gearbox-update tool.`,
+      fenceWrites.map((w) => `${w.file} gearbox:${w.name} ${w.from} → ${w.to}`),
+    );
+
+  if (workflowWrites.length > 0)
+    commit(
+      workflowWrites.map((w) => w.path),
+      `ci: gearbox workflow files (${workflowWrites.map((w) => `${w.path.split("/").pop()} ${w.why}`).join(", ")})
+
+gearbox-check.yml is tool-owned and runs the protocol check on every PR (gearbox ADR-0051);
+gearbox-sync.yml pins the major version instead of @latest.
+by gearbox-update tool.`,
+      workflowWrites.map((w) => `${w.path.split("/").pop()} ${w.why}`).join(", "),
+    );
+
+  // .gearbox-version = the protocol version (ADR-0050), committed even when nothing else
+  // changed — the pre-v2 early return skipped this and stranded downstreams at v1.15.0.
+  // main() parsed it once (readStamp) and already wrote it.
+  if (!stampCurrent)
+    commit(
+      [".gearbox-version"],
+      `chore: .gearbox-version → ${protocolVersion}
+
+The protocol version this repo now runs (gearbox ADR-0023, ADR-0050).
+by gearbox-update tool.`,
+      `.gearbox-version → ${protocolVersion} ${C.dim("(ADR-0023 stamp)")}`,
+    );
+
+  // push: null with --no-push, else { ok } — and on failure git's own words (gitErrorLines)
+  let push = null;
+  if (!noPush) {
+    try {
+      run(pushCmd);
+      push = { ok: true };
+    } catch (e) {
+      push = { ok: false, lines: gitErrorLines(e) };
     }
   }
+  return { push, made, unchanged };
+}
 
-  // push (--force-redo rebuilt the branch → --force-with-lease to overwrite the remote, ADR-0025)
-  const pushResult = tryRun(
-    forceRedo
-      ? `git push --force-with-lease -u origin ${branchName} 2>&1`
-      : `git push -u origin ${branchName} 2>&1`,
+// The v1 → v2 layout change as one commit (ADR-0050), through gitOps' `commit` (commitPaths).
+// The message carries the migration record (migrationRecordLines): the report is a disposable file,
+// and a same-day rerun regenerates it from a tree that is already v2 — earlierMigration reads the
+// record back from here.
+function commitMigration(commit, migration, protocolVersion) {
+  const body = [
+    "The protocol body now sits in a tool-managed fence and project content in project",
+    "sections (gearbox ADR-0050). The v1 text is this commit's parent. The PR body",
+    "(gearbox-update-report.md) turns the record below into a checklist for a human.",
+    "",
+    MIGRATION_RECORD,
+    ...migrationRecordLines(migration),
+    "",
+    "by gearbox-update tool.",
+  ];
+  commit(
+    migrationPaths(migration),
+    `${MIGRATION_SUBJECT} (${protocolVersion})\n\n${body.join("\n")}`,
+    `${migrationPaths(migration).join(" / ")} → the Gearbox v2 layout ${C.dim("(ADR-0050)")}`,
   );
-  return { pushResult, stampUpdated };
+}
+
+// The record of a migration commit an earlier run made on today's branch (commitMigration), read back
+// when this run resumes the branch and migrates nothing itself — so the regenerated report still names
+// every flagged subsection (spec §4). The newest commit with the migration subject that isn't on
+// `base`; null when there is none. No shell: `%` and parentheses stay literal on every platform.
+function earlierMigration(base) {
+  let out;
+  try {
+    out = execFileSync(
+      "git",
+      ["log", "-1", "--format=%h%n%B", "--basic-regexp", `--grep=^${MIGRATION_SUBJECT}`, base ? `${base}..HEAD` : "HEAD"],
+      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+  } catch {
+    return null;
+  }
+  if (!out) return null;
+  const [sha, ...message] = out.split("\n");
+  const start = message.indexOf(MIGRATION_RECORD);
+  const record = [];
+  if (start !== -1)
+    for (const line of message.slice(start + 1)) {
+      if (!line.trim()) break;
+      record.push(line);
+    }
+  return { sha, record };
 }
 
 // ============== main flow ==============
@@ -803,10 +1048,10 @@ by gearbox-update tool.`;
 async function main() {
   await tui.logo();
   if (!tui.isTTY) stdout.write(C.bold(C.cyan("\n⟳ gearbox-update\n")));
-  stdout.write(C.dim("  aggressive downstream ADR sync tool\n\n"));
+  stdout.write(C.dim("  downstream protocol sync (fences + ADRs)\n\n"));
 
   resolveUpstream(); // upstream addressing (local/remote), overwrites GEARBOX_DIR (ADR-0027)
-  const { downDir, downAdrDir, branch, resume, plannedBranch } = validateContext();
+  const { downDir, downAdrDir, branch, resume, redo, plannedBranch } = validateContext();
   // PR base uses the detected main branch; if running on some other branch, falls back to master
   const baseBranch = branch === "main" || branch === "master" ? branch : "master";
 
@@ -853,6 +1098,57 @@ async function main() {
   const toRefresh = actions.filter((a) => a.type === "refresh");
   const driftedSkips = skipped.filter((a) => a.drifted);
 
+  const fences = planFences(downDir);
+  const protocolVersion = fences.protocolVersion;
+  const stampPath = join(downDir, ".gearbox-version");
+  const { version: localStamp, current: stampCurrent } = readStamp(stampPath, protocolVersion);
+  const fenceWrites = [];
+  let migration = null;
+  if (fences.layout === "v2") {
+    const handEdited = fences.files.filter((f) => f.status.state === "hand-edited");
+    if (handEdited.length > 0 && !force)
+      die(
+        `Hand-edited gearbox fence in ${handEdited.map((f) => f.file).join(" and ")} (ADR-0050)`,
+        'move the local rules into "## Local protocol extensions" (AGENTS.md) or "## Project terms" (CONTEXT.md), then rerun with --force to re-apply upstream\'s fence.\nWhat differs from upstream:\n' +
+          handEdited.map((f) => `${f.file}:\n${lineDiff(f.status.local.content, f.status.upstream.content)}`).join("\n"),
+      );
+    for (const f of fences.files) {
+      if (f.status.state === "missing") {
+        const { what, fix } = oneFenceAdvice(f.file);
+        die(what, `${fix} — nothing was written`);
+      }
+      if (f.status.state === "synced") continue;
+      fenceWrites.push({
+        file: f.file,
+        name: f.name,
+        state: f.status.state,
+        from: f.status.local.version,
+        to: f.status.upstream.version,
+        diff: f.status.state === "hand-edited" ? lineDiff(f.status.local.content, f.status.upstream.content) : null,
+        text: replaceFence(f.text, f.name, f.status.upstream.block),
+      });
+    }
+  } else {
+    migration = planMigration(downDir, fences.files);
+    const r = migration.report;
+    stdout.write(
+      C.yellow("⚠️  v1 AGENTS.md layout — migrating to the Gearbox v2 layout (ADR-0050)\n") +
+        C.dim(
+          `  ${r.carried.reduce((n, c) => n + c.lines, 0)} local line(s) carried · ${r.moved.length} subsection(s) moved · ${r.flagged.length} flagged for review${migration.index ? ` · index → ${migration.index.path}` : ""} — details in the report\n`,
+        ),
+    );
+    // Named here too, not only in the report: a flagged subsection isn't carried anywhere.
+    if (r.moved.length) stdout.write(C.dim(`  moved into Local protocol extensions: ${r.moved.join(" · ")}\n`));
+    if (r.flagged.length)
+      stdout.write(C.yellow(`  ⚠️  flagged for manual review (not carried): ${r.flagged.map((f) => `${f.section} (${f.unknown}/${f.total} unknown lines)`).join(" · ")}\n`));
+    stdout.write("\n");
+  }
+  // Tool-owned workflow files (ADR-0051). In GitHub Actions none is written: the push would be
+  // refused, costing the whole sync — each change is skipped instead, for a local run to write.
+  const workflowPlan = planWorkflowFixes(downDir);
+  const workflowWrites = IN_ACTIONS ? [] : workflowPlan;
+  const workflowSkipped = IN_ACTIONS ? workflowPlan : [];
+
   // TTY: the whole scan collapses into one presentational bar (results are already
   // computed); the per-ADR skip wall is gone — only actionable lines follow (ADR-0041)
   if (tui.isTTY) {
@@ -870,13 +1166,30 @@ async function main() {
     stdout.write("\n");
   }
 
-  if (toCopy.length === 0 && toRefresh.length === 0) {
-    stdout.write(C.green("✅ No ADRs to backfill — downstream is already synced to the latest gearbox\n\n"));
+  const nothingToDo =
+    toCopy.length === 0 && toRefresh.length === 0 && fenceWrites.length === 0 && !migration && workflowWrites.length === 0 && stampCurrent;
+  // One annotation per skipped workflow change, raw — a color code in front would hide it from
+  // Actions. With a backfill branch coming, the local run waits for its merge: a local run before
+  // it would build a second, conflicting branch of the same name.
+  for (const w of workflowSkipped)
+    stdout.write(
+      `::warning::gearbox-update skipped ${w.path} (${w.why}): the Actions token can't push workflow files — run npx gearbox-agents@2 update locally${nothingToDo ? "" : " after this run's backfill PR merges"}\n`,
+    );
+
+  if (nothingToDo) {
+    stdout.write(
+      C.green(
+        workflowSkipped.length > 0
+          ? "✅ Nothing to do here — fences, ADRs and .gearbox-version all match upstream; the workflow file(s) above need a local run\n\n"
+          : "✅ Nothing to do — fences, ADRs and .gearbox-version all match upstream\n\n",
+      ),
+    );
     if (resume) {
       stdout.write(
         C.dim(`  resumed ${plannedBranch}: nothing new to commit — if its PR isn't open yet: gh pr create --base ${baseBranch} --head ${plannedBranch}\n`),
       );
     }
+    if (redo) stdout.write(C.dim(`  --force-redo: nothing to rebuild — ${plannedBranch} is left as it was\n`));
     // Non-TTY (CI, pipes): full listing, unchanged. TTY: the scan bar already said it.
     if (!tui.isTTY) {
       stdout.write(C.dim("Already skipped (downstream already has these):\n"));
@@ -896,6 +1209,32 @@ async function main() {
     stdout.write("\n");
     return;
   }
+
+  // Branch first, files second — and only now, past every refusal above: a failing
+  // `git branch -D` / `checkout -b` leaves the tree untouched, and a failure mid-commit leaves
+  // you on the backfill branch, never with half a sync written onto main.
+  const branchName = plannedBranch; // one name for resume, --force-redo's delete and the new branch
+  try {
+    if (redo) run(`git branch -D ${branchName}`);
+    if (!resume) run(`git checkout -b ${branchName}`);
+  } catch (e) {
+    die(
+      `Can't ${redo ? "rebuild" : "create"} ${branchName}: ${e.message}`,
+      "nothing was written or committed — a branch checked out in another worktree can't be deleted (git worktree list)",
+    );
+  }
+  if (redo) stdout.write(`${C.yellow("✓ deleted")} the old ${branchName} (--force-redo), rebuilding from ${branch}\n`);
+
+  // Every file this run writes goes through writeOwn, which records the ones it CREATES, as exact
+  // paths: the failure hint's `git clean` may delete those and nothing else — never a user's own
+  // untracked file beside ours (a local ADR draft in docs/gearbox-adr/, say), never a directory.
+  const created = [];
+  const writeOwn = (rel, text) => {
+    const abs = join(downDir, rel);
+    if (!existsSync(abs)) created.push(rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, text);
+  };
 
   if (toCopy.length > 0) {
     stdout.write(C.yellow(`⚠️  ${toCopy.length} to backfill:\n`));
@@ -938,22 +1277,13 @@ async function main() {
       await tui.progress(
         "backfill",
         toCopy.map((a) => `${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`),
-        (name, i) => {
-          const gearboxAdr = toCopy[i].gearbox;
-          const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
-          writeFileSync(dstPath, transformAdrContent(gearboxAdr));
-        },
+        (name, i) => writeOwn(adrRelPath(toCopy[i].gearbox), transformAdrContent(toCopy[i].gearbox)),
         { perItemMs: 60, doneNote: `(${toCopy.length} ADRs copied under their upstream numbers)` },
       );
     } else {
       for (const action of toCopy) {
-        const gearboxAdr = action.gearbox;
-        const dstPath = join(downAdrDir, `${pad4(gearboxAdr.num)}-${gearboxAdr.slug}.md`);
-        const transformed = transformAdrContent(gearboxAdr);
-        writeFileSync(dstPath, transformed);
-        stdout.write(
-          `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")}\n`,
-        );
+        writeOwn(adrRelPath(action.gearbox), transformAdrContent(action.gearbox));
+        stdout.write(`  ${C.green("✓")} ${adrRelPath(action.gearbox)}\n`);
       }
     }
     stdout.write("\n");
@@ -964,15 +1294,8 @@ async function main() {
   if (toRefresh.length > 0) {
     stdout.write(C.bold("Drift re-copy (overwrite, stamp refreshed):\n"));
     for (const a of toRefresh) {
-      const dstPath = join(
-        downAdrDir,
-        `${pad4(a.gearbox.num)}-${a.gearbox.slug}.md`,
-      );
-      const transformed = transformAdrContent(a.gearbox);
-      writeFileSync(dstPath, transformed);
-      stdout.write(
-        `  ${C.green("✓")} ${dstPath.replace(downDir + "/", "")} ${C.dim(`(upstream sha256:${sha12(a.gearbox.content)})`)}\n`,
-      );
+      writeOwn(adrRelPath(a.gearbox), transformAdrContent(a.gearbox));
+      stdout.write(`  ${C.green("✓")} ${adrRelPath(a.gearbox)} ${C.dim(`(upstream sha256:${sha12(a.gearbox.content)})`)}\n`);
     }
     stdout.write("\n");
   }
@@ -1000,89 +1323,87 @@ async function main() {
     stdout.write("\n");
   }
 
-  // git operations
+  for (const w of fenceWrites) writeOwn(w.file, w.text);
+  if (migration) {
+    writeOwn("AGENTS.md", migration.agentsMd);
+    writeOwn("CONTEXT.md", migration.contextMd);
+    if (migration.index) writeOwn(migration.index.path, migration.index.text);
+  }
+  for (const w of workflowWrites) writeOwn(w.path, w.text);
+  if (!stampCurrent) writeOwn(".gearbox-version", protocolVersion + "\n");
+
   const reportDate = new Date().toISOString().slice(0, 10);
-  const branchName = `docs/gearbox-backfill-${reportDate}`;
+  // --force-redo rebuilt the branch → overwrite the remote (ADR-0025); every push hint uses this too
+  const pushCmd = `git push ${forceRedo ? "--force-with-lease " : ""}-u origin ${branchName}`;
 
-  // Upstream's highest version tag (for the ADR-0023 stamp; semver-sorted, skip the stamp if
-  // there's no tag). Priority: env override (npx package passes package.json version,
-  // ADR-0028) > remote ls-remote (ADR-0027, a shallow clone isn't guaranteed to carry every
-  // tag) > local git tag.
-  const upstreamVersion =
-    env.GEARBOX_UPSTREAM_VERSION ||
-    (UPSTREAM_URL
-      ? ((tryRun(`git ls-remote --tags --sort=-v:refname "${UPSTREAM_URL}"`) || "")
-          .split("\n")
-          .map((l) => (l.match(/v[0-9]+\.[0-9]+\.[0-9]+$/) || [])[0])
-          .filter(Boolean)[0] || null)
-      : ((tryRun(`git -C "${GEARBOX_DIR}" tag -l 'v*' --sort=-v:refname`) || "")
-          .split("\n")[0] || null));
-
-  stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
-  try {
-    const { pushResult, stampUpdated } = gitOps(
-      downDir,
-      toCopy,
-      toRefresh,
-      supersedeResult,
-      branchName,
-      upstreamVersion,
-      resume,
+  // The report (the PR body) is written before any commit: a failed git operation below must not
+  // lose it — it's the only place a flagged (uncarried) v1 subsection is named (spec §4). Its
+  // protocol check reads the working tree, which committing doesn't change; once gitOps has run,
+  // only the push line can differ, so the same inputs regenerate it.
+  const checkResult = runProtocolChecks(downDir);
+  // Resumed onto a branch an earlier run migrated: its record goes back into the report — only when
+  // this run doesn't migrate itself, whose own section would otherwise be doubled. The base is the
+  // branch this run came from; already sitting on today's branch (--allow-branch), main or master.
+  const earlier =
+    resume && !migration
+      ? earlierMigration(branch !== plannedBranch ? branch : ["main", "master"].find((b) => tryRun(`git rev-parse --verify --quiet ${b}`)))
+      : null;
+  if (earlier) stdout.write(C.dim(`  the report re-includes the v1 → v2 migration record of ${earlier.sha} (an earlier run on this branch)\n\n`));
+  const reportPath = join(downDir, "gearbox-update-report.md");
+  const writeReport = (pushed) =>
+    writeFileSync(
+      reportPath,
+      generateReport({
+        downstreamRepo: downRepo, assignments: toCopy, refreshes: toRefresh, supersedeResult, branchName, reportDate, baseBranch,
+        fenceWrites, migration, earlier, workflowWrites, workflowSkipped, protocolVersion, localStamp, checkResult, pushed, pushCmd,
+      }),
     );
-    for (const a of toRefresh) {
-      stdout.write(
-        `  ${C.green("✓ commit")} drift re-copy ADR-${pad4(a.gearbox.num)} (${a.gearbox.slug})\n`,
-      );
-    }
-    for (const action of toCopy) {
-      stdout.write(
-        `  ${C.green("✓ commit")} ADR-${pad4(action.gearbox.num)}\n`,
-      );
-    }
-    if (supersedeResult && !supersedeResult.alreadyApplied) {
-      stdout.write(`  ${C.green("✓ commit")} 0006 status sync\n`);
-    }
-    if (stampUpdated) {
-      stdout.write(
-        `  ${C.green("✓ commit")} .gearbox-version → ${upstreamVersion} ${C.dim("(ADR-0023 stamp)")}\n`,
-      );
-    } else if (upstreamVersion) {
-      stdout.write(
-        `  ${C.dim(`✓ .gearbox-version is already ${upstreamVersion}, unchanged`)}\n`,
-      );
-    } else {
-      stdout.write(
-        `  ${C.yellow("⚠")} .gearbox-version not updated — upstream has no tag\n`,
-      );
-    }
-    if (pushResult) {
-      stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
-    } else {
-      stdout.write(
-        `  ${C.yellow("⚠ push failed — local branch already created, push manually:")}\n`,
-      );
-      stdout.write(`     git push -u origin ${branchName}\n`);
-    }
+  writeReport(false);
+
+  // git operations
+  stdout.write(C.bold(`git operations (branch ${branchName}):\n`));
+  let push = null;
+  try {
+    const ops = gitOps({ assignments: toCopy, refreshes: toRefresh, supersedeResult, protocolVersion, fenceWrites, migration, workflowWrites, stampCurrent, pushCmd });
+    push = ops.push;
+    for (const m of ops.made) stdout.write(`  ${C.green("✓ commit")} ${m}\n`);
+    for (const u of ops.unchanged) stdout.write(`  ${C.dim(`· ${u} — already matched the index, nothing to commit`)}\n`);
+    if (stampCurrent) stdout.write(`  ${C.dim(`✓ .gearbox-version is already ${protocolVersion}, unchanged`)}\n`);
+    if (noPush) stdout.write(`  ${C.dim("push skipped (--no-push)")}\n`);
+    else if (push.ok) stdout.write(`  ${C.green("✓ push")} origin/${branchName}\n`);
+    else stdout.write(`  ${C.red("✗ push failed — git said:")}\n${push.lines.map((l) => `      ${l}\n`).join("")}`);
   } catch (e) {
+    // Exact files, in gitOps' commit order — never a directory, which would sweep a user's own
+    // untracked file into `git add` (#92). `git clean` gets only what this run created: tracked
+    // files are restored by `git checkout -f`, and anything else was there before this run.
+    const own = [
+      ...toRefresh.map((a) => adrRelPath(a.gearbox)),
+      ...toCopy.map((a) => adrRelPath(a.gearbox)),
+      ...(supersedeResult && !supersedeResult.alreadyApplied ? [SUPERSEDE_PATH] : []),
+      ...(migration ? migrationPaths(migration) : []),
+      ...fenceWrites.map((w) => w.file),
+      ...workflowWrites.map((w) => w.path),
+      ...(stampCurrent ? [] : [".gearbox-version"]),
+    ];
     die(
       `git operation failed: ${e.message}`,
-      "local files were written but not committed/pushed, handle it manually:\n  git status\n  git add docs/gearbox-adr/\n  git commit\n  git push",
+      [
+        `the files are written on ${branchName} but not all committed; gearbox-update-report.md (the PR body) is written. Finish by hand:`,
+        "  git status",
+        `  git add -- ${own.join(" ")}`,
+        "  git commit",
+        `  ${pushCmd}`,
+        created.length > 0
+          ? "or start over: drop this run's edits, delete only the files it created (the dry run lists them first), then --force-redo deletes and rebuilds today's branch:"
+          : "or start over: drop this run's edits, then --force-redo deletes and rebuilds today's branch:",
+        `  git checkout -f ${branch}`,
+        ...(created.length > 0 ? [`  git clean -n -- ${created.join(" ")}`, `  git clean -f -- ${created.join(" ")}`] : []),
+        "  gearbox-update --force-redo",
+      ].join("\n"),
     );
   }
   stdout.write("\n");
-
-  // generate the report
-  const report = generateReport({
-    downstreamRepo: downRepo,
-    assignments: toCopy,
-    refreshes: toRefresh,
-    supersedeResult,
-    branchName,
-    reportDate,
-    baseBranch,
-  });
-  const reportPath = join(downDir, "gearbox-update-report.md");
-  writeFileSync(reportPath, report);
+  if (push && push.ok) writeReport(true);
 
   stdout.write(C.green(`✓ report: ${reportPath.replace(downDir + "/", "")}\n`));
   stdout.write(
@@ -1091,19 +1412,22 @@ async function main() {
     ),
   );
 
+  // A failed push is a failure (ADR-0051), never a yellow line under a green job: the sync Action's
+  // PR step must not run, and nobody reads a log that says "done". The commits and the report (its
+  // push line still unchecked) stay — the push is all that's left to redo.
+  if (push && !push.ok)
+    die(
+      `push to origin failed — ${branchName} is committed locally, and gearbox-update-report.md (the PR body) is written`,
+      `fix what git reported above, then retry the push:\n  ${pushCmd}`,
+    );
+
   stdout.write(tui.isTTY ? "  " + tui.grad("⚙ downstream in sync") + "\n" : C.bold(C.green("✓ done\n")));
   stdout.write("\n");
   stdout.write(C.bold("Next steps:\n"));
-  stdout.write(
-    `  1. Check ${C.cyan("gearbox-update-report.md")} to decide which AGENTS.md sections need hand-edits\n`,
-  );
-  stdout.write(`  2. Hand-edit AGENTS.md (L1)\n`);
-  stdout.write(`  3. Run the downstream gate\n`);
-  stdout.write(`  4. Open a PR:\n`);
-  stdout.write(`     ${C.cyan(`gh pr create --base ${baseBranch} --head ${branchName} --title "..." --body "..."`)}\n`);
-  stdout.write(
-    `  5. Wait for the maintainer to write "agree" in a PR comment before merging (L1 b-weak form)\n\n`,
-  );
+  stdout.write(`  1. Review the branch and ${C.cyan("gearbox-update-report.md")} (the PR body)\n`);
+  stdout.write(`  2. Run the Gate and ${C.cyan("npx gearbox-agents check")}\n`);
+  stdout.write(`  3. Open a PR: ${C.cyan(`gh pr create --base ${baseBranch} --head ${branchName} --body-file gearbox-update-report.md`)}\n`);
+  stdout.write("  4. Merging adopts the new protocol version — L1: wait for the maintainer's agreement\n\n");
 }
 
 await main();

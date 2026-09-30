@@ -1,0 +1,21 @@
+#!/usr/bin/env node
+// gearbox-check — offline protocol check for a Gearbox repo (ADR-0051). Read-only; exit 1 on
+// any error, warnings don't fail. Runs as the downstream CI job gearbox-check and at shift-end;
+// the upstream self-check (scripts/check-gearbox.js) runs the same assertions in upstream mode.
+import { cwd, exit, argv } from "node:process";
+import { runProtocolChecks } from "./lib/protocol-check.js";
+
+if (argv.includes("--help") || argv.includes("-h")) {
+  console.log("gearbox-check — verify the protocol fences, the AGENTS.md size budget, required sections and the CI == Gate contract (read-only, offline)");
+  exit(0);
+}
+
+const { errors, warnings } = runProtocolChecks(cwd());
+for (const w of warnings) console.log(`⚠ ${w}`);
+if (errors.length > 0) {
+  console.error(`\n✖ gearbox check failed (${errors.length}):\n`);
+  for (const e of errors) console.error(`  - ${e}`);
+  console.error("");
+  exit(1);
+}
+console.log("✅ gearbox check passed — fences intact, AGENTS.md within budget, CI runs the Gate.");

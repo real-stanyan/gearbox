@@ -41,6 +41,7 @@ If `no`: briefly explain why it doesn't affect downstream (e.g. "pure ADR templa
 
 In the same PR, the author sets package.json's version to the target for this change
 (= latest tag + bump segment, ADR-0028/0029).
+If this PR changes fence content, run node scripts/dev/rehash-fences.js after setting the version (ADR-0050); a README/site-only release keeps the protocol version.
 After merge, the author agent tags relative to the latest tag as of merge time and pushes it:
   git tag -a v0.x.y -m "one-line summary" && git push origin v0.x.y
 The maintainer then runs npm publish to release the npx package (ADR-0029; needs npm credentials,
@@ -53,5 +54,5 @@ agents don't run this on the maintainer's behalf).
 ## Gate
 
 ```
-<!-- paste the output of node scripts/check-gearbox.js -->
+<!-- paste the output of: node scripts/check-gearbox.js && node --test test/*.test.js -->
 ```

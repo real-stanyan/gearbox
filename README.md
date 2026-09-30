@@ -33,7 +33,8 @@ npx gearbox-agents install --maintainer <your-github-username> --gate "npx tsc -
 
 # Later, check sync / backfill upstream protocol updates anytime (pull-triggered, ADR-0026)
 npx gearbox-agents version    # check which upstream version / which ADRs this repo is synced to
-npx gearbox-agents update     # copy missing upstream ADRs into this repo, producing a review-ready branch
+npx gearbox-agents update     # rewrite the protocol fences + copy new ADRs on a review-ready branch (migrates a v1 layout, ADR-0050)
+npx gearbox-agents check      # offline protocol check: fences intact, AGENTS.md ≤ 32 KiB, CI == Gate (ADR-0051)
 ```
 
 > npx path: the package ships its own upstream snapshot; `version`/`update` diff against that packaged snapshot (ADR-0028).
@@ -43,7 +44,7 @@ npx gearbox-agents update     # copy missing upstream ADRs into this repo, produ
 
 If a user pointed you at this repo and asked you to "install Gearbox" into their project, do this:
 
-1. **Check the target first**: if the project root already has a Gearbox-made `AGENTS.md` (it has a `## Working agreement (multi-agent)` section), do **not** install — the project is already onboarded; run `npx gearbox-agents update` instead to backfill protocol updates. Hand-written files (`AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, an existing `ci.yml`) are the user's own assets: the install preserves each as a backup (`AGENTS-backup.md` etc.) and proceeds (ADR-0038/0039/0040), but **ask the user before running install over their files** — after install, merge each backup into the generated files (the ⚠️ notice at the top of the new `AGENTS.md` lists every backup and where it merges), then delete the backups and the notice (the install isn't complete until that notice is gone).
+1. **Check the target first**: if the project root already has a Gearbox-made `AGENTS.md` (it has a `<!-- gearbox:protocol` marker — or, before v2, a `## Working agreement (multi-agent)` section), do **not** install — the project is already onboarded; run `npx gearbox-agents update` instead to backfill protocol updates. Hand-written files (`AGENTS.md`, `CLAUDE.md`, `CONTEXT.md`, an existing `ci.yml`) are the user's own assets: the install preserves each as a backup (`AGENTS-backup.md` etc.) and proceeds (ADR-0038/0039/0040), but **ask the user before running install over their files** — after install, merge each backup into the generated files (the ⚠️ notice at the top of the new `AGENTS.md` lists every backup and where it merges), then delete the backups and the notice (the install isn't complete until that notice is gone).
 2. **Run the install** from the project root:
 
    ```bash
@@ -53,7 +54,7 @@ If a user pointed you at this repo and asked you to "install Gearbox" into their
    - `--maintainer` = the user's **GitHub username** (asynchronous L1 approval is verified against that account, ADR-0034). Ask the user if you don't know it.
    - `--gate` = a command that automatically asserts "nothing's broken" (e.g. `npx tsc --noEmit && npx vitest run`). Derive it from the project's tooling, or ask.
    - Both flags are optional — omitting them leaves `<placeholder>`s to fill in later (the generated `ci.yml` then ships a deliberately-failing placeholder so CI can't be green before the gate is real).
-3. **After install**: fill in the remaining placeholders (`grep -n '<' AGENTS.md` lists them: project intro, Hard rules, Tech stack), then make the first commit.
+3. **After install**: fill in the remaining placeholders (`grep -n '<' AGENTS.md` lists them: project intro, Tech stack, Hard rules, Division of labor, Where to find things), then make the first commit.
 4. **Read the generated `AGENTS.md` top to bottom** — it is your working agreement in that repo from now on (shift steps, issue/PR roles, protocol-change tiers, gate discipline).
 
 **Maintainers / contributors** (working on Gearbox itself) use a local clone:
@@ -65,13 +66,14 @@ node ~/Github/gearbox/scripts/gearbox-install <repo> --maintainer <your-github-u
 After installing:
 1. Fill in the remaining `<placeholder>`s in `AGENTS.md` (`grep -n '<' AGENTS.md`)
 2. Write your first project-specific architectural decision into `docs/adr/` (project ADRs get their own numbering, starting at 0001); protocol ADRs live in `docs/gearbox-adr/` (tool-managed; format shown in its `0001-adr-template.md`)
-3. Step 4 of the three start-of-shift steps runs `npx gearbox-agents version` to self-check the protocol version (pull-triggered)
+3. Step 4 of the start-of-shift steps runs `npx gearbox-agents version` to self-check the protocol version (pull-triggered)
 
 ## Architecture (why it's shaped this way)
 
 | File | Role |
 |---|---|
 | `AGENTS.md` | Single source of truth. Every agent (Claude Code, Z Code, etc.) reads it. Rules live here and only here |
+| The `gearbox:protocol` fence | The protocol body inside `AGENTS.md` (and `gearbox:glossary` in `CONTEXT.md`): byte-identical in every repo, rewritten by `gearbox-agents update`, hash-checked by the `gearbox-check` CI job. Projects add rules in `## Local protocol extensions` (ADR-0050/0051) |
 | `CLAUDE.md` | Empty shell, a single `@AGENTS.md` line. Compatible with older Claude Code + a future mount point for Claude-specific content |
 | `CONTEXT.md` | Domain glossary. Keeps different agents from understanding the same business term differently |
 | `docs/gearbox-adr/` | Protocol ADRs (copied from Gearbox, tool-managed). `docs/adr/` holds this project's own decisions |

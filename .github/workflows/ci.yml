@@ -9,11 +9,13 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # tags + history: the self-check's fence version rule compares against the latest tag
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
-      # No dependencies — the self-check uses node:fs only, so skip npm ci.
+      # No dependencies — node:fs + node:test only, so skip npm ci.
       # IMPORTANT: keep this identical to the Gate section in AGENTS.md.
       # That sameness is the contract that lets CI enforce what agents promise.
-      - run: node scripts/check-gearbox.js
+      - run: node scripts/check-gearbox.js && node --test test/*.test.js

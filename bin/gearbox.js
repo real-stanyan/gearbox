@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 // gearbox — npx dispatcher (ADR-0028).
 //
-// Lets strangers use the tool family with zero config: `npx gearbox-agents <install|version|update>`.
+// Lets strangers use the tool family with zero config: `npx gearbox-agents <install|version|update|check|prune>`.
 // The npm package ships its own upstream snapshot (bundles AGENTS.md / CONTEXT.md /
 // docs/gearbox-adr/, see package.json "files"); the dispatcher points GEARBOX_DIR at the
 // package root → the three tools reuse the existing local-path logic, and the npx path never
 // touches the remote at all (ADR-0027's remote addressing is a fallback for git-clone
 // downstreams, not the npx path).
 //
-// The package is not a git repo (npm strips .git), so the upstream version number comes from
-// package.json via an env override, GEARBOX_UPSTREAM_VERSION, passed to the tools (tools prefer
-// it, falling back to the git tag otherwise).
+// The package is not a git repo (npm strips .git), so package.json's version is passed to the
+// tools as GEARBOX_UPSTREAM_VERSION. It is the PACKAGE version: the protocol version comes from
+// the upstream fence markers (ADR-0050), and gearbox-version reads this env only as a fallback
+// for an upstream that predates fences.
 //
-// Subcommand routing: all four subcommands are node scripts (version was bash until ADR-0035
+// Subcommand routing: all five subcommands are node scripts (version was bash until ADR-0035
 // rewrote it in node to share the TUI layer). Args are passed through as-is. Exit codes are
 // passed through.
 
@@ -37,6 +38,7 @@ const ROUTES = {
   install: { cmd: "node", file: "scripts/gearbox-install" },
   version: { cmd: "node", file: "scripts/gearbox-version" }, // bash → node in ADR-0035 (shared TUI layer)
   update: { cmd: "node", file: "scripts/gearbox-update" },
+  check: { cmd: "node", file: "scripts/gearbox-check" }, // offline protocol check (ADR-0051)
   prune: { cmd: "node", file: "scripts/gearbox-prune" },
 };
 
@@ -47,7 +49,8 @@ if (!sub || sub === "-h" || sub === "--help") {
     "gearbox <command> [args]\n\n" +
       "  install   lay down the Gearbox skeleton in the current (or a given) directory\n" +
       "  version   check which upstream version / which ADRs the current downstream repo is synced to\n" +
-      "  update    backfill: copy ADRs missing from the current downstream repo, from upstream\n" +
+      "  update    sync the protocol fences + missing ADRs on a review branch (migrates a v1 layout)\n" +
+      "  check     offline protocol check: fences intact, AGENTS.md ≤ 32 KiB, CI == Gate (ADR-0051)\n" +
       "  prune     branch hygiene: clean up merged/stale branches (dry-run by default, ADR-0030)\n\n" +
       "example: npx gearbox-agents install --maintainer you --gate \"npm test\"\n",
   );
@@ -67,8 +70,8 @@ try {
       ...env,
       // upstream = the package's own snapshot (unless the caller explicitly overrides GEARBOX_DIR)
       GEARBOX_DIR: env.GEARBOX_DIR || pkgRoot,
-      // upstream version = the package version (tools prefer this, falling back to the git tag);
-      // the "v" prefix keeps it aligned with tag semantics
+      // the package version, "v"-prefixed like a tag — only a fallback for a pre-v2 upstream
+      // without fences; the protocol version comes from the fence markers (ADR-0050)
       GEARBOX_UPSTREAM_VERSION:
         env.GEARBOX_UPSTREAM_VERSION || (pkgVersion ? `v${pkgVersion}` : ""),
     },

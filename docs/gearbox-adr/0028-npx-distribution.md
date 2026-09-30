@@ -1,7 +1,7 @@
 # ADR-0028: npx zero-config distribution — the tools become an npm package, strangers get started with one command
 
 - Date: 2026-07-20
-- Status: accepted
+- Status: accepted (amended by ADR-0050: package.json still equals the git tag, but the protocol version — and so the `.gearbox-version` stamp — comes from the fence markers, and `GEARBOX_UPSTREAM_VERSION` is only `version`'s fallback for an upstream without fences)
 - Related: ADR-0016 (gearbox-version, bash), ADR-0017 (gearbox-update), ADR-0022 (gearbox-install), ADR-0023 (version scheme), ADR-0026 (pull trigger), ADR-0027 (remote addressing, this ADR is its follow-on)
 
 ## Context
