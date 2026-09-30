@@ -95,6 +95,7 @@ L1's explicit agreement comes only from the maintainer: an `agreed` PR comment o
 
 - The L1 row of the tier table: `Maintainer` → `Roster`, and the process cell's "after the maintainer explicitly agrees, in the session or in a PR comment" → "after the maintainer's approval (below)" (the old wording contradicts the multi-human rule).
 - The "Modifying an existing protocol file" row of the criterion table: `Maintainer` → `Roster`.
+- The "Who merges" bullet of PR disposition: "L1 waits for the maintainer's agreement" → "L1 waits for the maintainer's approval — in a multi-human repo the maintainer merges it" (same contradiction as the tier cell).
 - **Delete** the `> Why so strict: …` blockquote. ADR-0012 already records the PR #21 precedent it cites.
 
 ### Glossary fence (`CONTEXT.md`)

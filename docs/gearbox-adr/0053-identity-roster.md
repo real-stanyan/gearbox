@@ -19,7 +19,7 @@ ADR-0042 also switched on "more than one human collaborator", which nothing reco
 - **Multi-human repos**: only the maintainer's own merge approves an L1 PR, and agents never merge one. The comment path and in-session agreement stop counting there: under shared accounts neither shows who approved.
 - **Every repo**: an agent never writes an approval — no `agreed` comment, no Approve review, no approval record — for anyone, under any account.
 - **Team handles are dropped** (ADR-0034 allowed one): a line names one account; a team lists its members.
-- **Fence budget**: the fence went from 19796 B to 19319 B. The "Why so strict" blockquote was deleted from the fence; its precedent lives in ADR-0012: agents use "optional + purely additive" as an L2 channel to widen the protocol (PR #21), and the mechanism-reference criterion closes it.
+- **Fence budget**: the fence went from 19796 B to 19402 B. The "Why so strict" blockquote was deleted from the fence; its precedent lives in ADR-0012: agents use "optional + purely additive" as an L2 channel to widen the protocol (PR #21), and the mechanism-reference criterion closes it.
 
 ## Alternatives rejected
 
